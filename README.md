@@ -40,7 +40,7 @@ docker pull ohopson/context-simplo:dev
 ```bash
 docker run -d \
   --name context-simplo \
-  -p 3000:3000 -p 3001:3001 \
+  -p 3001:3001 \
   -v $(pwd):/workspace:ro \
   -v context-simplo-data:/data \
   -e LLM_PROVIDER=ollama \
@@ -60,7 +60,7 @@ docker run -d \
 ```cmd
 docker run -d ^
   --name context-simplo ^
-  -p 3000:3000 -p 3001:3001 ^
+  -p 3001:3001 ^
   -v %cd%:/workspace:ro ^
   -v context-simplo-data:/data ^
   -e LLM_PROVIDER=ollama ^
@@ -80,7 +80,7 @@ REM -e CONTEXT_SIMPLO_WATCH=true
 ```powershell
 docker run -d `
   --name context-simplo `
-  -p 3000:3000 -p 3001:3001 `
+  -p 3001:3001 `
   -v ${PWD}:/workspace:ro `
   -v context-simplo-data:/data `
   -e LLM_PROVIDER=ollama `
@@ -107,7 +107,7 @@ Linux requires `--add-host` for Ollama connectivity:
 docker run -d \
   --name context-simplo \
   --add-host=host.docker.internal:host-gateway \
-  -p 3000:3000 -p 3001:3001 \
+  -p 3001:3001 \
   -v $(pwd):/workspace:ro \
   -v context-simplo-data:/data \
   -e LLM_PROVIDER=ollama \
@@ -128,10 +128,10 @@ docker run -d \
 **Step 4: Open the dashboard**
 ```bash
 # macOS/Linux
-open http://localhost:3000
+open http://localhost:3001
 
 # Windows
-start http://localhost:3000
+start http://localhost:3001
 ```
 
 **Step 5: Configure your IDE** to use `http://localhost:3001/mcp`
@@ -153,7 +153,7 @@ docker pull ohopson/context-simplo:latest
 ```bash
 docker run -d \
   --name context-simplo \
-  -p 3000:3000 -p 3001:3001 \
+  -p 3001:3001 \
   -v $(pwd):/workspace:ro \
   -v context-simplo-data:/data \
   -e LLM_PROVIDER=openai \
@@ -178,7 +178,7 @@ docker run -d \
 ```cmd
 docker run -d ^
   --name context-simplo ^
-  -p 3000:3000 -p 3001:3001 ^
+  -p 3001:3001 ^
   -v %cd%:/workspace:ro ^
   -v context-simplo-data:/data ^
   -e LLM_PROVIDER=openai ^
@@ -203,7 +203,7 @@ REM -e CONTEXT_SIMPLO_WATCH=true
 ```powershell
 docker run -d `
   --name context-simplo `
-  -p 3000:3000 -p 3001:3001 `
+  -p 3001:3001 `
   -v ${PWD}:/workspace:ro `
   -v context-simplo-data:/data `
   -e LLM_PROVIDER=openai `
@@ -225,10 +225,10 @@ docker run -d `
 **Step 3: Open the dashboard**
 ```bash
 # macOS/Linux
-open http://localhost:3000
+open http://localhost:3001
 
 # Windows
-start http://localhost:3000
+start http://localhost:3001
 ```
 
 **Step 4: Configure your IDE** to use `http://localhost:3001/mcp`
@@ -250,7 +250,7 @@ docker pull ohopson/context-simplo:latest
 ```bash
 docker run -d \
   --name context-simplo \
-  -p 3000:3000 -p 3001:3001 \
+  -p 3001:3001 \
   -v $(pwd):/workspace:ro \
   -v context-simplo-data:/data \
   -e LLM_PROVIDER=none \
@@ -270,7 +270,7 @@ docker run -d \
 ```cmd
 docker run -d ^
   --name context-simplo ^
-  -p 3000:3000 -p 3001:3001 ^
+  -p 3001:3001 ^
   -v %cd%:/workspace:ro ^
   -v context-simplo-data:/data ^
   -e LLM_PROVIDER=none ^
@@ -290,7 +290,7 @@ REM -e CONTEXT_SIMPLO_WATCH=true
 ```powershell
 docker run -d `
   --name context-simplo `
-  -p 3000:3000 -p 3001:3001 `
+  -p 3001:3001 `
   -v ${PWD}:/workspace:ro `
   -v context-simplo-data:/data `
   -e LLM_PROVIDER=none `
@@ -307,10 +307,10 @@ docker run -d `
 **Step 3: Open the dashboard**
 ```bash
 # macOS/Linux
-open http://localhost:3000
+open http://localhost:3001
 
 # Windows
-start http://localhost:3000
+start http://localhost:3001
 ```
 
 **Step 4: Configure your IDE** to use `http://localhost:3001/mcp`
@@ -442,7 +442,7 @@ Context-Simplo combines the speed of Arbor's Rust architecture with the rich too
 - [Configuration Reference](docs/configuration.md)
 - [MCP Tools Reference](docs/mcp-tools.md)
 - [Architecture Overview](docs/architecture.md)
-- [Development Guide](CONTRIBUTING.md)
+- [Development Guide](docs/CONTRIBUTING.md)
 
 ## License
 
