@@ -35,7 +35,7 @@ RUN npm prune --omit=dev
 FROM node:22-slim AS dashboard-builder
 WORKDIR /dashboard
 COPY dashboard/package*.json ./
-RUN npm ci
+RUN npm install
 COPY dashboard/ ./
 RUN npm run build
 
