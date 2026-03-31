@@ -75,6 +75,15 @@ export class LanceDBVectorStore {
         this.tables.set(repositoryId, table);
       }
 
+      // Delete existing rows for these chunks to achieve true upsert (idempotent)
+      const chunkIds = chunks.map(c => c.id);
+      try {
+        const idFilter = chunkIds.map(id => `id = '${id.replace(/'/g, "''")}'`).join(' OR ');
+        await table.delete(idFilter);
+      } catch {
+        // Table may not support delete or rows may not exist yet
+      }
+
       const data = chunks.map((chunk) => ({
         id: chunk.id,
         nodeId: chunk.nodeId || '',
@@ -151,6 +160,35 @@ export class LanceDBVectorStore {
       this.tables.delete(repositoryId);
     } catch (error) {
       console.warn(`Failed to delete LanceDB table ${repositoryId}:`, error);
+    }
+  }
+
+  async getSize(): Promise<number> {
+    if (!this.connection) {
+      return 0;
+    }
+
+    try {
+      const { stat } = await import('fs/promises');
+      const { join } = await import('path');
+      
+      let totalSize = 0;
+      const tableNames = await this.connection.tableNames();
+      
+      for (const tableName of tableNames) {
+        try {
+          const tablePath = join(this.dbPath, `${tableName}.lance`);
+          const stats = await stat(tablePath);
+          totalSize += stats.size;
+        } catch {
+          // Table file might not exist yet
+        }
+      }
+      
+      return totalSize;
+    } catch (error) {
+      console.warn('Failed to calculate LanceDB size:', error);
+      return 0;
     }
   }
 

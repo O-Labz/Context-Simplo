@@ -22,6 +22,11 @@ import type { CodeGraph } from '../../core/graph.js';
 export interface MetricsRouteOptions {
   storage: StorageProvider;
   graph: CodeGraph;
+  watcher?: any;
+  embeddingQueue?: any;
+  vectorStore?: any;
+  embeddingProvider?: any;
+  mcpServer?: any;
 }
 
 /**
@@ -74,14 +79,22 @@ export async function registerMetricsRoutes(
 
       // Watcher activity
       watcher: {
-        watchedDirectories: 0, // TODO: Get from watcher module
-        recentChanges: [], // TODO: Get from watcher module
+        watchedDirectories: options.watcher ? options.watcher.getWatchedPaths().length : 0,
+        recentChanges: [],
         queueDepth: 0,
       },
 
       // Embedding pipeline
-      embedding: {
-        queueDepth: 0, // TODO: Get from embedding queue
+      embedding: options.embeddingQueue ? {
+        queueDepth: options.embeddingQueue.getStats().queued,
+        inFlight: options.embeddingQueue.getStats().inFlight,
+        completed: options.embeddingQueue.getStats().completed,
+        failed: options.embeddingQueue.getStats().failed,
+        averageLatency: 0,
+        totalTokens: options.embeddingQueue.getStats().totalTokens,
+        rateLimitHits: 0,
+      } : {
+        queueDepth: 0,
         inFlight: 0,
         completed: 0,
         failed: 0,
@@ -91,16 +104,31 @@ export async function registerMetricsRoutes(
       },
 
       // MCP traffic
-      mcp: {
-        requestsPerMinute: 0, // TODO: Track in MCP server
-        toolBreakdown: {}, // TODO: Track tool usage
+      mcp: options.mcpServer ? {
+        requestsPerMinute: options.mcpServer.getMetrics().requestsPerMinute,
+        toolBreakdown: options.mcpServer.getMetrics().toolBreakdown,
+        averageResponseTime: options.mcpServer.getMetrics().averageResponseTime,
+        errorRate: options.mcpServer.getMetrics().errorRate,
+        totalRequests: options.mcpServer.getMetrics().totalRequests,
+      } : {
+        requestsPerMinute: 0,
+        toolBreakdown: {},
         averageResponseTime: 0,
         errorRate: 0,
+        totalRequests: 0,
       },
 
       // LLM provider status
-      llm: {
-        connected: false, // TODO: Get from LLM provider
+      llm: options.embeddingProvider ? {
+        connected: await options.embeddingProvider.healthCheck().catch(() => false),
+        provider: options.embeddingProvider.modelName().includes('openai') ? 'openai' : 
+                  options.embeddingProvider.modelName().includes('nomic') ? 'ollama' : 'unknown',
+        model: options.embeddingProvider.modelName(),
+        lastHealthCheck: new Date().toISOString(),
+        totalCalls: options.embeddingQueue ? options.embeddingQueue.getStats().completed : 0,
+        estimatedCost: 0,
+      } : {
+        connected: false,
         provider: 'none',
         model: undefined,
         lastHealthCheck: undefined,
@@ -111,8 +139,8 @@ export async function registerMetricsRoutes(
       // Storage
       storage: {
         sqliteSize: dbStats.databaseSize,
-        lancedbSize: 0, // TODO: Get from LanceDB
-        totalDiskUsage: dbStats.databaseSize,
+        lancedbSize: options.vectorStore ? await options.vectorStore.getSize().catch(() => 0) : 0,
+        totalDiskUsage: dbStats.databaseSize + (options.vectorStore ? await options.vectorStore.getSize().catch(() => 0) : 0),
       },
 
       // Timestamp

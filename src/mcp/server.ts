@@ -25,6 +25,9 @@
 
 import { Server } from '@modelcontextprotocol/sdk/server/index.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
+import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
+import { ListToolsRequestSchema, CallToolRequestSchema } from '@modelcontextprotocol/sdk/types.js';
+import type { IncomingMessage, ServerResponse } from 'node:http';
 import { TOOL_DEFINITIONS } from './tools.js';
 import type { CodeGraph } from '../core/graph.js';
 import type { StorageProvider } from '../store/provider.js';
@@ -34,6 +37,7 @@ import { VectorSearch } from '../search/vector.js';
 import { HybridSearch } from '../search/hybrid.js';
 import type { LanceDBVectorStore } from '../store/lance.js';
 import type { EmbeddingProvider } from '../llm/provider.js';
+import type { FileWatcher } from '../core/watcher.js';
 import { MCPProtocolError, ValidationError } from '../core/errors.js';
 import * as handlers from './handlers/index.js';
 
@@ -44,6 +48,16 @@ export interface MCPServerOptions {
   workspaceRoot: string;
   vectorStore?: LanceDBVectorStore;
   embeddingProvider?: EmbeddingProvider;
+  watcher?: FileWatcher;
+}
+
+export interface MCPMetrics {
+  totalRequests: number;
+  requestsPerMinute: number;
+  toolBreakdown: Record<string, number>;
+  averageResponseTime: number;
+  errorRate: number;
+  lastMinuteRequests: Array<{ timestamp: number; tool: string; duration: number; error?: boolean }>;
 }
 
 export class MCPServer {
@@ -55,6 +69,16 @@ export class MCPServer {
   private vectorSearch?: VectorSearch;
   private hybridSearch?: HybridSearch;
   private workspaceRoot: string;
+  private watcher?: import('../core/watcher.js').FileWatcher;
+  private vectorStore?: LanceDBVectorStore;
+  private metrics: MCPMetrics = {
+    totalRequests: 0,
+    requestsPerMinute: 0,
+    toolBreakdown: {},
+    averageResponseTime: 0,
+    errorRate: 0,
+    lastMinuteRequests: [],
+  };
 
   constructor(options: MCPServerOptions) {
     this.storage = options.storage;
@@ -62,6 +86,9 @@ export class MCPServer {
     this.indexer = options.indexer;
     this.workspaceRoot = options.workspaceRoot;
     this.symbolicSearch = new SymbolicSearch(this.storage);
+
+    this.watcher = options.watcher;
+    this.vectorStore = options.vectorStore;
 
     if (options.vectorStore && options.embeddingProvider) {
       this.vectorSearch = new VectorSearch(options.vectorStore, options.embeddingProvider);
@@ -80,25 +107,33 @@ export class MCPServer {
       }
     );
 
-    this.registerTools();
+    this.registerTools(this.server);
     this.setupErrorHandling();
   }
 
-  private registerTools(): void {
-    this.server.setRequestHandler(
-      { method: 'tools/list' } as any,
+  /**
+   * Register tool handlers on a Server instance.
+   * Used for both the stdio server and per-request HTTP servers.
+   */
+  private registerTools(server: Server): void {
+    server.setRequestHandler(
+      ListToolsRequestSchema,
       async () => ({
         tools: TOOL_DEFINITIONS,
       })
     );
 
-    this.server.setRequestHandler(
-      { method: 'tools/call' } as any,
+    server.setRequestHandler(
+      CallToolRequestSchema,
       async (request: any) => {
         const { name, arguments: args } = request.params;
+        const startTime = Date.now();
 
         try {
           const result = await this.handleToolCall(name as string, args as Record<string, unknown>);
+          const duration = Date.now() - startTime;
+          this.recordMetrics(name, duration, false);
+          
           return {
             content: [
               {
@@ -108,6 +143,8 @@ export class MCPServer {
             ],
           };
         } catch (error) {
+          const duration = Date.now() - startTime;
+          this.recordMetrics(name, duration, true);
           throw this.mapErrorToMCP(error as Error);
         }
       }
@@ -123,6 +160,8 @@ export class MCPServer {
       vectorSearch: this.vectorSearch,
       hybridSearch: this.hybridSearch,
       workspaceRoot: this.workspaceRoot,
+      watcher: this.watcher,
+      vectorStore: this.vectorStore,
     };
 
     switch (name) {
@@ -198,6 +237,71 @@ export class MCPServer {
     const transport = new StdioServerTransport();
     await this.server.connect(transport);
     console.error('MCP server started on stdio');
+    console.error('MCP HTTP transport ready (stateless, per-request)');
+  }
+
+  /**
+   * Handle HTTP request for MCP protocol.
+   * Creates a fresh Server + Transport pair per request because the SDK
+   * forbids reusing a stateless transport across requests.
+   */
+  async handleHttpRequest(req: IncomingMessage, res: ServerResponse, body?: any): Promise<void> {
+    const httpServer = new Server(
+      { name: 'context-simplo', version: '0.1.0' },
+      { capabilities: { tools: {} } },
+    );
+    this.registerTools(httpServer);
+
+    const transport = new StreamableHTTPServerTransport({
+      sessionIdGenerator: undefined,
+    });
+
+    await httpServer.connect(transport);
+    await transport.handleRequest(req, res, body);
+
+    res.on('close', () => {
+      transport.close();
+      httpServer.close();
+    });
+  }
+
+  private recordMetrics(toolName: string, duration: number, error: boolean): void {
+    const now = Date.now();
+    
+    this.metrics.totalRequests++;
+    this.metrics.toolBreakdown[toolName] = (this.metrics.toolBreakdown[toolName] || 0) + 1;
+    
+    this.metrics.lastMinuteRequests.push({
+      timestamp: now,
+      tool: toolName,
+      duration,
+      error,
+    });
+
+    // Clean up old requests (older than 1 minute)
+    const oneMinuteAgo = now - 60000;
+    this.metrics.lastMinuteRequests = this.metrics.lastMinuteRequests.filter(
+      (req) => req.timestamp > oneMinuteAgo
+    );
+
+    // Calculate requests per minute
+    this.metrics.requestsPerMinute = this.metrics.lastMinuteRequests.length;
+
+    // Calculate average response time
+    const totalDuration = this.metrics.lastMinuteRequests.reduce((sum, req) => sum + req.duration, 0);
+    this.metrics.averageResponseTime = this.metrics.lastMinuteRequests.length > 0
+      ? totalDuration / this.metrics.lastMinuteRequests.length
+      : 0;
+
+    // Calculate error rate
+    const errorCount = this.metrics.lastMinuteRequests.filter((req) => req.error).length;
+    this.metrics.errorRate = this.metrics.lastMinuteRequests.length > 0
+      ? errorCount / this.metrics.lastMinuteRequests.length
+      : 0;
+  }
+
+  getMetrics(): MCPMetrics {
+    return { ...this.metrics };
   }
 
   async close(): Promise<void> {

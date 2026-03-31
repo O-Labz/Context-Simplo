@@ -29,6 +29,7 @@ const UpdateConfigSchema = z.object({
 export interface ConfigRouteOptions {
   storage: StorageProvider;
   broadcaster: WebSocketBroadcaster;
+  embeddingProvider?: any;
 }
 
 /**
@@ -96,8 +97,16 @@ export async function registerConfigRoutes(
    * - Broadcasts config:changed event to WebSocket clients
    * - Persists to SQLite config table
    */
-  fastify.put('/api/config', async (request) => {
-    const input = UpdateConfigSchema.parse(request.body);
+  fastify.put('/api/config', async (request, reply) => {
+    let input: z.infer<typeof UpdateConfigSchema>;
+    try {
+      input = UpdateConfigSchema.parse(request.body);
+    } catch (error) {
+      return reply.status(400).send({
+        error: 'Invalid request',
+        message: error instanceof z.ZodError ? error.errors.map(e => e.message).join(', ') : 'Validation failed',
+      });
+    }
 
     // Filter out env-locked fields
     const updates: Record<string, unknown> = {};
@@ -152,23 +161,60 @@ export async function registerConfigRoutes(
    * Tests LLM provider connectivity without saving config.
    * Used by setup wizard to validate settings before persisting.
    */
-  fastify.post('/api/config/test-connection', async (request) => {
-    const input = z
-      .object({
-        provider: z.enum(['openai', 'ollama', 'azure']),
-        apiKey: z.string().optional(),
-        baseUrl: z.string().url(),
-        model: z.string().optional(),
-      })
-      .parse(request.body);
+  fastify.post('/api/config/test-connection', async (request, reply) => {
+    const testSchema = z.object({
+      provider: z.enum(['openai', 'ollama', 'azure']),
+      apiKey: z.string().optional(),
+      baseUrl: z.string().url(),
+      model: z.string().optional(),
+    });
+
+    let input: z.infer<typeof testSchema>;
+    try {
+      input = testSchema.parse(request.body);
+    } catch (error) {
+      return reply.status(400).send({
+        success: false,
+        error: error instanceof z.ZodError ? error.errors.map(e => e.message).join(', ') : 'Validation failed',
+      });
+    }
 
     try {
-      // TODO: Implement actual connectivity test using LLM provider
-      // For now, return mock success
+      const { createEmbeddingProvider } = await import('../../llm/provider.js');
+      
+      const startTime = Date.now();
+      const testProvider = await createEmbeddingProvider(input.provider, {
+        apiKey: input.apiKey,
+        baseUrl: input.baseUrl,
+        model: input.model,
+      });
+
+      const healthy = await testProvider.healthCheck();
+      const latency = Date.now() - startTime;
+
+      if (!healthy) {
+        return {
+          success: false,
+          error: 'Health check failed - provider is not responding correctly',
+        };
+      }
+
+      // Test actual embedding generation
+      try {
+        await testProvider.embed(['test']);
+      } catch (error) {
+        return {
+          success: false,
+          error: error instanceof Error ? error.message : 'Failed to generate test embedding',
+        };
+      }
+
       return {
         success: true,
         provider: input.provider,
-        latency: 150,
+        model: testProvider.modelName(),
+        dimensions: testProvider.dimensions(),
+        latency,
         message: 'Connection successful',
       };
     } catch (error) {

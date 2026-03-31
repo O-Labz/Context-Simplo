@@ -1,0 +1,36 @@
+/* MCP Setup Page Styles */
+
+.config-card {
+  transition: all 0.3s ease;
+}
+
+.config-card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.05), 0 4px 6px -2px rgba(0, 0, 0, 0.03);
+}
+
+.code-snippet {
+  font-family: 'JetBrains Mono', 'Fira Code', 'Courier New', monospace;
+  font-size: 0.8125rem;
+  line-height: 1.5;
+}
+
+.copy-button {
+  transition: all 0.2s ease;
+}
+
+.copy-button:hover {
+  transform: scale(1.05);
+}
+
+.copy-button:active {
+  transform: scale(0.95);
+}
+
+.support-card {
+  transition: background-color 0.2s ease;
+}
+
+.support-card:hover {
+  background-color: var(--surface-container);
+}

@@ -1,0 +1,268 @@
+<!DOCTYPE html>
+
+<html class="light" lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script id="tailwind-config">
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    colors: {
+                        "error": "#9e3f4e",
+                        "on-error": "#fff7f7",
+                        "inverse-on-surface": "#9a9d9f",
+                        "surface-bright": "#f7f9fb",
+                        "on-tertiary": "#edeeff",
+                        "on-tertiary-container": "#ffffff",
+                        "outline": "#717c82",
+                        "error-dim": "#4f0116",
+                        "secondary-container": "#d5e3fc",
+                        "secondary-fixed-dim": "#c7d5ed",
+                        "secondary-dim": "#465468",
+                        "surface-container-low": "#f0f4f7",
+                        "outline-variant": "#a9b4b9",
+                        "on-primary": "#f7f7ff",
+                        "primary-dim": "#4a5268",
+                        "on-error-container": "#782232",
+                        "tertiary-dim": "#0042d3",
+                        "on-surface": "#2a3439",
+                        "secondary": "#526074",
+                        "on-secondary": "#f8f8ff",
+                        "inverse-surface": "#0b0f10",
+                        "tertiary": "#0048e2",
+                        "surface-variant": "#d9e4ea",
+                        "on-tertiary-fixed-variant": "#c5cfff",
+                        "surface-container-lowest": "#ffffff",
+                        "primary-container": "#dae2fd",
+                        "on-tertiary-fixed": "#ffffff",
+                        "on-secondary-fixed-variant": "#4e5c71",
+                        "on-primary-fixed-variant": "#535b71",
+                        "inverse-primary": "#dae2fd",
+                        "surface-dim": "#cfdce3",
+                        "surface-container-highest": "#d9e4ea",
+                        "primary-fixed": "#dae2fd",
+                        "tertiary-fixed": "#0052fe",
+                        "on-background": "#2a3439",
+                        "primary-fixed-dim": "#ccd4ee",
+                        "error-container": "#ff8b9a",
+                        "secondary-fixed": "#d5e3fc",
+                        "surface-tint": "#565e74",
+                        "surface": "#f7f9fb",
+                        "on-secondary-fixed": "#324053",
+                        "on-secondary-container": "#455367",
+                        "primary": "#565e74",
+                        "on-surface-variant": "#566166",
+                        "on-primary-fixed": "#373f54",
+                        "tertiary-fixed-dim": "#0048e2",
+                        "tertiary-container": "#0052fe",
+                        "on-primary-container": "#4a5167",
+                        "surface-container-high": "#e1e9ee",
+                        "background": "#f7f9fb",
+                        "surface-container": "#e8eff3"
+                    },
+                    fontFamily: {
+                        "headline": ["Inter"],
+                        "body": ["Inter"],
+                        "label": ["Inter"]
+                    },
+                    borderRadius: {"DEFAULT": "0.125rem", "lg": "0.25rem", "xl": "0.5rem", "full": "0.75rem"},
+                },
+            },
+        }
+    </script>
+<style>
+        .material-symbols-outlined {
+            font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+        }
+        .glass-panel {
+            background: rgba(247, 249, 251, 0.7);
+            backdrop-filter: blur(24px);
+            -webkit-backdrop-filter: blur(24px);
+        }
+        pre code {
+            font-family: 'JetBrains Mono', 'Fira Code', monospace;
+            font-size: 0.8125rem;
+        }
+    </style>
+</head>
+<body class="bg-surface text-on-surface font-body antialiased">
+<!-- TopNavBar from Shared Components JSON -->
+<header class="bg-[#f7f9fb] dark:bg-slate-900 flex justify-between items-center w-full px-8 h-16 max-w-full mx-auto fixed top-0 z-50">
+<div class="flex items-center gap-8">
+<span class="text-xl font-bold tracking-tighter text-[#565e74] dark:text-slate-200">Simplo</span>
+<nav class="hidden md:flex items-center gap-6">
+<a class="text-[#565e74] dark:text-slate-400 hover:text-[#0048e2] transition-colors font-['Inter'] text-[0.875rem] font-normal" href="#">Repositories</a>
+<a class="text-[#565e74] dark:text-slate-400 hover:text-[#0048e2] transition-colors font-['Inter'] text-[0.875rem] font-normal" href="#">Search</a>
+<a class="text-[#565e74] dark:text-slate-400 hover:text-[#0048e2] transition-colors font-['Inter'] text-[0.875rem] font-normal" href="#">Explorer</a>
+<a class="text-[#0048e2] dark:text-blue-400 border-b-2 border-[#0048e2] dark:border-blue-400 pb-1 font-['Inter'] text-[0.875rem] font-normal" href="#">MCP Setup</a>
+<a class="text-[#565e74] dark:text-slate-400 hover:text-[#0048e2] transition-colors font-['Inter'] text-[0.875rem] font-normal" href="#">Metrics</a>
+</nav>
+</div>
+<div class="flex items-center gap-4">
+<div class="relative group">
+<span class="material-symbols-outlined text-primary cursor-pointer hover:bg-[#f0f4f7] p-2 rounded-full transition-all">settings</span>
+</div>
+<div class="relative group">
+<span class="material-symbols-outlined text-primary cursor-pointer hover:bg-[#f0f4f7] p-2 rounded-full transition-all">account_circle</span>
+</div>
+</div>
+</header>
+<main class="pt-24 pb-16 px-8 max-w-7xl mx-auto">
+<!-- Header Section -->
+<section class="mb-12">
+<div class="flex flex-col gap-2">
+<span class="text-[0.6875rem] font-semibold uppercase tracking-wider text-tertiary">Environment Configuration</span>
+<h1 class="text-[2.5rem] md:text-[3.5rem] font-bold tracking-tight text-on-surface leading-tight">MCP IDE Setup</h1>
+<p class="text-on-surface-variant max-w-2xl text-[1rem]">Configure your development environment to leverage Model Context Protocol (MCP) servers across your favorite editors and tools.</p>
+</div>
+</section>
+<!-- Bento Grid Layout -->
+<div class="grid grid-cols-1 lg:grid-cols-12 gap-6">
+<!-- VS Code Setup (Primary Focus) -->
+<div class="lg:col-span-7 bg-surface-container-lowest rounded-xl p-8 border border-outline-variant/10 shadow-sm relative overflow-hidden">
+<div class="flex justify-between items-start mb-6">
+<div class="flex items-center gap-3">
+<div class="w-10 h-10 rounded-lg bg-blue-50 flex items-center justify-center">
+<span class="material-symbols-outlined text-blue-600">code</span>
+</div>
+<div>
+<h2 class="text-xl font-bold">VS Code</h2>
+<p class="text-[0.6875rem] font-semibold uppercase tracking-wider text-outline">Extension Configuration</p>
+</div>
+</div>
+<button class="bg-surface-container-highest px-4 py-2 rounded-md text-[0.875rem] font-semibold hover:bg-surface-container-high transition-colors flex items-center gap-2">
+<span class="material-symbols-outlined text-sm">content_copy</span>
+                        Copy Config
+                    </button>
+</div>
+<div class="space-y-6">
+<div>
+<p class="text-[0.875rem] mb-4">Install the <strong>MCP Client</strong> extension from the marketplace. Then, add the following to your <code class="bg-surface-container-low px-1.5 py-0.5 rounded text-xs font-mono">settings.json</code>:</p>
+<div class="bg-surface-container-low rounded-lg p-5 font-mono text-[0.8125rem] border border-outline-variant/5">
+<pre class="text-on-surface-variant"><span class="text-tertiary">"mcp.servers"</span>: {
+  <span class="text-tertiary">"simplo-mcp"</span>: {
+    <span class="text-tertiary">"command"</span>: <span class="text-emerald-700">"npx"</span>,
+    <span class="text-tertiary">"args"</span>: [
+      <span class="text-emerald-700">"-y"</span>,
+      <span class="text-emerald-700">"@simplo/mcp-server"</span>
+    ],
+    <span class="text-tertiary">"env"</span>: {
+      <span class="text-tertiary">"SIMPLO_API_KEY"</span>: <span class="text-emerald-700">"your_api_key_here"</span>
+    }
+  }
+}</pre>
+</div>
+</div>
+</div>
+</div>
+<!-- Claude Desktop (Secondary Focus) -->
+<div class="lg:col-span-5 bg-surface-container-low rounded-xl p-8 border border-outline-variant/10 flex flex-col">
+<div class="flex justify-between items-start mb-6">
+<div class="flex items-center gap-3">
+<div class="w-10 h-10 rounded-lg bg-on-surface text-surface flex items-center justify-center">
+<span class="material-symbols-outlined">smart_toy</span>
+</div>
+<div>
+<h2 class="text-xl font-bold">Claude Desktop</h2>
+<p class="text-[0.6875rem] font-semibold uppercase tracking-wider text-outline">Native Integration</p>
+</div>
+</div>
+</div>
+<p class="text-[0.875rem] mb-4">Edit your <code class="bg-surface-container-lowest px-1.5 py-0.5 rounded text-xs font-mono">claude_desktop_config.json</code>:</p>
+<div class="bg-surface-container-lowest rounded-lg p-5 font-mono text-[0.8125rem] border border-outline-variant/5 flex-grow">
+<pre class="text-on-surface-variant leading-relaxed">{
+  <span class="text-tertiary">"mcpServers"</span>: {
+    <span class="text-tertiary">"simplo"</span>: {
+      <span class="text-tertiary">"command"</span>: <span class="text-emerald-700">"simplo"</span>,
+      <span class="text-tertiary">"args"</span>: [<span class="text-emerald-700">"mcp"</span>]
+    }
+  }
+}</pre>
+</div>
+<button class="mt-6 w-full py-3 rounded-md bg-gradient-to-br from-tertiary to-tertiary-dim text-white font-semibold text-[0.875rem] flex items-center justify-center gap-2 shadow-lg shadow-tertiary/10 active:scale-95 transition-all">
+                    Open Config Folder
+                    <span class="material-symbols-outlined text-sm">open_in_new</span>
+</button>
+</div>
+<!-- Cursor Setup -->
+<div class="lg:col-span-6 bg-surface-container-lowest rounded-xl p-8 border border-outline-variant/10 shadow-sm">
+<div class="flex items-center gap-3 mb-6">
+<div class="w-10 h-10 rounded-lg bg-emerald-50 text-emerald-600 flex items-center justify-center">
+<span class="material-symbols-outlined">target</span>
+</div>
+<div>
+<h2 class="text-xl font-bold">Cursor</h2>
+<p class="text-[0.6875rem] font-semibold uppercase tracking-wider text-outline">AI IDE Integration</p>
+</div>
+</div>
+<div class="space-y-4">
+<p class="text-[0.875rem]">Navigate to <span class="font-semibold">Settings &gt; Cursor Settings &gt; Features &gt; MCP</span>. Click "Add New MCP Server" and use:</p>
+<div class="space-y-2">
+<div class="flex items-center justify-between p-3 bg-surface-container-low rounded-lg text-[0.8125rem]">
+<span class="text-outline">Name</span>
+<span class="font-mono font-medium">Simplo MCP</span>
+</div>
+<div class="flex items-center justify-between p-3 bg-surface-container-low rounded-lg text-[0.8125rem]">
+<span class="text-outline">Type</span>
+<span class="font-mono font-medium">command</span>
+</div>
+<div class="p-3 bg-surface-container-low rounded-lg text-[0.8125rem]">
+<div class="text-outline mb-1">Command</div>
+<div class="font-mono font-medium break-all">npx -y @simplo/mcp-server</div>
+</div>
+</div>
+</div>
+</div>
+<!-- Claude Code (CLI) -->
+<div class="lg:col-span-6 bg-surface-container-lowest rounded-xl p-8 border border-outline-variant/10 shadow-sm relative">
+<div class="flex items-center gap-3 mb-6">
+<div class="w-10 h-10 rounded-lg bg-slate-900 text-white flex items-center justify-center">
+<span class="material-symbols-outlined text-sm">terminal</span>
+</div>
+<div>
+<h2 class="text-xl font-bold">Claude Code</h2>
+<p class="text-[0.6875rem] font-semibold uppercase tracking-wider text-outline">CLI Tooling</p>
+</div>
+</div>
+<div class="space-y-4">
+<p class="text-[0.875rem]">Initialize Simplo directly within the Claude CLI environment using the setup command:</p>
+<div class="bg-slate-900 rounded-lg p-5 font-mono text-[0.8125rem] relative group">
+<pre class="text-emerald-400">claude mcp add simplo</pre>
+<button class="absolute right-4 top-4 text-slate-400 hover:text-white transition-colors opacity-0 group-hover:opacity-100">
+<span class="material-symbols-outlined text-sm">content_copy</span>
+</button>
+</div>
+<div class="mt-4 p-4 rounded-lg bg-tertiary/5 border-l-4 border-tertiary">
+<p class="text-[0.75rem] text-tertiary font-medium">PRO TIP</p>
+<p class="text-[0.8125rem] text-on-surface-variant">Ensure your environment variables are set in your <code class="font-mono text-[0.7rem]">.zshrc</code> or <code class="font-mono text-[0.7rem]">.bashrc</code> for persistent CLI access.</p>
+</div>
+</div>
+</div>
+</div>
+<!-- Support Section / Footer info -->
+<section class="mt-12 grid grid-cols-1 md:grid-cols-3 gap-8">
+<div class="p-6 bg-surface-container-low rounded-xl">
+<span class="material-symbols-outlined text-tertiary mb-3">auto_awesome</span>
+<h3 class="text-sm font-bold mb-2">Auto-Discovery</h3>
+<p class="text-[0.8125rem] text-on-surface-variant">Most MCP-enabled tools will auto-discover servers listed in standard config paths.</p>
+</div>
+<div class="p-6 bg-surface-container-low rounded-xl">
+<span class="material-symbols-outlined text-tertiary mb-3">security</span>
+<h3 class="text-sm font-bold mb-2">Security Headers</h3>
+<p class="text-[0.8125rem] text-on-surface-variant">Never commit your JSON config files with raw API keys to public repositories.</p>
+</div>
+<div class="p-6 bg-surface-container-low rounded-xl">
+<span class="material-symbols-outlined text-tertiary mb-3">help</span>
+<h3 class="text-sm font-bold mb-2">Need Help?</h3>
+<p class="text-[0.8125rem] text-on-surface-variant">Join our developer discord or check the comprehensive MCP documentation.</p>
+</div>
+</section>
+</main>
+<!-- Bottom Decorative Element -->
+<div class="fixed bottom-0 left-0 w-full h-1 bg-gradient-to-r from-tertiary via-blue-400 to-tertiary opacity-20"></div>
+</body></html>

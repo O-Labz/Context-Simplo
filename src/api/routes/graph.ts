@@ -12,6 +12,8 @@
 
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
+import DirectedGraph from 'graphology';
+import forceAtlas2 from 'graphology-layout-forceatlas2';
 import type { CodeGraph } from '../../core/graph.js';
 
 const GraphQuerySchema = z.object({
@@ -64,30 +66,73 @@ export async function registerGraphRoutes(
       // Limit nodes to prevent memory exhaustion
       const nodes = filteredNodes.slice(0, query.maxNodes);
 
-      // Build edges if requested
+      const nodeIdSet = new Set(nodes.map(n => n.id));
+      const allEdgeKinds: Array<'calls' | 'imports' | 'extends' | 'implements' | 'references'> =
+        ['calls', 'imports', 'extends', 'implements', 'references'];
+
       const edges = query.includeEdges
         ? nodes.flatMap((node) => {
-            const nodeEdges = options.graph.getCallees(node.id);
-            return nodeEdges.map((target) => ({
-              id: `${node.id}-${target.id}`,
-              source: node.id,
-              target: target.id,
-              kind: 'calls',
-            }));
+            const results: Array<{ id: string; source: string; target: string; kind: string }> = [];
+            for (const kind of allEdgeKinds) {
+              const targets = options.graph.getCallees(node.id, [kind]);
+              for (const target of targets) {
+                if (nodeIdSet.has(target.id)) {
+                  results.push({
+                    id: `${node.id}-${target.id}-${kind}`,
+                    source: node.id,
+                    target: target.id,
+                    kind,
+                  });
+                }
+              }
+            }
+            return results;
           })
         : [];
 
+      const layoutGraph = new DirectedGraph();
+      for (const node of nodes) {
+        layoutGraph.addNode(node.id, {
+          x: Math.random() * 100,
+          y: Math.random() * 100,
+        });
+      }
+      for (const edge of edges) {
+        if (layoutGraph.hasNode(edge.source) && layoutGraph.hasNode(edge.target)) {
+          try {
+            layoutGraph.addEdge(edge.source, edge.target);
+          } catch { /* duplicate */ }
+        }
+      }
+
+      if (layoutGraph.order > 1) {
+        const iterations = Math.min(Math.max(layoutGraph.order * 2, 50), 500);
+        forceAtlas2.assign(layoutGraph, {
+          iterations,
+          settings: {
+            gravity: 1,
+            scalingRatio: 10,
+            barnesHutOptimize: layoutGraph.order > 200,
+            strongGravityMode: true,
+            slowDown: 5,
+          },
+        });
+      }
+
       return {
-        nodes: nodes.map((node) => ({
-          id: node.id,
-          label: node.name,
-          kind: node.kind,
-          filePath: node.filePath,
-          language: node.language,
-          x: Math.random() * 1000,
-          y: Math.random() * 1000,
-          size: node.kind === 'class' ? 10 : node.kind === 'function' ? 6 : 4,
-        })),
+        nodes: nodes.map((node) => {
+          const attrs = layoutGraph.getNodeAttributes(node.id);
+          return {
+            id: node.id,
+            label: node.name,
+            kind: node.kind,
+            filePath: node.filePath,
+            language: node.language,
+            x: attrs.x as number,
+            y: attrs.y as number,
+            size: node.kind === 'class' ? 10 : node.kind === 'function' ? 6 : 4,
+          };
+        }),
         edges,
         total: filteredNodes.length,
         truncated: filteredNodes.length > query.maxNodes,
@@ -120,8 +165,10 @@ export async function registerGraphRoutes(
           });
         }
 
-        const callers = options.graph.getCallers(id);
-        const callees = options.graph.getCallees(id);
+        const edgeKinds: Array<'calls' | 'imports' | 'extends' | 'implements' | 'references'> =
+          ['calls', 'imports', 'extends', 'implements', 'references'];
+        const callers = options.graph.getCallers(id, edgeKinds);
+        const callees = options.graph.getCallees(id, edgeKinds);
 
         return {
           node: {

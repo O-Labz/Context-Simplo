@@ -1,0 +1,85 @@
+/* Repositories Page Styles */
+
+.repo-card {
+  transition: all 0.3s ease;
+  position: relative;
+  overflow: hidden;
+}
+
+.repo-card:hover {
+  border-color: rgba(169, 180, 185, 0.2);
+}
+
+.repo-card-glow {
+  position: absolute;
+  top: 0;
+  right: 0;
+  width: 16rem;
+  height: 16rem;
+  background: rgba(86, 94, 116, 0.05);
+  border-radius: 50%;
+  margin-right: -5rem;
+  margin-top: -5rem;
+  filter: blur(3rem);
+  transition: all 0.5s ease;
+}
+
+.repo-card:hover .repo-card-glow {
+  background: rgba(0, 72, 226, 0.05);
+}
+
+.repo-action-buttons {
+  opacity: 0;
+  transition: opacity 0.3s ease;
+}
+
+.repo-card:hover .repo-action-buttons {
+  opacity: 1;
+}
+
+.status-badge {
+  font-size: 0.6875rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  padding: 0.25rem 0.5rem;
+  border-radius: 0.25rem;
+}
+
+.status-active {
+  background-color: rgb(220 252 231);
+  color: rgb(22 101 52);
+}
+
+.status-indexed {
+  background-color: rgb(220 252 231);
+  color: rgb(22 101 52);
+}
+
+.status-archived {
+  background-color: var(--surface-container-low);
+  color: var(--on-surface-variant);
+}
+
+.status-progress {
+  background-color: rgb(254 243 199);
+  color: rgb(120 53 15);
+}
+
+@keyframes fade-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes scale-in {
+  from { opacity: 0; transform: scale(0.95) translateY(8px); }
+  to { opacity: 1; transform: scale(1) translateY(0); }
+}
+
+.animate-fade-in {
+  animation: fade-in 0.15s ease-out;
+}
+
+.animate-scale-in {
+  animation: scale-in 0.2s ease-out;
+}

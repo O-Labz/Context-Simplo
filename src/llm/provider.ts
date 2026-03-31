@@ -24,7 +24,7 @@ export class NoOpEmbeddingProvider implements EmbeddingProvider {
   async embed(_texts: string[]): Promise<number[][]> {
     throw new LLMError(
       'none',
-      'No LLM provider configured. Configure via dashboard at http://localhost:3000/setup',
+      'No LLM provider configured. Configure via dashboard at http://localhost:3001/setup',
       false
     );
   }

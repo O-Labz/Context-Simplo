@@ -1,0 +1,258 @@
+<!DOCTYPE html>
+
+<html class="light" lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>Simplo | Graph Explorer</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script id="tailwind-config">
+    tailwind.config = {
+      darkMode: "class",
+      theme: {
+        extend: {
+          colors: {
+            "error": "#9e3f4e",
+            "on-error": "#fff7f7",
+            "inverse-on-surface": "#9a9d9f",
+            "surface-bright": "#f7f9fb",
+            "on-tertiary": "#edeeff",
+            "on-tertiary-container": "#ffffff",
+            "outline": "#717c82",
+            "error-dim": "#4f0116",
+            "secondary-container": "#d5e3fc",
+            "secondary-fixed-dim": "#c7d5ed",
+            "secondary-dim": "#465468",
+            "surface-container-low": "#f0f4f7",
+            "outline-variant": "#a9b4b9",
+            "on-primary": "#f7f7ff",
+            "primary-dim": "#4a5268",
+            "on-error-container": "#782232",
+            "tertiary-dim": "#0042d3",
+            "on-surface": "#2a3439",
+            "secondary": "#526074",
+            "on-secondary": "#f8f8ff",
+            "inverse-surface": "#0b0f10",
+            "tertiary": "#0048e2",
+            "surface-variant": "#d9e4ea",
+            "on-tertiary-fixed-variant": "#c5cfff",
+            "surface-container-lowest": "#ffffff",
+            "primary-container": "#dae2fd",
+            "on-tertiary-fixed": "#ffffff",
+            "on-secondary-fixed-variant": "#4e5c71",
+            "on-primary-fixed-variant": "#535b71",
+            "inverse-primary": "#dae2fd",
+            "surface-dim": "#cfdce3",
+            "surface-container-highest": "#d9e4ea",
+            "primary-fixed": "#dae2fd",
+            "tertiary-fixed": "#0052fe",
+            "on-background": "#2a3439",
+            "primary-fixed-dim": "#ccd4ee",
+            "error-container": "#ff8b9a",
+            "secondary-fixed": "#d5e3fc",
+            "surface-tint": "#565e74",
+            "surface": "#f7f9fb",
+            "on-secondary-fixed": "#324053",
+            "on-secondary-container": "#455367",
+            "primary": "#565e74",
+            "on-surface-variant": "#566166",
+            "on-primary-fixed": "#373f54",
+            "tertiary-fixed-dim": "#0048e2",
+            "tertiary-container": "#0052fe",
+            "on-primary-container": "#4a5167",
+            "surface-container-high": "#e1e9ee",
+            "background": "#f7f9fb",
+            "surface-container": "#e8eff3"
+          },
+          fontFamily: {
+            "headline": ["Inter"],
+            "body": ["Inter"],
+            "label": ["Inter"]
+          },
+          borderRadius: {"DEFAULT": "0.125rem", "lg": "0.25rem", "xl": "0.5rem", "full": "0.75rem"},
+        },
+      },
+    }
+  </script>
+<style>
+    .material-symbols-outlined {
+      font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+    }
+    .glass-panel {
+      background: rgba(247, 249, 251, 0.7);
+      backdrop-filter: blur(24px);
+      -webkit-backdrop-filter: blur(24px);
+    }
+    .active-nav-border {
+      box-shadow: inset 0 -2px 0 0 #0048e2;
+    }
+    .graph-mesh-bg {
+      background-image: radial-gradient(#d9e4ea 1px, transparent 1px);
+      background-size: 32px 32px;
+    }
+  </style>
+</head>
+<body class="bg-surface font-body text-on-surface antialiased">
+<!-- TopNavBar Section -->
+<header class="bg-[#f7f9fb] dark:bg-slate-900 flex justify-between items-center w-full px-8 h-16 max-w-full mx-auto fixed top-0 z-50">
+<div class="flex items-center gap-12">
+<div class="text-xl font-bold tracking-tighter text-[#565e74] dark:text-slate-200">
+        Simplo
+      </div>
+<nav class="hidden md:flex gap-8 h-16 items-center">
+<a class="text-[#565e74] dark:text-slate-400 hover:text-[#0048e2] transition-colors text-[0.6875rem] font-semibold uppercase tracking-wider h-full flex items-center" href="#">Repositories</a>
+<a class="text-[#565e74] dark:text-slate-400 hover:text-[#0048e2] transition-colors text-[0.6875rem] font-semibold uppercase tracking-wider h-full flex items-center" href="#">Search</a>
+<a class="text-[#0048e2] dark:text-blue-400 border-b-2 border-[#0048e2] dark:border-blue-400 pb-1 text-[0.6875rem] font-semibold uppercase tracking-wider h-full flex items-center mt-0.5" href="#">Explorer</a>
+<a class="text-[#565e74] dark:text-slate-400 hover:text-[#0048e2] transition-colors text-[0.6875rem] font-semibold uppercase tracking-wider h-full flex items-center" href="#">MCP Setup</a>
+<a class="text-[#565e74] dark:text-slate-400 hover:text-[#0048e2] transition-colors text-[0.6875rem] font-semibold uppercase tracking-wider h-full flex items-center" href="#">Metrics</a>
+</nav>
+</div>
+<div class="flex items-center gap-6">
+<div class="relative group">
+<span class="absolute inset-y-0 left-3 flex items-center text-on-surface-variant">
+<span class="material-symbols-outlined text-lg">search</span>
+</span>
+<input class="bg-surface-container-low border-none rounded-lg pl-10 pr-4 py-1.5 text-[0.875rem] focus:ring-2 focus:ring-tertiary/30 w-64 transition-all" placeholder="Jump to node..." type="text"/>
+</div>
+<div class="flex items-center gap-4">
+<button class="text-[#565e74] hover:bg-[#f0f4f7] p-2 rounded-lg transition-all active:scale-95 duration-150">
+<span class="material-symbols-outlined" data-icon="settings">settings</span>
+</button>
+<button class="text-[#565e74] hover:bg-[#f0f4f7] p-2 rounded-lg transition-all active:scale-95 duration-150">
+<span class="material-symbols-outlined" data-icon="account_circle">account_circle</span>
+</button>
+</div>
+</div>
+</header>
+<!-- Main Content Area -->
+<main class="pt-16 h-screen flex flex-col overflow-hidden">
+<!-- Sub-header: Context & Controls -->
+<section class="px-8 py-4 bg-surface-container-low flex justify-between items-center">
+<div class="flex flex-col">
+<span class="text-[0.6875rem] font-semibold uppercase tracking-wider text-on-surface-variant">Graph Explorer</span>
+<h1 class="text-2xl font-bold tracking-tight text-on-surface">dependency-mesh-main</h1>
+</div>
+<div class="flex gap-3">
+<div class="flex bg-surface-container-lowest p-1 rounded-lg">
+<button class="px-4 py-1.5 text-[0.6875rem] font-semibold uppercase tracking-wider bg-tertiary text-white rounded shadow-sm">Sigma Engine</button>
+<button class="px-4 py-1.5 text-[0.6875rem] font-semibold uppercase tracking-wider text-on-surface-variant hover:bg-surface-container-low transition-colors rounded">Raw Data</button>
+</div>
+<button class="bg-tertiary text-on-tertiary px-6 py-2 rounded-lg text-[0.875rem] font-semibold flex items-center gap-2 hover:bg-tertiary-dim transition-all shadow-lg shadow-tertiary/20">
+<span class="material-symbols-outlined text-sm">refresh</span>
+          Re-render
+        </button>
+</div>
+</section>
+<!-- The Canvas -->
+<div class="flex-1 relative overflow-hidden bg-surface-container-low p-6">
+<div class="w-full h-full bg-surface-container-lowest rounded-xl shadow-sm border border-outline-variant/10 relative overflow-hidden graph-mesh-bg flex items-center justify-center">
+<!-- Graph Visualization Placeholder Content -->
+<div class="text-center max-w-md animate-pulse">
+<div class="w-16 h-16 bg-tertiary/10 rounded-full flex items-center justify-center mx-auto mb-6">
+<span class="material-symbols-outlined text-tertiary text-4xl" data-icon="hub">hub</span>
+</div>
+<h2 class="text-xl font-bold text-on-surface mb-2">Initializing Sigma.js Instance</h2>
+<p class="text-on-surface-variant text-[0.875rem]">Mapping 1,248 nodes and 3,902 edges from the current repository context...</p>
+</div>
+<!-- Floating UI Overlays for Graph -->
+<div class="absolute top-6 left-6 flex flex-col gap-3">
+<!-- Tool Palette -->
+<div class="glass-panel p-2 rounded-xl flex flex-col gap-1 border border-outline-variant/20">
+<button class="w-10 h-10 flex items-center justify-center rounded-lg bg-tertiary text-white shadow-md">
+<span class="material-symbols-outlined" data-icon="near_me">near_me</span>
+</button>
+<button class="w-10 h-10 flex items-center justify-center rounded-lg text-on-surface-variant hover:bg-surface-container-low">
+<span class="material-symbols-outlined" data-icon="pan_tool">pan_tool</span>
+</button>
+<button class="w-10 h-10 flex items-center justify-center rounded-lg text-on-surface-variant hover:bg-surface-container-low">
+<span class="material-symbols-outlined" data-icon="zoom_in">zoom_in</span>
+</button>
+<button class="w-10 h-10 flex items-center justify-center rounded-lg text-on-surface-variant hover:bg-surface-container-low">
+<span class="material-symbols-outlined" data-icon="zoom_out">zoom_out</span>
+</button>
+<div class="w-6 h-[1px] bg-outline-variant/30 mx-auto my-1"></div>
+<button class="w-10 h-10 flex items-center justify-center rounded-lg text-on-surface-variant hover:bg-surface-container-low">
+<span class="material-symbols-outlined" data-icon="layers">layers</span>
+</button>
+</div>
+</div>
+<!-- Right Side: Details Inspector (Hidden/Collapsed State) -->
+<div class="absolute right-6 top-6 bottom-6 w-80 glass-panel rounded-xl border border-outline-variant/20 p-6 flex flex-col gap-6 shadow-2xl">
+<div>
+<span class="text-[0.6875rem] font-semibold uppercase tracking-wider text-tertiary mb-1 block">Node Properties</span>
+<h3 class="text-lg font-bold text-on-surface">index.js</h3>
+<p class="text-[0.875rem] text-on-surface-variant mt-2">Central hub for dependency injection and lifecycle management.</p>
+</div>
+<div class="space-y-4">
+<div class="p-3 bg-surface-container-low rounded-lg">
+<div class="flex justify-between items-center mb-1">
+<span class="text-[0.6875rem] font-semibold uppercase tracking-wider text-on-surface-variant">Degree Centrality</span>
+<span class="text-xs font-bold text-on-surface">0.89</span>
+</div>
+<div class="w-full bg-surface-variant h-1.5 rounded-full overflow-hidden">
+<div class="bg-tertiary h-full w-[89%] rounded-full"></div>
+</div>
+</div>
+<div class="grid grid-cols-2 gap-3">
+<div class="p-3 bg-surface-container-low rounded-lg">
+<span class="text-[0.6875rem] font-semibold uppercase tracking-wider text-on-surface-variant block mb-1">In-Edges</span>
+<span class="text-lg font-bold text-on-surface">42</span>
+</div>
+<div class="p-3 bg-surface-container-low rounded-lg">
+<span class="text-[0.6875rem] font-semibold uppercase tracking-wider text-on-surface-variant block mb-1">Out-Edges</span>
+<span class="text-lg font-bold text-on-surface">12</span>
+</div>
+</div>
+</div>
+<div class="mt-auto flex flex-col gap-2">
+<button class="w-full py-2.5 bg-surface-container-highest text-on-surface text-[0.875rem] font-semibold rounded-lg hover:bg-surface-variant transition-colors flex items-center justify-center gap-2">
+<span class="material-symbols-outlined text-lg" data-icon="code">code</span>
+              View Source
+            </button>
+<button class="w-full py-2.5 bg-tertiary text-white text-[0.875rem] font-semibold rounded-lg hover:bg-tertiary-dim transition-colors flex items-center justify-center gap-2">
+<span class="material-symbols-outlined text-lg" data-icon="route">route</span>
+              Find Paths
+            </button>
+</div>
+</div>
+<!-- Legend Overlay -->
+<div class="absolute bottom-6 left-6 glass-panel px-4 py-3 rounded-xl border border-outline-variant/20 flex gap-6">
+<div class="flex items-center gap-2">
+<div class="w-3 h-3 rounded-full bg-tertiary"></div>
+<span class="text-[0.6875rem] font-semibold uppercase tracking-wider text-on-surface-variant">Core Module</span>
+</div>
+<div class="flex items-center gap-2">
+<div class="w-3 h-3 rounded-full bg-secondary"></div>
+<span class="text-[0.6875rem] font-semibold uppercase tracking-wider text-on-surface-variant">Third-Party</span>
+</div>
+<div class="flex items-center gap-2">
+<div class="w-3 h-3 rounded-full bg-error"></div>
+<span class="text-[0.6875rem] font-semibold uppercase tracking-wider text-on-surface-variant">Vulnerability</span>
+</div>
+</div>
+<!-- Center Image Visual Element (Atmospheric) -->
+<div class="absolute inset-0 -z-10 pointer-events-none opacity-10">
+<img alt="" class="w-full h-full object-cover" data-alt="abstract complex network of glowing blue lines and nodes on a dark background representing neural pathways or data graph architecture" src="https://lh3.googleusercontent.com/aida-public/AB6AXuB1gfn7C--_0r93r8sBBoB04C5VXdxjOIlaLVf6kZzJHPwCq-ffa-QHltr8rDI1uKi8DbX5YucMmlcHKlnWqtsqPzpD4g93rE_eKQ7b-5pOfpJWCTiblDvrHdPDDPLci-nZ3jaaexyqfMDOZ3g2JLgnBUVzUsCKaJgtVZBEd-U3_TCa_cuBd0XnxOuAWWYy8TeUlFqV66YOPQzJLGmWEd9abvXGAzgl9dzNG2f2guSzlXvIhrLunCaiEsPd0MxfHV023OhL6cxvu7w"/>
+</div>
+</div>
+</div>
+<!-- Bottom Status Bar -->
+<footer class="h-10 bg-surface-container-low border-t border-outline-variant/10 px-8 flex items-center justify-between">
+<div class="flex items-center gap-6">
+<div class="flex items-center gap-2 text-[0.6875rem] font-semibold uppercase tracking-wider text-on-surface-variant">
+<span class="w-2 h-2 rounded-full bg-green-500"></span>
+          Graph Engine: Ready
+        </div>
+<div class="text-[0.6875rem] font-semibold uppercase tracking-wider text-on-surface-variant">
+          Entities: 1,248
+        </div>
+</div>
+<div class="flex items-center gap-4 text-[0.6875rem] font-semibold uppercase tracking-wider text-on-surface-variant">
+<span>FPS: 60.0</span>
+<span>Memory: 124MB</span>
+</div>
+</footer>
+</main>
+</body></html>

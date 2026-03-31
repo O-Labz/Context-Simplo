@@ -54,7 +54,7 @@ export async function semanticSearch(
     return {
       error: 'Vector search unavailable',
       message:
-        'Semantic search requires LLM configuration. Configure an LLM provider via the dashboard at http://localhost:3000/setup or set LLM_PROVIDER environment variable.',
+        'Semantic search requires LLM configuration. Configure an LLM provider via the dashboard at http://localhost:3001/setup or set LLM_PROVIDER environment variable.',
       searchType: 'semantic',
       results: [],
       total: 0,

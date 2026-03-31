@@ -20,6 +20,16 @@ import { ShutdownManager } from './core/shutdown.js';
 import { createEmbeddingProvider } from './llm/provider.js';
 import { EmbeddingQueue } from './core/embedding-queue.js';
 
+// Global error handlers to prevent crashes
+process.on('unhandledRejection', (reason, promise) => {
+  console.error('Unhandled Rejection at:', promise, 'reason:', reason);
+});
+
+process.on('uncaughtException', (error) => {
+  console.error('Uncaught Exception:', error);
+  // Don't exit immediately - let shutdown manager handle it
+});
+
 async function main() {
   console.log('Context-Simplo starting...');
 
@@ -41,8 +51,8 @@ async function main() {
   await vectorStore.initialize();
   console.log('LanceDB vector store initialized');
 
-  const graph = new CodeGraph();
-  console.log('Graph engine ready');
+  const graph = new CodeGraph(config.graphMemoryLimitMb.value);
+  console.log(`Graph engine ready (memory limit: ${config.graphMemoryLimitMb.value}MB)`);
 
   const embeddingProvider = await createEmbeddingProvider(config.llmProvider.value, {
     apiKey: config.llmApiKey.value,
@@ -66,6 +76,22 @@ async function main() {
   const indexer = new Indexer(storage, graph, workspaceRoot, embeddingQueue, vectorStore);
   console.log('Indexer ready');
 
+  const { SymbolicSearch } = await import('./search/symbolic.js');
+  const symbolicSearch = new SymbolicSearch(storage);
+
+  let vectorSearch: any = undefined;
+  let hybridSearch: any = undefined;
+  if (config.llmProvider.value !== 'none' && embeddingProvider && vectorStore) {
+    const { VectorSearch } = await import('./search/vector.js');
+    const { HybridSearch } = await import('./search/hybrid.js');
+    vectorSearch = new VectorSearch(vectorStore, embeddingProvider);
+    hybridSearch = new HybridSearch(symbolicSearch, vectorSearch);
+  }
+
+  const watcher = new FileWatcher(indexer, {
+    debounceMs: 200,
+  });
+
   const mcpServer = new MCPServer({
     storage,
     graph,
@@ -73,30 +99,41 @@ async function main() {
     workspaceRoot,
     vectorStore: config.llmProvider.value !== 'none' ? vectorStore : undefined,
     embeddingProvider: config.llmProvider.value !== 'none' ? embeddingProvider : undefined,
+    watcher,
   });
 
   await mcpServer.start();
   console.log('MCP server started on stdio');
 
+  // Handle watcher errors gracefully
+  watcher.on('error', (error) => {
+    console.error('FileWatcher error:', error);
+  });
+
   const { fastify: apiServer, broadcaster } = await import('./api/server.js').then((m) =>
     m.createAPIServer({
       storage,
       graph,
-      dashboardPath: resolve(dataDir, '../dashboard/dist'),
+      dashboardPath: resolve(__dirname, '../dashboard/dist'),
       workspaceRoot,
       templatesPath: resolve(__dirname, '../templates'),
       serverHost: 'localhost',
       serverPort: 3001,
+      symbolicSearch,
+      vectorSearch,
+      hybridSearch,
+      indexer,
+      watcher,
+      embeddingQueue,
+      vectorStore,
+      embeddingProvider,
+      mcpServer,
     })
   );
 
   await apiServer.listen({ port: 3001, host: '0.0.0.0' });
   console.log('API server started on port 3001');
   console.log(`WebSocket clients: ${broadcaster.getClientCount()}`);
-
-  const watcher = new FileWatcher(indexer, {
-    debounceMs: 200,
-  });
 
   const shutdownManager = new ShutdownManager(10000);
   shutdownManager.register('File watcher', () => watcher.close(), 100);
