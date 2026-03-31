@@ -70,6 +70,7 @@ export const ExplainArchitectureInputSchema = z.object({
 
 export const SemanticSearchInputSchema = z.object({
   query: z.string().describe('Natural language query (e.g., "how do we handle auth?")'),
+  repositoryId: z.string().optional().describe('Filter by repository ID'),
   limit: z.number().int().min(1).max(100).optional().default(20),
   offset: z.number().int().min(0).optional().default(0),
 });
@@ -82,6 +83,7 @@ export const ExactSearchInputSchema = z.object({
 
 export const HybridSearchInputSchema = z.object({
   query: z.string().describe('Search query (works for both semantic and exact matching)'),
+  repositoryId: z.string().optional().describe('Filter by repository ID'),
   limit: z.number().int().min(1).max(100).optional().default(20),
   offset: z.number().int().min(0).optional().default(0),
 });
@@ -105,6 +107,7 @@ export const FindComplexFunctionsInputSchema = z.object({
 export const LintContextInputSchema = z.object({
   filePath: z.string().describe('File path to check'),
   proposedChange: z.string().describe('Description of the proposed change'),
+  repositoryId: z.string().optional().describe('Repository ID'),
 });
 
 export const QueryGraphInputSchema = z.object({

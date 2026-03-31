@@ -5,58 +5,59 @@ FROM node:22-alpine AS builder
 
 WORKDIR /app
 
-# Enable corepack for pnpm
-RUN corepack enable
+# Install build dependencies
+RUN apk add --no-cache python3 make g++ curl
 
-# Copy package files
-COPY package.json pnpm-lock.yaml* ./
+# Copy root package files
+COPY package*.json ./
 
-# Install dependencies
-RUN if [ -f pnpm-lock.yaml ]; then \
-      pnpm install --frozen-lockfile; \
-    else \
-      pnpm install; \
-    fi
+# Install root dependencies
+RUN npm ci
 
-# Copy source code
-COPY . .
+# Copy source and build backend
+COPY tsconfig*.json ./
+COPY src ./src
+RUN npm run build
 
-# Build TypeScript
-RUN pnpm build
+# Build dashboard
+COPY dashboard/package*.json ./dashboard/
+RUN cd dashboard && npm ci
+
+COPY dashboard ./dashboard
+RUN cd dashboard && npm run build
 
 # Production stage
 FROM node:22-alpine
 
-# Install git (needed for some operations)
-RUN apk add --no-cache git
+# Install runtime dependencies
+RUN apk add --no-cache curl
 
 WORKDIR /app
 
-# Enable corepack
-RUN corepack enable
-
-# Copy built files and dependencies from builder
+# Copy built files from builder
 COPY --from=builder /app/dist ./dist
+COPY --from=builder /app/dashboard/dist ./dashboard/dist
 COPY --from=builder /app/node_modules ./node_modules
 COPY --from=builder /app/package.json ./
-COPY --from=builder /app/.contextignore.default ./
+COPY .contextignore.default ./
 
 # Create data and workspace directories
 RUN mkdir -p /data /workspace
 
 # Set environment variables
 ENV NODE_ENV=production
-ENV CONTEXT_SIMPLO_DATA_DIR=/data
+ENV DATA_DIR=/data
+ENV WORKSPACE_ROOT=/workspace
 
 # Expose ports
 EXPOSE 3000 3001
 
 # Health check
-HEALTHCHECK --interval=30s --timeout=5s \
-  CMD node -e "process.exit(0)" || exit 1
+HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
+  CMD curl -f http://localhost:3001/health || exit 1
 
 # Volume mounts
 VOLUME ["/workspace", "/data"]
 
 # Run the application
-ENTRYPOINT ["node", "dist/index.js"]
+CMD ["node", "dist/index.js"]

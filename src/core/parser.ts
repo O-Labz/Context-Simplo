@@ -70,7 +70,7 @@ function mapVisibility(vis: string | undefined): Visibility | undefined {
   return undefined;
 }
 
-function mapNodeKind(kind: string): NodeKind {
+export function mapNodeKind(kind: string): NodeKind {
   const lower = kind.toLowerCase();
   if (lower.includes('function')) return 'function';
   if (lower.includes('method')) return 'method';
@@ -124,12 +124,12 @@ export async function parseFile(
     };
   }
 
-  let parseResult;
+  let parseResult: any;
   try {
-    parseResult = await treeSitterProcess({
-      content,
+    parseResult = await treeSitterProcess(content, {
       language,
-      path: relativePath,
+      structure: true,
+      imports: true,
     });
   } catch (error) {
     throw new ParseError(relativePath, 'Tree-sitter parse failed', error as Error);
@@ -142,30 +142,33 @@ export async function parseFile(
 
   const now = new Date();
 
-  if (parseResult.functions) {
-    for (const func of parseResult.functions) {
-      const nodeId = generateNodeId(relativePath, func.name, func.startLine);
+  // New API returns 'structure' array with type field
+  const structure = (parseResult as any)?.structure || [];
+  
+  for (const item of structure) {
+    if (item.type === 'function') {
+      const nodeId = generateNodeId(relativePath, item.name, item.startLine);
       nodes.push({
         id: nodeId,
-        name: func.name,
-        qualifiedName: func.qualifiedName || func.name,
+        name: item.name,
+        qualifiedName: item.qualifiedName || item.name,
         kind: 'function',
         filePath: relativePath,
-        lineStart: func.startLine,
-        lineEnd: func.endLine,
-        columnStart: func.startColumn,
-        columnEnd: func.endColumn,
-        visibility: mapVisibility(func.visibility),
-        isExported: func.isExported,
-        docstring: func.docstring,
+        lineStart: item.startLine,
+        lineEnd: item.endLine,
+        columnStart: item.startColumn || 0,
+        columnEnd: item.endColumn || 0,
+        visibility: mapVisibility(item.visibility),
+        isExported: item.isExported || false,
+        docstring: item.docstring,
         repositoryId,
         language,
         createdAt: now,
         updatedAt: now,
       });
 
-      if (func.calls) {
-        for (const call of func.calls) {
+      if (item.calls) {
+        for (const call of item.calls) {
           calls.push({
             callerNodeId: nodeId,
             calleeName: call.name,
@@ -174,48 +177,44 @@ export async function parseFile(
           });
         }
       }
-    }
-  }
-
-  if (parseResult.classes) {
-    for (const cls of parseResult.classes) {
-      const nodeId = generateNodeId(relativePath, cls.name, cls.startLine);
+    } else if (item.type === 'class') {
+      const nodeId = generateNodeId(relativePath, item.name, item.startLine);
       nodes.push({
         id: nodeId,
-        name: cls.name,
-        qualifiedName: cls.qualifiedName || cls.name,
+        name: item.name,
+        qualifiedName: item.qualifiedName || item.name,
         kind: 'class',
         filePath: relativePath,
-        lineStart: cls.startLine,
-        lineEnd: cls.endLine,
-        columnStart: cls.startColumn,
-        columnEnd: cls.endColumn,
-        visibility: mapVisibility(cls.visibility),
-        isExported: cls.isExported,
-        docstring: cls.docstring,
+        lineStart: item.startLine,
+        lineEnd: item.endLine,
+        columnStart: item.startColumn || 0,
+        columnEnd: item.endColumn || 0,
+        visibility: mapVisibility(item.visibility),
+        isExported: item.isExported || false,
+        docstring: item.docstring,
         repositoryId,
         language,
         createdAt: now,
         updatedAt: now,
       });
 
-      if (cls.methods) {
-        for (const method of cls.methods) {
+      if (item.methods) {
+        for (const method of item.methods) {
           const methodNodeId = generateNodeId(
             relativePath,
-            `${cls.name}.${method.name}`,
+            `${item.name}.${method.name}`,
             method.startLine
           );
           nodes.push({
             id: methodNodeId,
             name: method.name,
-            qualifiedName: `${cls.qualifiedName || cls.name}.${method.name}`,
+            qualifiedName: `${item.qualifiedName || item.name}.${method.name}`,
             kind: 'method',
             filePath: relativePath,
             lineStart: method.startLine,
             lineEnd: method.endLine,
-            columnStart: method.startColumn,
-            columnEnd: method.endColumn,
+            columnStart: method.startColumn || 0,
+            columnEnd: method.endColumn || 0,
             visibility: mapVisibility(method.visibility),
             docstring: method.docstring,
             repositoryId,
@@ -237,8 +236,8 @@ export async function parseFile(
         }
       }
 
-      if (cls.extends) {
-        for (const parent of cls.extends) {
+      if (item.extends) {
+        for (const parent of item.extends) {
           inheritance.push({
             childNodeId: nodeId,
             parentName: parent.name,
@@ -248,8 +247,8 @@ export async function parseFile(
         }
       }
 
-      if (cls.implements) {
-        for (const iface of cls.implements) {
+      if (item.implements) {
+        for (const iface of item.implements) {
           inheritance.push({
             childNodeId: nodeId,
             parentName: iface.name,
@@ -326,5 +325,16 @@ export function getSupportedLanguages(): string[] {
 }
 
 export function isLanguageSupported(language: string): boolean {
-  return hasLanguage(language);
+  // Map common language names to tree-sitter language identifiers
+  const languageMap: Record<string, string> = {
+    'typescript': 'ts',
+    'javascript': 'js',
+    'python': 'py',
+    'rust': 'rs',
+    'golang': 'go',
+    'csharp': 'cs',
+  };
+  
+  const mappedLang = languageMap[language.toLowerCase()] || language.toLowerCase();
+  return hasLanguage(mappedLang);
 }

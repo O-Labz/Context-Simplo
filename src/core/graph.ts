@@ -31,9 +31,8 @@
 
 import DirectedGraph from 'graphology';
 import { bidirectional } from 'graphology-shortest-path';
-import { betweennessCentrality } from 'graphology-metrics/centrality/betweenness';
 import { GraphError, NotFoundError } from './errors.js';
-import type { CodeNode, GraphEdge, EdgeKind, NodeKind, NodeFilter } from './types.js';
+import type { CodeNode, GraphEdge, EdgeKind, NodeFilter } from './types.js';
 
 export interface ImpactAnalysisResult {
   affectedNodes: CodeNode[];
@@ -271,8 +270,13 @@ export class CodeGraph {
     }
 
     try {
-      const centrality = betweennessCentrality(this.graph);
-      this.centralityCache = new Map(Object.entries(centrality));
+      // Simplified degree-based centrality for v1
+      const centrality = new Map<string, number>();
+      this.graph.forEachNode((nodeId) => {
+        const degree = this.graph.degree(nodeId);
+        centrality.set(nodeId, degree);
+      });
+      this.centralityCache = centrality;
       return this.centralityCache;
     } catch (error) {
       throw new GraphError('computeCentrality', 'Failed to compute centrality', error as Error);
@@ -441,7 +445,6 @@ export class CodeGraph {
     }
 
     for (const edgeId of this.graph.edges()) {
-      const [source, target] = this.graph.extremities(edgeId);
       const edge = this.graph.getEdgeAttributes(edgeId) as GraphEdge;
       edges.push(edge);
     }
@@ -449,22 +452,25 @@ export class CodeGraph {
     return JSON.stringify({ nodes, edges });
   }
 
-  static deserialize(data: string): CodeGraph {
+  deserialize(data: string): void {
     const { nodes, edges } = JSON.parse(data) as { nodes: CodeNode[]; edges: GraphEdge[] };
-    const graph = new CodeGraph();
 
     for (const node of nodes) {
-      graph.addNode(node);
+      this.addNode(node);
     }
 
     for (const edge of edges) {
       try {
-        graph.addEdge(edge);
+        this.addEdge(edge);
       } catch (error) {
         console.warn(`Failed to restore edge ${edge.id}: ${(error as Error).message}`);
       }
     }
+  }
 
+  static fromSerialized(data: string): CodeGraph {
+    const graph = new CodeGraph();
+    graph.deserialize(data);
     return graph;
   }
 

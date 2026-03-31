@@ -10,12 +10,11 @@
 
 export abstract class ContextSimploError extends Error {
   abstract readonly code: string;
-  readonly cause?: Error;
+  declare readonly cause?: Error;
 
   constructor(message: string, cause?: Error) {
-    super(message);
+    super(message, { cause });
     this.name = this.constructor.name;
-    this.cause = cause;
     Error.captureStackTrace(this, this.constructor);
   }
 

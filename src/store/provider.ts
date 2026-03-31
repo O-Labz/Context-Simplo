@@ -52,9 +52,12 @@ export interface StorageProvider {
   search(query: string, limit: number, offset: number): SearchResult[];
   indexNodeForSearch(node: CodeNode): void;
 
-  getConfig(key: string): string | null;
+  getConfig(key?: string): Record<string, unknown>;
+  updateConfig(updates: Record<string, unknown>): void;
   setConfig(key: string, value: string): void;
   deleteConfig(key: string): void;
+
+  updateRepositoryWatchStatus(id: string, watching: boolean): void;
 
   getStats(): {
     repositoryCount: number;
@@ -62,6 +65,10 @@ export interface StorageProvider {
     nodeCount: number;
     edgeCount: number;
     databaseSize: number;
+    lastIndexTime?: string;
+    filesIndexing?: number;
+    filesPending?: number;
+    filesError?: number;
   };
 
   close(): void;

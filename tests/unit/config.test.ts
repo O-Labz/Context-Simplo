@@ -39,7 +39,7 @@ describe('Config', () => {
       });
 
       expect(config.llmProvider.value).toBe('openai');
-      expect(config.llmProvider.source).toBe('environment');
+      expect(config.llmProvider.source).toBe('env');
       expect(config.llmProvider.isLocked).toBe(true);
 
       expect(config.llmApiKey.value).toBe('sk-test');

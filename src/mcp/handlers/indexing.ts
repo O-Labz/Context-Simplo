@@ -15,12 +15,16 @@ import type { CodeGraph } from '../../core/graph.js';
 import type { StorageProvider } from '../../store/provider.js';
 import type { Indexer } from '../../core/indexer.js';
 import type { SymbolicSearch } from '../../search/symbolic.js';
+import type { VectorSearch } from '../../search/vector.js';
+import type { HybridSearch } from '../../search/hybrid.js';
 
 export interface HandlerContext {
   storage: StorageProvider;
   graph: CodeGraph;
   indexer: Indexer;
   symbolicSearch: SymbolicSearch;
+  vectorSearch?: VectorSearch;
+  hybridSearch?: HybridSearch;
   workspaceRoot: string;
 }
 

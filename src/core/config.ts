@@ -19,9 +19,8 @@
  * Failure cases: Invalid URL, missing required key, type mismatch
  */
 
-import { z } from 'zod';
 import { ConfigError } from './errors.js';
-import type { AppConfig, ConfigValue, ConfigSource, LLMProviderType } from './types.js';
+import type { AppConfig, ConfigValue, LLMProviderType } from './types.js';
 
 const DEFAULT_CONFIG = {
   llmProvider: 'none' as LLMProviderType,
@@ -98,7 +97,7 @@ function validateUrl(url: string | undefined, key: string): void {
 }
 
 function createConfigValue<T>(
-  key: ConfigKey,
+  _key: string,
   envValue: T | undefined,
   dashboardValue: T | undefined,
   defaultValue: T
@@ -106,7 +105,7 @@ function createConfigValue<T>(
   if (envValue !== undefined) {
     return {
       value: envValue,
-      source: 'environment',
+      source: 'env',
       isLocked: true,
     };
   }

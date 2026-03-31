@@ -72,8 +72,10 @@ export const GraphEdgeSchema = z.object({
   targetId: z.string(),
   kind: EdgeKindSchema,
   confidence: z.number().min(0).max(1),
+  repositoryId: z.string(),
   metadata: z.record(z.unknown()).optional(),
   createdAt: z.date(),
+  updatedAt: z.date(),
 });
 
 export type GraphEdge = z.infer<typeof GraphEdgeSchema>;
@@ -191,7 +193,7 @@ export const EmbeddingChunkSchema = z.object({
 
 export type EmbeddingChunk = z.infer<typeof EmbeddingChunkSchema>;
 
-export const ConfigSourceSchema = z.enum(['environment', 'dashboard', 'default']);
+export const ConfigSourceSchema = z.enum(['env', 'dashboard', 'default']);
 
 export type ConfigSource = z.infer<typeof ConfigSourceSchema>;
 
