@@ -2,7 +2,7 @@
 
 > Portable code intelligence MCP server with hybrid vector+BM25 search, auto-indexing, and web dashboard
 
-[![Docker](https://img.shields.io/badge/docker-ready-blue.svg)](https://hub.docker.com/r/context-simplo/context-simplo)
+[![Docker](https://img.shields.io/badge/docker-ready-blue.svg)](https://hub.docker.com/r/ohopson/context-simplo)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.7-blue.svg)](https://www.typescriptlang.org/)
 [![Node.js](https://img.shields.io/badge/Node.js-22-green.svg)](https://nodejs.org/)
@@ -15,7 +15,9 @@ Context-Simplo is a production-ready MCP (Model Context Protocol) server that au
 
 ```bash
 # 1. Pull the image
-docker pull context-simplo:latest
+docker pull ohopson/context-simplo:latest
+# or for development version
+docker pull ohopson/context-simplo:dev
 
 # 2. Run with your project mounted
 docker run -d \
@@ -25,7 +27,7 @@ docker run -d \
   -v context-simplo-data:/data \
   -e LLM_PROVIDER=ollama \
   -e LLM_BASE_URL=http://host.docker.internal:11434 \
-  context-simplo:latest
+  ohopson/context-simplo:latest
 
 # 3. Open the dashboard
 open http://localhost:3000
