@@ -515,11 +515,37 @@ export class SqliteStorageProvider implements StorageProvider {
       .run(node.id, node.name, node.qualifiedName, node.filePath, node.docstring || '');
   }
 
-  getConfig(key: string): string | null {
-    const row = this.db
-      .prepare('SELECT value FROM config WHERE key = ?')
-      .get(key) as { value: string } | undefined;
-    return row?.value || null;
+  getConfig(key?: string): Record<string, unknown> {
+    if (key) {
+      const row = this.db
+        .prepare('SELECT value FROM config WHERE key = ?')
+        .get(key) as { value: string } | undefined;
+      return row?.value ? { [key]: row.value } : {};
+    }
+
+    // Return all config as object
+    const rows = this.db
+      .prepare('SELECT key, value FROM config')
+      .all() as Array<{ key: string; value: string }>;
+
+    const config: Record<string, unknown> = {};
+    for (const row of rows) {
+      try {
+        config[row.key] = JSON.parse(row.value);
+      } catch {
+        config[row.key] = row.value;
+      }
+    }
+    return config;
+  }
+
+  updateConfig(updates: Record<string, unknown>): void {
+    this.transaction(() => {
+      for (const [key, value] of Object.entries(updates)) {
+        const serialized = typeof value === 'string' ? value : JSON.stringify(value);
+        this.setConfig(key, serialized);
+      }
+    });
   }
 
   setConfig(key: string, value: string): void {
@@ -533,6 +559,14 @@ export class SqliteStorageProvider implements StorageProvider {
 
   deleteConfig(key: string): void {
     this.db.prepare('DELETE FROM config WHERE key = ?').run(key);
+  }
+
+  updateRepositoryWatchStatus(id: string, watching: boolean): void {
+    this.db
+      .prepare(
+        `UPDATE repositories SET is_watched = ?, updated_at = datetime('now') WHERE id = ?`
+      )
+      .run(watching ? 1 : 0, id);
   }
 
   getStats(): {
@@ -644,8 +678,10 @@ export class SqliteStorageProvider implements StorageProvider {
       targetId: row.target_id,
       kind: row.kind,
       confidence: row.confidence,
+      repositoryId: row.repository_id,
       metadata: row.metadata ? JSON.parse(row.metadata) : undefined,
       createdAt: new Date(row.created_at),
+      updatedAt: new Date(row.updated_at),
     };
   }
 }

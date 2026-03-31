@@ -1,0 +1,8 @@
+{
+  "servers": {
+    "context-simplo": {
+      "url": "http://localhost:3001/mcp",
+      "description": "Context-Simplo code intelligence server with graph analysis, semantic search, and impact analysis"
+    }
+  }
+}

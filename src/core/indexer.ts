@@ -27,21 +27,24 @@
  * Security: Integrates with SecretScrubber before indexing.
  */
 
-import { readdir, stat } from 'fs/promises';
+import { readdir, stat, readFile } from 'fs/promises';
 import { resolve, relative, basename } from 'path';
 import { createHash } from 'crypto';
 import { parseFile } from './parser.js';
 import type { CodeGraph } from './graph.js';
 import type { StorageProvider } from '../store/provider.js';
 import type {
-  RepositoryInfo,
   FileMetadata,
-  CodeNode,
-  GraphEdge,
   IndexJob,
+  GraphEdge,
 } from './types.js';
-import { ParseError, StoreError } from './errors.js';
+import { ParseError } from './errors.js';
 import { EventEmitter } from 'events';
+import { scrubSecrets } from '../security/scrubber.js';
+import { ContextIgnore } from '../security/ignore.js';
+import type { EmbeddingQueue } from './embedding-queue.js';
+import { chunkCodeForEmbedding } from '../llm/chunker.js';
+import type { LanceDBVectorStore } from '../store/lance.js';
 
 export interface IndexerOptions {
   respectIgnore?: boolean;
@@ -58,12 +61,17 @@ export interface IndexerEvents {
 }
 
 export class Indexer extends EventEmitter {
+  private contextIgnore: ContextIgnore;
+
   constructor(
-    private storage: StorageProvider,
-    private graph: CodeGraph,
-    private workspaceRoot: string = '/workspace'
+    public storage: StorageProvider,
+    public graph: CodeGraph,
+    private workspaceRoot: string = '/workspace',
+    private embeddingQueue?: EmbeddingQueue,
+    private vectorStore?: LanceDBVectorStore
   ) {
     super();
+    this.contextIgnore = new ContextIgnore(workspaceRoot);
   }
 
   async indexRepository(
@@ -190,30 +198,52 @@ export class Indexer extends EventEmitter {
           this.graph.addNode(node);
         }
 
-        this.storage.upsertNodes(parsed.nodes);
+      this.storage.upsertNodes(parsed.nodes);
 
-        const edges = this.resolveEdges(parsed, repositoryId);
-        for (const edge of edges) {
-          try {
-            this.graph.addEdge(edge);
-          } catch {
-            // Edge target may not exist yet (forward reference), skip
-          }
+      const edges = this.resolveEdges(parsed, repositoryId);
+      for (const edge of edges) {
+        try {
+          this.graph.addEdge(edge);
+        } catch {
+          // Edge target may not exist yet (forward reference), skip
         }
-        this.storage.upsertEdges(edges);
+      }
+      this.storage.upsertEdges(edges);
 
-        fileMetadata.hash = parsed.hash;
-        fileMetadata.language = parsed.language;
-        fileMetadata.nodeCount = parsed.nodes.length;
-        fileMetadata.status = 'indexed';
-        fileMetadata.lastError = undefined;
-        fileMetadata.indexedAt = new Date();
-        fileMetadata.updatedAt = new Date();
+      fileMetadata.hash = parsed.hash;
+      fileMetadata.language = parsed.language;
+      fileMetadata.nodeCount = parsed.nodes.length;
+      fileMetadata.status = 'indexed';
+      fileMetadata.lastError = undefined;
+      fileMetadata.indexedAt = new Date();
+      fileMetadata.updatedAt = new Date();
 
-        this.storage.upsertFile(fileMetadata);
-      });
+      this.storage.upsertFile(fileMetadata);
+    });
 
-      this.emit('file:complete', relativePath, parsed.nodes.length);
+    if (this.embeddingQueue && this.vectorStore) {
+      try {
+        const fileContent = await readFile(filePath, 'utf-8');
+        const { scrubbed } = scrubSecrets(fileContent);
+        const chunks = chunkCodeForEmbedding(parsed, scrubbed);
+
+        if (chunks.length > 0) {
+          const texts = chunks.map((chunk) => chunk.content);
+          const embeddings = await this.embeddingQueue.embed(texts);
+
+          const chunksWithEmbeddings = chunks.map((chunk, i) => ({
+            ...chunk,
+            embedding: embeddings[i],
+          }));
+
+          await this.vectorStore.upsertChunks(chunksWithEmbeddings);
+        }
+      } catch (error) {
+        console.warn(`Failed to generate embeddings for ${relativePath}:`, error);
+      }
+    }
+
+    this.emit('file:complete', relativePath, parsed.nodes.length);
     } catch (error) {
       fileMetadata.status = 'error';
       fileMetadata.lastError = (error as Error).message;
@@ -250,6 +280,11 @@ export class Indexer extends EventEmitter {
 
     for (const entry of entries) {
       const fullPath = resolve(dirPath, entry.name);
+      const relativePath = relative(this.workspaceRoot, fullPath);
+
+      if (respectIgnore && this.contextIgnore.shouldIgnore(relativePath)) {
+        continue;
+      }
 
       if (entry.name.startsWith('.') || entry.name === 'node_modules') {
         continue;
@@ -317,7 +352,9 @@ export class Indexer extends EventEmitter {
             targetId: target.id,
             kind: 'calls',
             confidence: 0.9,
+            repositoryId,
             createdAt: now,
+            updatedAt: now,
           });
         }
       }
@@ -337,7 +374,9 @@ export class Indexer extends EventEmitter {
             targetId: parent.id,
             kind: inheritance.kind,
             confidence: 1.0,
+            repositoryId,
             createdAt: now,
+            updatedAt: now,
           });
         }
       }

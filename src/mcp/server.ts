@@ -30,6 +30,10 @@ import type { CodeGraph } from '../core/graph.js';
 import type { StorageProvider } from '../store/provider.js';
 import type { Indexer } from '../core/indexer.js';
 import { SymbolicSearch } from '../search/symbolic.js';
+import { VectorSearch } from '../search/vector.js';
+import { HybridSearch } from '../search/hybrid.js';
+import type { LanceDBVectorStore } from '../store/lance.js';
+import type { EmbeddingProvider } from '../llm/provider.js';
 import { MCPProtocolError, ValidationError } from '../core/errors.js';
 import * as handlers from './handlers/index.js';
 
@@ -38,6 +42,8 @@ export interface MCPServerOptions {
   graph: CodeGraph;
   indexer: Indexer;
   workspaceRoot: string;
+  vectorStore?: LanceDBVectorStore;
+  embeddingProvider?: EmbeddingProvider;
 }
 
 export class MCPServer {
@@ -46,6 +52,8 @@ export class MCPServer {
   private graph: CodeGraph;
   private indexer: Indexer;
   private symbolicSearch: SymbolicSearch;
+  private vectorSearch?: VectorSearch;
+  private hybridSearch?: HybridSearch;
   private workspaceRoot: string;
 
   constructor(options: MCPServerOptions) {
@@ -54,6 +62,11 @@ export class MCPServer {
     this.indexer = options.indexer;
     this.workspaceRoot = options.workspaceRoot;
     this.symbolicSearch = new SymbolicSearch(this.storage);
+
+    if (options.vectorStore && options.embeddingProvider) {
+      this.vectorSearch = new VectorSearch(options.vectorStore, options.embeddingProvider);
+      this.hybridSearch = new HybridSearch(this.symbolicSearch, this.vectorSearch);
+    }
 
     this.server = new Server(
       {
@@ -72,27 +85,33 @@ export class MCPServer {
   }
 
   private registerTools(): void {
-    this.server.setRequestHandler('tools/list', async () => ({
-      tools: TOOL_DEFINITIONS,
-    }));
+    this.server.setRequestHandler(
+      { method: 'tools/list' } as any,
+      async () => ({
+        tools: TOOL_DEFINITIONS,
+      })
+    );
 
-    this.server.setRequestHandler('tools/call', async (request) => {
-      const { name, arguments: args } = request.params;
+    this.server.setRequestHandler(
+      { method: 'tools/call' } as any,
+      async (request: any) => {
+        const { name, arguments: args } = request.params;
 
-      try {
-        const result = await this.handleToolCall(name as string, args as Record<string, unknown>);
-        return {
-          content: [
-            {
-              type: 'text',
-              text: JSON.stringify(result, null, 2),
-            },
-          ],
-        };
-      } catch (error) {
-        throw this.mapErrorToMCP(error as Error);
+        try {
+          const result = await this.handleToolCall(name as string, args as Record<string, unknown>);
+          return {
+            content: [
+              {
+                type: 'text',
+                text: JSON.stringify(result, null, 2),
+              },
+            ],
+          };
+        } catch (error) {
+          throw this.mapErrorToMCP(error as Error);
+        }
       }
-    });
+    );
   }
 
   private async handleToolCall(name: string, args: Record<string, unknown>): Promise<unknown> {
@@ -101,6 +120,8 @@ export class MCPServer {
       graph: this.graph,
       indexer: this.indexer,
       symbolicSearch: this.symbolicSearch,
+      vectorSearch: this.vectorSearch,
+      hybridSearch: this.hybridSearch,
       workspaceRoot: this.workspaceRoot,
     };
 
