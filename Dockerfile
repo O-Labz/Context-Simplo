@@ -34,8 +34,8 @@ RUN npm prune --omit=dev
 # Dashboard stage — isolated to avoid esbuild version conflicts with root
 FROM node:22-slim AS dashboard-builder
 WORKDIR /dashboard
-COPY dashboard/package*.json ./
-RUN npm install
+COPY dashboard/package.json ./
+RUN npm install --no-package-lock
 COPY dashboard/ ./
 RUN npm run build
 
