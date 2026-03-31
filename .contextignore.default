@@ -1,0 +1,66 @@
+# Context-Simplo default ignore patterns
+# Copy this file to .contextignore in your project root and customize as needed
+
+# Environment and secrets
+.env*
+*.pem
+*.key
+*.p12
+*.pfx
+*.crt
+*.cer
+secrets/
+.secrets/
+
+# Dependencies
+node_modules/
+.pnpm-store/
+vendor/
+__pycache__/
+.venv/
+venv/
+env/
+
+# Build outputs
+dist/
+build/
+out/
+target/
+*.min.js
+*.min.css
+*.map
+*.bundle.js
+
+# Version control
+.git/
+.svn/
+.hg/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+logs/
+
+# Test coverage
+coverage/
+.nyc_output/
+
+# Documentation (usually not needed for code intelligence)
+docs/
+*.md
+
+# Large data files
+*.db
+*.sqlite
+*.sql
+data/
