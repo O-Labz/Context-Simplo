@@ -1,12 +1,17 @@
 # Context-Simplo Docker image
 # Multi-stage build for optimized production image
 
-FROM node:22-alpine AS builder
+FROM node:22-slim AS builder
 
 WORKDIR /app
 
 # Install build dependencies
-RUN apk add --no-cache python3 make g++ curl
+RUN apt-get update && apt-get install -y \
+    python3 \
+    make \
+    g++ \
+    curl \
+    && rm -rf /var/lib/apt/lists/*
 
 # Copy root package files
 COPY package*.json ./
@@ -27,10 +32,12 @@ COPY dashboard ./dashboard
 RUN cd dashboard && npm run build
 
 # Production stage
-FROM node:22-alpine
+FROM node:22-slim
 
 # Install runtime dependencies
-RUN apk add --no-cache curl
+RUN apt-get update && apt-get install -y \
+    curl \
+    && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
 
