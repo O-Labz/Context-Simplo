@@ -16,8 +16,8 @@ RUN apt-get update && apt-get install -y \
 # Copy root package files
 COPY package*.json ./
 
-# Install root dependencies
-RUN npm ci
+# Install root dependencies (HUSKY=0 skips git hook setup in Docker)
+RUN HUSKY=0 npm ci
 
 # Copy source and build backend
 COPY tsconfig*.json ./
@@ -27,6 +27,9 @@ RUN npm run build
 # Copy SQL migration files (not copied by TypeScript compiler)
 RUN mkdir -p dist/store/migrations
 COPY src/store/migrations/*.sql dist/store/migrations/
+
+# Remove devDependencies to slim down the production image
+RUN npm prune --omit=dev
 
 # Dashboard stage — isolated to avoid esbuild version conflicts with root
 FROM node:22-slim AS dashboard-builder
