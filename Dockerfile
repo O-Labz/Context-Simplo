@@ -26,7 +26,7 @@ RUN npm run build
 
 # Copy SQL migration files (not copied by TypeScript compiler)
 RUN mkdir -p dist/store/migrations
-COPY src/store/migrations/*.sql dist/store/migrations/ 2>/dev/null || true
+COPY src/store/migrations/*.sql dist/store/migrations/
 
 # Build dashboard
 COPY dashboard ./dashboard

@@ -1,0 +1,10 @@
+node_modules
+dist
+data
+.git
+.cursor
+*.md
+!README.md
+dashboard/node_modules
+dashboard/dist
+docs
