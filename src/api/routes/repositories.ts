@@ -32,6 +32,9 @@ export interface RepositoryRouteOptions {
   graph: CodeGraph;
   broadcaster: WebSocketBroadcaster;
   workspaceRoot: string;
+  indexer?: any;
+  watcher?: any;
+  vectorStore?: any;
 }
 
 /**
@@ -76,7 +79,22 @@ export async function registerRepositoryRoutes(
    * - Canonicalizes paths
    */
   fastify.post('/api/repositories', async (request, reply) => {
-    const input = IndexRepositorySchema.parse(request.body);
+    let input: z.infer<typeof IndexRepositorySchema>;
+    try {
+      input = IndexRepositorySchema.parse(request.body);
+    } catch (error) {
+      return reply.status(400).send({
+        error: 'Invalid request',
+        message: error instanceof z.ZodError ? error.errors.map(e => e.message).join(', ') : 'Validation failed',
+      });
+    }
+
+    if (!options.indexer) {
+      return reply.status(500).send({
+        error: 'Indexer not available',
+        message: 'Indexer module not initialized',
+      });
+    }
 
     // Canonicalize and validate path
     const absolutePath = path.resolve(options.workspaceRoot, input.path);
@@ -89,20 +107,38 @@ export async function registerRepositoryRoutes(
     }
 
     try {
-      // TODO: Trigger actual indexing via indexer module
-      // For now, return mock response
-      const repoId = `repo-${Date.now()}`;
-
       options.broadcaster.broadcast(WebSocketEvents.INDEX_PROGRESS, {
-        repositoryId: repoId,
+        repositoryId: 'pending',
         path: input.path,
         progress: 0,
         status: 'starting',
       });
 
+      // Run indexing in background
+      setImmediate(async () => {
+        try {
+          const job = await options.indexer.indexRepository(absolutePath, {
+            incremental: input.incremental,
+            respectIgnore: true,
+          });
+
+          options.broadcaster.broadcast(WebSocketEvents.INDEX_COMPLETE, {
+            repositoryId: job.repositoryId,
+            path: input.path,
+            filesProcessed: job.filesProcessed,
+            nodesCreated: job.nodesCreated,
+            edgesCreated: job.edgesCreated,
+          });
+        } catch (error) {
+          options.broadcaster.broadcast(WebSocketEvents.INDEX_ERROR, {
+            path: input.path,
+            error: error instanceof Error ? error.message : 'Unknown error',
+          });
+        }
+      });
+
       return {
         success: true,
-        repositoryId: repoId,
         path: input.path,
         message: 'Indexing started',
       };
@@ -125,16 +161,49 @@ export async function registerRepositoryRoutes(
       const { id } = request.params;
 
       try {
-        options.storage.deleteRepository(id);
+        const repo = options.storage.listRepositories().find(r => r.id === id);
+        if (!repo) {
+          return reply.status(404).send({
+            error: 'Repository not found',
+            repositoryId: id,
+          });
+        }
+
+        options.storage.transaction(() => {
+          options.storage.deleteNodesInRepository(id);
+          options.storage.deleteEdgesInRepository(id);
+          options.storage.deleteFilesInRepository(id);
+          options.storage.deleteRepository(id);
+        });
+
+        options.graph.getAllNodes({ repositoryId: id }).forEach(node => {
+          options.graph.removeNode(node.id);
+        });
+
+        if (options.vectorStore) {
+          try {
+            await options.vectorStore.deleteRepository(id);
+          } catch (err) {
+            console.warn(`Failed to clean up LanceDB for repo ${id}:`, err);
+          }
+        }
+
+        if (options.watcher && repo.isWatched) {
+          try {
+            options.watcher.unwatch(repo.path);
+          } catch {
+            // watcher may not be watching this path
+          }
+        }
 
         return {
           success: true,
           repositoryId: id,
         };
       } catch (error) {
-        return reply.status(404).send({
-          error: 'Repository not found',
-          repositoryId: id,
+        return reply.status(500).send({
+          error: 'Failed to delete repository',
+          message: error instanceof Error ? error.message : 'Unknown error',
         });
       }
     }
@@ -150,12 +219,51 @@ export async function registerRepositoryRoutes(
     async (request, reply) => {
       const { id } = request.params;
 
+      if (!options.indexer) {
+        return reply.status(500).send({
+          error: 'Indexer not available',
+          message: 'Indexer module not initialized',
+        });
+      }
+
       try {
-        // TODO: Trigger actual re-indexing
+        const repos = options.storage.listRepositories();
+        const repo = repos.find((r) => r.id === id);
+
+        if (!repo) {
+          return reply.status(404).send({
+            error: 'Repository not found',
+            repositoryId: id,
+          });
+        }
+
         options.broadcaster.broadcast(WebSocketEvents.INDEX_PROGRESS, {
           repositoryId: id,
           progress: 0,
           status: 'reindexing',
+        });
+
+        // Run re-indexing in background
+        setImmediate(async () => {
+          try {
+            const job = await options.indexer.indexRepository(repo.path, {
+              incremental: false,
+              respectIgnore: true,
+            });
+
+            options.broadcaster.broadcast(WebSocketEvents.INDEX_COMPLETE, {
+              repositoryId: job.repositoryId,
+              path: repo.path,
+              filesProcessed: job.filesProcessed,
+              nodesCreated: job.nodesCreated,
+              edgesCreated: job.edgesCreated,
+            });
+          } catch (error) {
+            options.broadcaster.broadcast(WebSocketEvents.INDEX_ERROR, {
+              repositoryId: id,
+              error: error instanceof Error ? error.message : 'Unknown error',
+            });
+          }
         });
 
         return {
@@ -182,8 +290,25 @@ export async function registerRepositoryRoutes(
     async (request, reply) => {
       const { id } = request.params;
 
+      if (!options.watcher) {
+        return reply.status(500).send({
+          error: 'Watcher not available',
+          message: 'File watcher module not initialized',
+        });
+      }
+
       try {
-        // TODO: Start file watcher
+        const repos = options.storage.listRepositories();
+        const repo = repos.find((r) => r.id === id);
+
+        if (!repo) {
+          return reply.status(404).send({
+            error: 'Repository not found',
+            repositoryId: id,
+          });
+        }
+
+        options.watcher.watch(repo.path, id);
         options.storage.updateRepositoryWatchStatus(id, true);
 
         return {
@@ -210,8 +335,25 @@ export async function registerRepositoryRoutes(
     async (request, reply) => {
       const { id } = request.params;
 
+      if (!options.watcher) {
+        return reply.status(500).send({
+          error: 'Watcher not available',
+          message: 'File watcher module not initialized',
+        });
+      }
+
       try {
-        // TODO: Stop file watcher
+        const repos = options.storage.listRepositories();
+        const repo = repos.find((r) => r.id === id);
+
+        if (!repo) {
+          return reply.status(404).send({
+            error: 'Repository not found',
+            repositoryId: id,
+          });
+        }
+
+        options.watcher.unwatch(repo.path);
         options.storage.updateRepositoryWatchStatus(id, false);
 
         return {

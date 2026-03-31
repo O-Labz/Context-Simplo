@@ -4,18 +4,18 @@ services:
     build: .
     container_name: context-simplo
     ports:
-      - "3000:3000"   # Web dashboard
-      - "3001:3001"   # MCP Streamable HTTP endpoint
+      - "3001:3001"   # Web dashboard + API + MCP Streamable HTTP endpoint
     volumes:
-      - ./:/workspace:ro
+      - ${WORKSPACE_PATH:-.}:/workspace:ro
       - simplo-data:/data
     environment:
-      - LLM_PROVIDER=ollama
-      - LLM_BASE_URL=http://host.docker.internal:11434
-      - LLM_EMBEDDING_MODEL=nomic-embed-text
+      - LLM_PROVIDER=none
+      - LLM_BASE_URL=
+      - LLM_EMBEDDING_MODEL=
       - CONTEXT_SIMPLO_AUTO_INDEX=true
       - CONTEXT_SIMPLO_WATCH=true
       - CONTEXT_SIMPLO_LOG_LEVEL=info
+      - NODE_OPTIONS=--max-old-space-size=4096
     extra_hosts:
       - "host.docker.internal:host-gateway"   # Required for Linux, harmless on macOS/Windows
     stdin_open: true

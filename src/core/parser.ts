@@ -25,9 +25,47 @@
 import { readFileSync } from 'fs';
 import { resolve, relative, basename } from 'path';
 import { createHash } from 'crypto';
-import { process as treeSitterProcess, hasLanguage } from '@kreuzberg/tree-sitter-language-pack';
+import {
+  process as treeSitterProcess,
+  hasLanguage,
+  download,
+  detectLanguageFromExtension,
+} from '@kreuzberg/tree-sitter-language-pack';
 import { ParseError } from './errors.js';
 import type { CodeNode, NodeKind, Visibility } from './types.js';
+
+const downloadedLanguages = new Set<string>();
+const downloadInProgress = new Map<string, Promise<void>>();
+
+async function ensureLanguageDownloaded(language: string): Promise<boolean> {
+  if (downloadedLanguages.has(language) && hasLanguage(language)) {
+    return true;
+  }
+
+  if (hasLanguage(language)) {
+    downloadedLanguages.add(language);
+    return true;
+  }
+
+  if (downloadInProgress.has(language)) {
+    await downloadInProgress.get(language);
+    return hasLanguage(language);
+  }
+
+  const downloadPromise = (async () => {
+    try {
+      await download([language]);
+      downloadedLanguages.add(language);
+    } catch (error) {
+      console.warn(`Failed to download tree-sitter grammar for ${language}:`, error);
+    }
+  })();
+
+  downloadInProgress.set(language, downloadPromise);
+  await downloadPromise;
+  downloadInProgress.delete(language);
+  return hasLanguage(language);
+}
 
 export interface ParsedFile {
   nodes: CodeNode[];
@@ -110,9 +148,10 @@ export async function parseFile(
   const hash = createHash('sha256').update(content).digest('hex');
 
   const ext = basename(filePath).split('.').pop() || '';
-  const language = ext;
+  const language = detectLanguageFromExtension(ext) || ext;
 
-  if (!hasLanguage(language)) {
+  const available = await ensureLanguageDownloaded(language);
+  if (!available) {
     return {
       nodes: [],
       imports: [],
@@ -141,155 +180,178 @@ export async function parseFile(
   const inheritance: ParsedInheritance[] = [];
 
   const now = new Date();
+  const lines = content.split('\n');
 
-  // New API returns 'structure' array with type field
-  const structure = (parseResult as any)?.structure || [];
-  
-  for (const item of structure) {
-    if (item.type === 'function') {
-      const nodeId = generateNodeId(relativePath, item.name, item.startLine);
-      nodes.push({
-        id: nodeId,
-        name: item.name,
-        qualifiedName: item.qualifiedName || item.name,
-        kind: 'function',
-        filePath: relativePath,
-        lineStart: item.startLine,
-        lineEnd: item.endLine,
-        columnStart: item.startColumn || 0,
-        columnEnd: item.endColumn || 0,
-        visibility: mapVisibility(item.visibility),
-        isExported: item.isExported || false,
-        docstring: item.docstring,
-        repositoryId,
-        language,
-        createdAt: now,
-        updatedAt: now,
-      });
-
-      if (item.calls) {
-        for (const call of item.calls) {
-          calls.push({
-            callerNodeId: nodeId,
-            calleeName: call.name,
-            calleeQualifiedName: call.qualifiedName,
-            line: call.line,
-          });
-        }
+  const exportedNames = new Set<string>();
+  if (parseResult.exports) {
+    for (const exp of parseResult.exports) {
+      if (exp.name) {
+        const match = exp.name.match(/(?:function|class|interface|const|let|var|type)\s+(\w+)/);
+        if (match) exportedNames.add(match[1]);
       }
-    } else if (item.type === 'class') {
-      const nodeId = generateNodeId(relativePath, item.name, item.startLine);
-      nodes.push({
-        id: nodeId,
-        name: item.name,
-        qualifiedName: item.qualifiedName || item.name,
-        kind: 'class',
-        filePath: relativePath,
-        lineStart: item.startLine,
-        lineEnd: item.endLine,
-        columnStart: item.startColumn || 0,
-        columnEnd: item.endColumn || 0,
-        visibility: mapVisibility(item.visibility),
-        isExported: item.isExported || false,
-        docstring: item.docstring,
-        repositoryId,
-        language,
-        createdAt: now,
-        updatedAt: now,
-      });
+    }
+  }
 
-      if (item.methods) {
-        for (const method of item.methods) {
-          const methodNodeId = generateNodeId(
-            relativePath,
-            `${item.name}.${method.name}`,
-            method.startLine
-          );
-          nodes.push({
-            id: methodNodeId,
-            name: method.name,
-            qualifiedName: `${item.qualifiedName || item.name}.${method.name}`,
-            kind: 'method',
-            filePath: relativePath,
-            lineStart: method.startLine,
-            lineEnd: method.endLine,
-            columnStart: method.startColumn || 0,
-            columnEnd: method.endColumn || 0,
-            visibility: mapVisibility(method.visibility),
-            docstring: method.docstring,
-            repositoryId,
-            language,
-            createdAt: now,
-            updatedAt: now,
-          });
+  const structure = parseResult?.structure || [];
 
-          if (method.calls) {
-            for (const call of method.calls) {
-              calls.push({
-                callerNodeId: methodNodeId,
-                calleeName: call.name,
-                calleeQualifiedName: call.qualifiedName,
-                line: call.line,
-              });
-            }
-          }
-        }
-      }
+  function processStructureItem(
+    item: any,
+    parentName?: string
+  ): void {
+    const kind = item.kind?.toLowerCase() || '';
+    const name = item.name;
+    if (!name) return;
 
-      if (item.extends) {
-        for (const parent of item.extends) {
+    const startLine = item.span?.startLine ?? 0;
+    const endLine = item.span?.endLine ?? startLine;
+    const startCol = item.span?.startColumn ?? 0;
+    const endCol = item.span?.endColumn ?? 0;
+
+    const qualifiedName = parentName ? `${parentName}.${name}` : name;
+    const nodeId = generateNodeId(relativePath, qualifiedName, startLine);
+    const nodeKind = mapNodeKind(kind);
+    const isExported = exportedNames.has(name);
+
+    nodes.push({
+      id: nodeId,
+      name,
+      qualifiedName,
+      kind: nodeKind,
+      filePath: relativePath,
+      lineStart: startLine,
+      lineEnd: endLine,
+      columnStart: startCol,
+      columnEnd: endCol,
+      visibility: mapVisibility(item.visibility),
+      isExported,
+      docstring: item.docstring,
+      repositoryId,
+      language,
+      createdAt: now,
+      updatedAt: now,
+    });
+
+    // Extract inheritance from class/interface declarations
+    if (nodeKind === 'class' || nodeKind === 'interface') {
+      if (item.extends || item.superClass) {
+        const parentClassName = item.extends || item.superClass;
+        if (typeof parentClassName === 'string') {
           inheritance.push({
             childNodeId: nodeId,
-            parentName: parent.name,
-            parentQualifiedName: parent.qualifiedName,
+            parentName: parentClassName,
             kind: 'extends',
           });
         }
       }
-
       if (item.implements) {
-        for (const iface of item.implements) {
+        const impls = Array.isArray(item.implements) ? item.implements : [item.implements];
+        for (const impl of impls) {
+          if (typeof impl === 'string') {
+            inheritance.push({
+              childNodeId: nodeId,
+              parentName: impl,
+              kind: 'implements',
+            });
+          }
+        }
+      }
+
+      // Fallback: parse extends/implements from source text of the declaration line
+      if (!item.extends && !item.superClass && !item.implements && startLine > 0) {
+        const declLine = lines[startLine - 1] || '';
+        const extendsMatch = declLine.match(/\bextends\s+(\w+)/);
+        if (extendsMatch?.[1]) {
           inheritance.push({
             childNodeId: nodeId,
-            parentName: iface.name,
-            parentQualifiedName: iface.qualifiedName,
-            kind: 'implements',
+            parentName: extendsMatch[1],
+            kind: 'extends',
           });
         }
+        const implMatch = declLine.match(/\bimplements\s+([\w\s,]+)/);
+        if (implMatch?.[1]) {
+          for (const implName of implMatch[1].split(',').map(s => s.trim()).filter(Boolean)) {
+            inheritance.push({
+              childNodeId: nodeId,
+              parentName: implName,
+              kind: 'implements',
+            });
+          }
+        }
+      }
+    }
+
+    // Extract function calls from function/method bodies
+    if ((nodeKind === 'function' || nodeKind === 'method') && startLine > 0 && endLine > 0) {
+      const bodyLines = lines.slice(startLine - 1, endLine);
+      const bodyText = bodyLines.join('\n');
+      extractCallsFromBody(bodyText, nodeId, startLine);
+    }
+
+    if (item.children) {
+      for (const child of item.children) {
+        processStructureItem(child, name);
       }
     }
   }
 
-  if (parseResult.imports) {
-    for (const imp of parseResult.imports) {
-      imports.push({
-        source: imp.source,
-        imported: imp.imported || [],
-        isDefault: imp.isDefault || false,
-        line: imp.line,
+  function extractCallsFromBody(body: string, callerNodeId: string, baseLineOffset: number): void {
+    // Match identifier( patterns — function calls
+    const callRegex = /\b([a-zA-Z_$][\w$]*)\s*\(/g;
+    const keywords = new Set([
+      'if', 'for', 'while', 'switch', 'catch', 'return', 'throw',
+      'new', 'typeof', 'instanceof', 'function', 'class', 'import',
+      'export', 'const', 'let', 'var', 'await', 'async', 'yield',
+    ]);
+
+    let match: RegExpExecArray | null;
+    const seen = new Set<string>();
+    while ((match = callRegex.exec(body)) !== null) {
+      const calleeName = match[1];
+      if (!calleeName || keywords.has(calleeName) || seen.has(calleeName)) continue;
+      seen.add(calleeName);
+
+      const linesBefore = body.substring(0, match.index).split('\n');
+      const line = baseLineOffset + linesBefore.length - 1;
+
+      calls.push({
+        callerNodeId,
+        calleeName,
+        line,
+      });
+    }
+
+    // Match member calls: obj.method(
+    const memberCallRegex = /\.([a-zA-Z_$][\w$]*)\s*\(/g;
+    const seenMember = new Set<string>();
+    while ((match = memberCallRegex.exec(body)) !== null) {
+      const calleeName = match[1];
+      if (!calleeName || seenMember.has(calleeName)) continue;
+      seenMember.add(calleeName);
+
+      const linesBefore = body.substring(0, match.index).split('\n');
+      const line = baseLineOffset + linesBefore.length - 1;
+
+      calls.push({
+        callerNodeId,
+        calleeName,
+        line,
       });
     }
   }
 
-  if (parseResult.variables) {
-    for (const variable of parseResult.variables) {
-      const nodeId = generateNodeId(relativePath, variable.name, variable.startLine);
-      nodes.push({
-        id: nodeId,
-        name: variable.name,
-        qualifiedName: variable.qualifiedName || variable.name,
-        kind: variable.isConstant ? 'constant' : 'variable',
-        filePath: relativePath,
-        lineStart: variable.startLine,
-        lineEnd: variable.endLine,
-        columnStart: variable.startColumn,
-        columnEnd: variable.endColumn,
-        visibility: mapVisibility(variable.visibility),
-        isExported: variable.isExported,
-        repositoryId,
-        language,
-        createdAt: now,
-        updatedAt: now,
+  for (const item of structure) {
+    processStructureItem(item);
+  }
+
+  if (parseResult.imports) {
+    for (const imp of parseResult.imports) {
+      const rawSource: string = imp.source || imp.module || imp.name || '';
+      const parsed = parseImportStatement(rawSource);
+      imports.push({
+        source: parsed.modulePath || rawSource,
+        imported: parsed.names.length > 0 ? parsed.names : (imp.names || imp.imported || []),
+        isDefault: parsed.isDefault || imp.isDefault || false,
+        line: imp.span?.startLine ?? imp.span?.startRow ?? imp.line ?? 0,
       });
     }
   }
@@ -324,17 +386,43 @@ export function getSupportedLanguages(): string[] {
   ];
 }
 
-export function isLanguageSupported(language: string): boolean {
-  // Map common language names to tree-sitter language identifiers
-  const languageMap: Record<string, string> = {
-    'typescript': 'ts',
-    'javascript': 'js',
-    'python': 'py',
-    'rust': 'rs',
-    'golang': 'go',
-    'csharp': 'cs',
-  };
-  
-  const mappedLang = languageMap[language.toLowerCase()] || language.toLowerCase();
-  return hasLanguage(mappedLang);
+function parseImportStatement(raw: string): { modulePath: string; names: string[]; isDefault: boolean } {
+  const fromMatch = raw.match(/from\s+['"]([^'"]+)['"]/);
+  const modulePath = fromMatch?.[1] ?? '';
+
+  const names: string[] = [];
+  let isDefault = false;
+
+  const braceMatch = raw.match(/\{\s*([^}]+)\s*\}/);
+  if (braceMatch?.[1]) {
+    for (const part of braceMatch[1].split(',')) {
+      const trimmed = part.trim();
+      if (!trimmed) continue;
+      const asMatch = trimmed.match(/(\w+)\s+as\s+(\w+)/);
+      names.push(asMatch?.[2] ?? trimmed);
+    }
+  }
+
+  const defaultMatch = raw.match(/import\s+(\w+)\s+from/);
+  if (defaultMatch?.[1]) {
+    names.push(defaultMatch[1]);
+    isDefault = true;
+  }
+
+  const wildcardMatch = raw.match(/\*\s+as\s+(\w+)/);
+  if (wildcardMatch?.[1]) {
+    names.push(wildcardMatch[1]);
+  }
+
+  if (!modulePath) {
+    const requireMatch = raw.match(/require\s*\(\s*['"]([^'"]+)['"]\s*\)/);
+    if (requireMatch?.[1]) return { modulePath: requireMatch[1], names, isDefault };
+  }
+
+  return { modulePath, names, isDefault };
+}
+
+export async function isLanguageSupported(language: string): Promise<boolean> {
+  const resolved = detectLanguageFromExtension(language) || language.toLowerCase();
+  return ensureLanguageDownloaded(resolved);
 }

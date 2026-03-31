@@ -1,0 +1,36 @@
+/* Search Page Styles */
+
+.search-hero-glow {
+  position: absolute;
+  inset: 0;
+  background: rgba(0, 72, 226, 0.05);
+  border-radius: 0.75rem;
+  filter: blur(2rem);
+  transition: all 0.3s ease;
+}
+
+.search-hero-glow.focused {
+  background: rgba(0, 72, 226, 0.1);
+}
+
+.search-result-card {
+  transition: all 0.3s ease;
+}
+
+.search-result-card:hover {
+  box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.05), 0 10px 10px -5px rgba(0, 0, 0, 0.04);
+}
+
+.code-block {
+  font-family: 'JetBrains Mono', 'Fira Code', 'Courier New', monospace;
+  font-size: 0.8125rem;
+  line-height: 1.5;
+}
+
+.filter-item {
+  transition: background-color 0.2s ease;
+}
+
+.filter-item:hover {
+  background-color: var(--surface-container-low);
+}

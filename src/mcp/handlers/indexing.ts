@@ -17,6 +17,8 @@ import type { Indexer } from '../../core/indexer.js';
 import type { SymbolicSearch } from '../../search/symbolic.js';
 import type { VectorSearch } from '../../search/vector.js';
 import type { HybridSearch } from '../../search/hybrid.js';
+import type { FileWatcher } from '../../core/watcher.js';
+import type { LanceDBVectorStore } from '../../store/lance.js';
 
 export interface HandlerContext {
   storage: StorageProvider;
@@ -26,6 +28,8 @@ export interface HandlerContext {
   vectorSearch?: VectorSearch;
   hybridSearch?: HybridSearch;
   workspaceRoot: string;
+  watcher?: FileWatcher;
+  vectorStore?: LanceDBVectorStore;
 }
 
 export async function indexRepository(
@@ -56,24 +60,63 @@ export async function indexRepository(
 
 export async function watchDirectory(
   args: Record<string, unknown>,
-  _context: HandlerContext
+  context: HandlerContext
 ): Promise<unknown> {
   const input = WatchDirectoryInputSchema.parse(args);
 
+  if (!context.watcher) {
+    return {
+      success: false,
+      message: 'File watcher is not available',
+      path: input.path,
+      watching: false,
+    };
+  }
+
+  const repos = context.storage.listRepositories();
+  const repo = repos.find(r => r.path === input.path || r.path.endsWith(input.path));
+
+  const repositoryId = repo?.id || 'default-repo';
+  context.watcher.watch(input.path, repositoryId);
+
+  if (repo) {
+    context.storage.updateRepositoryWatchStatus(repo.id, true);
+  }
+
   return {
-    message: `File watching for ${input.path} will be implemented in Phase 5`,
+    success: true,
+    message: `Now watching ${input.path} for changes`,
     path: input.path,
-    watching: false,
+    repositoryId,
+    watching: true,
   };
 }
 
 export async function unwatchDirectory(
   args: Record<string, unknown>,
-  _context: HandlerContext
+  context: HandlerContext
 ): Promise<unknown> {
   const input = UnwatchDirectoryInputSchema.parse(args);
 
+  if (!context.watcher) {
+    return {
+      success: false,
+      message: 'File watcher is not available',
+      path: input.path,
+      watching: false,
+    };
+  }
+
+  context.watcher.unwatch(input.path);
+
+  const repos = context.storage.listRepositories();
+  const repo = repos.find(r => r.path === input.path || r.path.endsWith(input.path));
+  if (repo) {
+    context.storage.updateRepositoryWatchStatus(repo.id, false);
+  }
+
   return {
+    success: true,
     message: `Stopped watching ${input.path}`,
     path: input.path,
     watching: false,
@@ -123,6 +166,26 @@ export async function deleteRepository(
     context.storage.deleteFilesInRepository(input.repositoryId);
     context.storage.deleteRepository(input.repositoryId);
   });
+
+  context.graph.getAllNodes({ repositoryId: input.repositoryId }).forEach(node => {
+    context.graph.removeNode(node.id);
+  });
+
+  if (context.vectorStore) {
+    try {
+      await context.vectorStore.deleteRepository(input.repositoryId);
+    } catch (err) {
+      console.warn(`Failed to clean up LanceDB for repo ${input.repositoryId}:`, err);
+    }
+  }
+
+  if (context.watcher && repo.isWatched) {
+    try {
+      context.watcher.unwatch(repo.path);
+    } catch {
+      // watcher may not be watching this path
+    }
+  }
 
   return {
     success: true,

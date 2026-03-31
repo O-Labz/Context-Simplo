@@ -1,0 +1,322 @@
+<!DOCTYPE html>
+
+<html class="light" lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>Simplo - Indexed Repositories</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script id="tailwind-config">
+        tailwind.config = {
+          darkMode: "class",
+          theme: {
+            extend: {
+              colors: {
+                "error": "#9e3f4e",
+                "on-error": "#fff7f7",
+                "inverse-on-surface": "#9a9d9f",
+                "surface-bright": "#f7f9fb",
+                "on-tertiary": "#edeeff",
+                "on-tertiary-container": "#ffffff",
+                "outline": "#717c82",
+                "error-dim": "#4f0116",
+                "secondary-container": "#d5e3fc",
+                "secondary-fixed-dim": "#c7d5ed",
+                "secondary-dim": "#465468",
+                "surface-container-low": "#f0f4f7",
+                "outline-variant": "#a9b4b9",
+                "on-primary": "#f7f7ff",
+                "primary-dim": "#4a5268",
+                "on-error-container": "#782232",
+                "tertiary-dim": "#0042d3",
+                "on-surface": "#2a3439",
+                "secondary": "#526074",
+                "on-secondary": "#f8f8ff",
+                "inverse-surface": "#0b0f10",
+                "tertiary": "#0048e2",
+                "surface-variant": "#d9e4ea",
+                "on-tertiary-fixed-variant": "#c5cfff",
+                "surface-container-lowest": "#ffffff",
+                "primary-container": "#dae2fd",
+                "on-tertiary-fixed": "#ffffff",
+                "on-secondary-fixed-variant": "#4e5c71",
+                "on-primary-fixed-variant": "#535b71",
+                "inverse-primary": "#dae2fd",
+                "surface-dim": "#cfdce3",
+                "surface-container-highest": "#d9e4ea",
+                "primary-fixed": "#dae2fd",
+                "tertiary-fixed": "#0052fe",
+                "on-background": "#2a3439",
+                "primary-fixed-dim": "#ccd4ee",
+                "error-container": "#ff8b9a",
+                "secondary-fixed": "#d5e3fc",
+                "surface-tint": "#565e74",
+                "surface": "#f7f9fb",
+                "on-secondary-fixed": "#324053",
+                "on-secondary-container": "#455367",
+                "primary": "#565e74",
+                "on-surface-variant": "#566166",
+                "on-primary-fixed": "#373f54",
+                "tertiary-fixed-dim": "#0048e2",
+                "tertiary-container": "#0052fe",
+                "on-primary-container": "#4a5167",
+                "surface-container-high": "#e1e9ee",
+                "background": "#f7f9fb",
+                "surface-container": "#e8eff3"
+              },
+              fontFamily: {
+                "headline": ["Inter"],
+                "body": ["Inter"],
+                "label": ["Inter"]
+              },
+              borderRadius: {"DEFAULT": "0.125rem", "lg": "0.25rem", "xl": "0.5rem", "full": "0.75rem"},
+            },
+          },
+        }
+      </script>
+<style>
+        .material-symbols-outlined {
+          font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+          vertical-align: middle;
+        }
+        .glass-panel {
+          background: rgba(247, 249, 251, 0.7);
+          backdrop-filter: blur(24px);
+          -webkit-backdrop-filter: blur(24px);
+        }
+        .primary-gradient {
+            background: linear-gradient(145deg, #0048e2 0%, #0042d3 100%);
+        }
+      </style>
+</head>
+<body class="bg-surface font-body text-on-surface antialiased">
+<!-- Top Navigation Bar -->
+<header class="bg-[#f7f9fb] dark:bg-slate-900 flex justify-between items-center w-full px-8 h-16 max-w-full mx-auto fixed top-0 z-50">
+<div class="flex items-center gap-12">
+<div class="text-xl font-bold tracking-tighter text-[#565e74] dark:text-slate-200">Simplo</div>
+<nav class="hidden md:flex items-center gap-8 h-16">
+<a class="text-[#0048e2] dark:text-blue-400 border-b-2 border-[#0048e2] dark:border-blue-400 pb-1 font-['Inter'] text-[0.875rem] font-normal" href="#">Repositories</a>
+<a class="text-[#565e74] dark:text-slate-400 hover:text-[#0048e2] transition-colors font-['Inter'] text-[0.875rem] font-normal" href="#">Search</a>
+<a class="text-[#565e74] dark:text-slate-400 hover:text-[#0048e2] transition-colors font-['Inter'] text-[0.875rem] font-normal" href="#">Explorer</a>
+<a class="text-[#565e74] dark:text-slate-400 hover:text-[#0048e2] transition-colors font-['Inter'] text-[0.875rem] font-normal" href="#">MCP Setup</a>
+<a class="text-[#565e74] dark:text-slate-400 hover:text-[#0048e2] transition-colors font-['Inter'] text-[0.875rem] font-normal" href="#">Metrics</a>
+</nav>
+</div>
+<div class="flex items-center gap-4">
+<div class="bg-surface-container-low px-4 py-2 rounded-xl flex items-center gap-3">
+<span class="material-symbols-outlined text-on-surface-variant text-[20px]">search</span>
+<input class="bg-transparent border-none focus:ring-0 text-[0.875rem] w-48 text-on-surface-variant" placeholder="Quick search..." type="text"/>
+</div>
+<button class="p-2 hover:bg-[#f0f4f7] dark:hover:bg-slate-800 transition-all duration-200 rounded-lg">
+<span class="material-symbols-outlined text-[#565e74]">settings</span>
+</button>
+<button class="p-2 hover:bg-[#f0f4f7] dark:hover:bg-slate-800 transition-all duration-200 rounded-lg">
+<span class="material-symbols-outlined text-[#565e74]">account_circle</span>
+</button>
+</div>
+</header>
+<!-- Main Content Canvas -->
+<main class="pt-24 pb-12 px-8 max-w-[1400px] mx-auto">
+<!-- Hero Header Section -->
+<section class="mb-12 flex flex-col md:flex-row md:items-end justify-between gap-6">
+<div class="max-w-2xl">
+<nav class="mb-4">
+<span class="text-[0.6875rem] font-semibold uppercase tracking-wider text-outline">Organization</span>
+<span class="mx-2 text-outline">/</span>
+<span class="text-[0.6875rem] font-semibold uppercase tracking-wider text-tertiary">Indexed Repositories</span>
+</nav>
+<h1 class="text-[2rem] font-bold text-on-surface tracking-tight leading-none mb-4">Code Intelligence Assets</h1>
+<p class="text-on-surface-variant text-[0.875rem] leading-relaxed">
+                    View and manage your indexed workspace repositories. Our semantic engine creates a multidimensional graph of your codebase, mapping nodes and functional edges for advanced AI context.
+                </p>
+</div>
+<div class="flex gap-3">
+<button class="px-6 py-3 bg-surface-container-highest text-on-surface font-semibold text-[0.875rem] rounded-xl hover:bg-surface-dim transition-all">
+                    Export Graph
+                </button>
+<button class="px-6 py-3 primary-gradient text-white font-semibold text-[0.875rem] rounded-xl shadow-lg shadow-tertiary/10 active:scale-95 transition-all flex items-center gap-2">
+<span class="material-symbols-outlined text-[18px]">add</span>
+                    New Repository
+                </button>
+</div>
+</section>
+<!-- Bento Grid Layout for Repositories -->
+<div class="grid grid-cols-1 md:grid-cols-12 gap-6">
+<!-- Repository Card 1 (Large Featured) -->
+<div class="md:col-span-8 bg-surface-container-lowest p-8 rounded-xl flex flex-col justify-between group relative overflow-hidden">
+<div class="absolute top-0 right-0 w-64 h-64 bg-primary/5 rounded-full -mr-20 -mt-20 blur-3xl group-hover:bg-tertiary/5 transition-all duration-500"></div>
+<div class="relative">
+<div class="flex items-center gap-3 mb-6">
+<div class="w-12 h-12 bg-primary-container flex items-center justify-center rounded-xl">
+<span class="material-symbols-outlined text-on-primary-container">folder_open</span>
+</div>
+<div>
+<h3 class="text-xl font-bold text-on-surface">simplo-workspace-core</h3>
+<div class="flex items-center gap-2">
+<span class="w-2 h-2 rounded-full bg-emerald-500"></span>
+<span class="text-[0.6875rem] font-semibold uppercase tracking-wider text-on-surface-variant">Active Sync</span>
+</div>
+</div>
+</div>
+<div class="grid grid-cols-2 md:grid-cols-4 gap-8 mb-8">
+<div>
+<span class="text-[0.6875rem] font-semibold uppercase tracking-wider text-outline block mb-1">Files</span>
+<span class="text-2xl font-bold text-on-surface">1,284</span>
+</div>
+<div>
+<span class="text-[0.6875rem] font-semibold uppercase tracking-wider text-outline block mb-1">Nodes</span>
+<span class="text-2xl font-bold text-on-surface">42.8k</span>
+</div>
+<div>
+<span class="text-[0.6875rem] font-semibold uppercase tracking-wider text-outline block mb-1">Edges</span>
+<span class="text-2xl font-bold text-on-surface">156.2k</span>
+</div>
+<div>
+<span class="text-[0.6875rem] font-semibold uppercase tracking-wider text-outline block mb-1">Coverage</span>
+<span class="text-2xl font-bold text-on-surface">94%</span>
+</div>
+</div>
+</div>
+<div class="flex items-center justify-between pt-6 border-t border-surface-container-low">
+<div class="flex items-center gap-2 text-on-surface-variant">
+<span class="material-symbols-outlined text-[18px]">history</span>
+<span class="text-[0.875rem]">Last indexed 2 hours ago</span>
+</div>
+<div class="flex gap-2">
+<button class="p-2 rounded-lg hover:bg-surface-container-low text-tertiary transition-colors" title="Reindex">
+<span class="material-symbols-outlined">refresh</span>
+</button>
+<button class="p-2 rounded-lg hover:bg-surface-container-low text-on-surface-variant transition-colors" title="View Graph">
+<span class="material-symbols-outlined">visibility</span>
+</button>
+<button class="p-2 rounded-lg hover:bg-error/10 text-error transition-colors" title="Delete Index">
+<span class="material-symbols-outlined">delete</span>
+</button>
+</div>
+</div>
+</div>
+<!-- Stats/Summary Card -->
+<div class="md:col-span-4 bg-surface-container-low p-8 rounded-xl flex flex-col">
+<h4 class="text-[0.6875rem] font-semibold uppercase tracking-wider text-outline mb-6">Semantic Health</h4>
+<div class="flex-grow flex flex-col justify-center gap-6">
+<div class="h-32 w-full relative">
+<div class="absolute inset-0 flex items-end gap-1">
+<div class="flex-1 bg-tertiary/20 rounded-t-sm h-[40%]"></div>
+<div class="flex-1 bg-tertiary/20 rounded-t-sm h-[60%]"></div>
+<div class="flex-1 bg-tertiary/20 rounded-t-sm h-[55%]"></div>
+<div class="flex-1 bg-tertiary/20 rounded-t-sm h-[80%]"></div>
+<div class="flex-1 bg-tertiary/20 rounded-t-sm h-[75%]"></div>
+<div class="flex-1 bg-tertiary/20 rounded-t-sm h-[90%]"></div>
+<div class="flex-1 bg-tertiary rounded-t-sm h-[100%]"></div>
+</div>
+</div>
+<div>
+<div class="flex justify-between items-center mb-2">
+<span class="text-[0.875rem] font-semibold">Overall Index Accuracy</span>
+<span class="text-[0.875rem] font-bold text-tertiary">98.2%</span>
+</div>
+<div class="w-full bg-surface-container-highest h-2 rounded-full overflow-hidden">
+<div class="bg-tertiary h-full w-[98.2%]"></div>
+</div>
+</div>
+<p class="text-[0.6875rem] text-on-surface-variant leading-tight">
+                        Based on cross-reference validation across 4 active repositories. Memory usage optimized for current compute cluster.
+                    </p>
+</div>
+</div>
+<!-- Repository Card 2 (Standard) -->
+<div class="md:col-span-4 bg-surface-container-lowest p-6 rounded-xl border border-transparent hover:border-outline-variant/20 transition-all group">
+<div class="flex items-center justify-between mb-4">
+<div class="w-10 h-10 bg-secondary-container flex items-center justify-center rounded-lg">
+<span class="material-symbols-outlined text-on-secondary-container">inventory_2</span>
+</div>
+<span class="text-[0.6875rem] font-semibold px-2 py-1 bg-surface-container-low rounded uppercase tracking-wider text-on-surface-variant">Archived</span>
+</div>
+<h3 class="text-lg font-bold text-on-surface mb-1">legacy-auth-service</h3>
+<span class="text-[0.6875rem] text-outline block mb-6">Updated Mar 12, 2024</span>
+<div class="flex gap-6 mb-6">
+<div>
+<span class="text-[0.6875rem] font-semibold text-outline block">Files</span>
+<span class="text-md font-bold text-on-surface">342</span>
+</div>
+<div>
+<span class="text-[0.6875rem] font-semibold text-outline block">Nodes</span>
+<span class="text-md font-bold text-on-surface">8.1k</span>
+</div>
+</div>
+<div class="flex gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+<button class="flex-1 py-2 bg-surface-container-low text-on-surface text-[0.875rem] font-semibold rounded-lg hover:bg-surface-container-high">View</button>
+<button class="p-2 text-error hover:bg-error/10 rounded-lg">
+<span class="material-symbols-outlined">delete</span>
+</button>
+</div>
+</div>
+<!-- Repository Card 3 (Standard) -->
+<div class="md:col-span-4 bg-surface-container-lowest p-6 rounded-xl border border-transparent hover:border-outline-variant/20 transition-all group">
+<div class="flex items-center justify-between mb-4">
+<div class="w-10 h-10 bg-primary-container flex items-center justify-center rounded-lg">
+<span class="material-symbols-outlined text-on-primary-container">database</span>
+</div>
+<span class="text-[0.6875rem] font-semibold px-2 py-1 bg-emerald-100 text-emerald-700 rounded uppercase tracking-wider">Indexed</span>
+</div>
+<h3 class="text-lg font-bold text-on-surface mb-1">data-pipeline-v3</h3>
+<span class="text-[0.6875rem] text-outline block mb-6">Updated 4 mins ago</span>
+<div class="flex gap-6 mb-6">
+<div>
+<span class="text-[0.6875rem] font-semibold text-outline block">Files</span>
+<span class="text-md font-bold text-on-surface">891</span>
+</div>
+<div>
+<span class="text-[0.6875rem] font-semibold text-outline block">Nodes</span>
+<span class="text-md font-bold text-on-surface">22.4k</span>
+</div>
+</div>
+<div class="flex gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+<button class="flex-1 py-2 bg-surface-container-low text-on-surface text-[0.875rem] font-semibold rounded-lg hover:bg-surface-container-high">View</button>
+<button class="p-2 text-error hover:bg-error/10 rounded-lg">
+<span class="material-symbols-outlined">delete</span>
+</button>
+</div>
+</div>
+<!-- Repository Card 4 (Standard) -->
+<div class="md:col-span-4 bg-surface-container-lowest p-6 rounded-xl border border-transparent hover:border-outline-variant/20 transition-all group">
+<div class="flex items-center justify-between mb-4">
+<div class="w-10 h-10 bg-primary-container flex items-center justify-center rounded-lg">
+<span class="material-symbols-outlined text-on-primary-container">terminal</span>
+</div>
+<span class="text-[0.6875rem] font-semibold px-2 py-1 bg-amber-100 text-amber-700 rounded uppercase tracking-wider">In Progress</span>
+</div>
+<h3 class="text-lg font-bold text-on-surface mb-1">cli-tool-go</h3>
+<span class="text-[0.6875rem] text-outline block mb-6">Indexing... 65%</span>
+<div class="flex gap-6 mb-6">
+<div>
+<span class="text-[0.6875rem] font-semibold text-outline block">Files</span>
+<span class="text-md font-bold text-on-surface">112</span>
+</div>
+<div>
+<span class="text-[0.6875rem] font-semibold text-outline block">Nodes</span>
+<span class="text-md font-bold text-on-surface">3.2k</span>
+</div>
+</div>
+<div class="flex gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+<button class="flex-1 py-2 bg-surface-container-low text-on-surface text-[0.875rem] font-semibold rounded-lg hover:bg-surface-container-high">View</button>
+<button class="p-2 text-error hover:bg-error/10 rounded-lg">
+<span class="material-symbols-outlined">delete</span>
+</button>
+</div>
+</div>
+</div>
+<!-- System Alerts / Status -->
+<div class="mt-8 bg-surface-container p-4 rounded-xl flex items-center gap-4">
+<span class="material-symbols-outlined text-tertiary">info</span>
+<p class="text-[0.875rem] text-on-surface-variant">
+                Indexed data is stored locally in your workspace. Large repositories (10k+ files) may take several minutes to generate a full functional map.
+                <a class="text-tertiary font-semibold hover:underline ml-1" href="#">Learn more about Graph Intelligence</a>
+</p>
+</div>
+</main>
+<!-- Visual Floating Decorations -->
+<div class="fixed bottom-0 left-0 w-full h-1/4 pointer-events-none opacity-40 bg-gradient-to-t from-surface-variant to-transparent"></div>
+</body></html>

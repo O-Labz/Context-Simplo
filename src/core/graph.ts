@@ -53,17 +53,32 @@ export class CodeGraph {
   private nameIndex: Map<string, Set<string>>;
   private fileIndex: Map<string, Set<string>>;
   private centralityCache: Map<string, number> | null = null;
+  private memoryLimitBytes: number;
 
-  constructor() {
+  constructor(memoryLimitMb: number = 512) {
     this.graph = new DirectedGraph();
     this.nameIndex = new Map();
     this.fileIndex = new Map();
+    this.memoryLimitBytes = memoryLimitMb * 1024 * 1024;
+  }
+
+  private checkMemoryLimit(): void {
+    if (this.memoryLimitBytes <= 0) return;
+    const footprint = this.getMemoryFootprint();
+    if (footprint > this.memoryLimitBytes) {
+      throw new GraphError(
+        'addNode',
+        `Graph memory limit exceeded: ${Math.round(footprint / 1024 / 1024)}MB > ${Math.round(this.memoryLimitBytes / 1024 / 1024)}MB limit. ` +
+        'Increase GRAPH_MEMORY_LIMIT_MB or reduce repository size.'
+      );
+    }
   }
 
   addNode(node: CodeNode): void {
     if (this.graph.hasNode(node.id)) {
       this.graph.updateNode(node.id, () => node);
     } else {
+      this.checkMemoryLimit();
       this.graph.addNode(node.id, node);
     }
 

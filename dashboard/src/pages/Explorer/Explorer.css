@@ -1,0 +1,69 @@
+/* Explorer Page Styles */
+
+.explorer-container {
+  height: calc(100vh - 4rem);
+}
+
+.graph-mesh-bg {
+  background-image: radial-gradient(var(--surface-container-highest) 1px, transparent 1px);
+  background-size: 32px 32px;
+}
+
+.tool-button {
+  transition: all 0.2s ease;
+}
+
+.tool-button:hover {
+  background-color: var(--surface-container-low);
+}
+
+.tool-button.active {
+  background-color: var(--tertiary);
+  color: white;
+}
+
+.glass-panel {
+  background: rgba(247, 249, 251, 0.7);
+  backdrop-filter: blur(24px);
+  -webkit-backdrop-filter: blur(24px);
+}
+
+.details-panel {
+  max-height: calc(100vh - 12rem);
+  overflow-y: auto;
+}
+
+.details-panel::-webkit-scrollbar {
+  width: 6px;
+}
+
+.details-panel::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.details-panel::-webkit-scrollbar-thumb {
+  background: var(--outline-variant);
+  border-radius: 3px;
+}
+
+.details-panel::-webkit-scrollbar-thumb:hover {
+  background: var(--outline);
+}
+
+.status-bar {
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+}
+
+.pulse-indicator {
+  animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+}
+
+@keyframes pulse {
+  0%, 100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.5;
+  }
+}

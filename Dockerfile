@@ -24,12 +24,13 @@ COPY tsconfig*.json ./
 COPY src ./src
 RUN npm run build
 
-# Build dashboard
-COPY dashboard/package*.json ./dashboard/
-RUN cd dashboard && npm ci
+# Copy SQL migration files (not copied by TypeScript compiler)
+RUN mkdir -p dist/store/migrations
+COPY src/store/migrations/*.sql dist/store/migrations/ 2>/dev/null || true
 
+# Build dashboard
 COPY dashboard ./dashboard
-RUN cd dashboard && npm run build
+RUN cd dashboard && npm ci && npm run build
 
 # Production stage
 FROM node:22-slim
@@ -48,6 +49,9 @@ COPY --from=builder /app/node_modules ./node_modules
 COPY --from=builder /app/package.json ./
 COPY .contextignore.default ./
 
+# Copy MCP template files
+COPY templates ./templates
+
 # Create data and workspace directories
 RUN mkdir -p /data /workspace
 
@@ -56,12 +60,12 @@ ENV NODE_ENV=production
 ENV DATA_DIR=/data
 ENV WORKSPACE_ROOT=/workspace
 
-# Expose ports
-EXPOSE 3000 3001
+# Expose port
+EXPOSE 3001
 
 # Health check
 HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
-  CMD curl -f http://localhost:3001/health || exit 1
+  CMD curl -f http://localhost:3001/api/health || exit 1
 
 # Volume mounts
 VOLUME ["/workspace", "/data"]

@@ -25,7 +25,9 @@
 
 import chokidar, { type FSWatcher } from 'chokidar';
 import { EventEmitter } from 'events';
+import { relative, resolve } from 'path';
 import type { Indexer } from './indexer.js';
+import { ContextIgnore } from '../security/ignore.js';
 
 export interface WatcherOptions {
   debounceMs?: number;
@@ -34,22 +36,25 @@ export interface WatcherOptions {
 
 export class FileWatcher extends EventEmitter {
   private watchers: Map<string, FSWatcher> = new Map();
+  private watcherRepoIds: Map<string, string> = new Map();
   private indexer: Indexer;
   private debounceMs: number;
-  private ignorePatterns: string[];
   private pendingChanges: Map<string, NodeJS.Timeout> = new Map();
+  private contextIgnoreCache: Map<string, ContextIgnore> = new Map();
 
   constructor(indexer: Indexer, options: WatcherOptions = {}) {
     super();
     this.indexer = indexer;
     this.debounceMs = options.debounceMs || 200;
-    this.ignorePatterns = options.ignorePatterns || [
-      '**/node_modules/**',
-      '**/.git/**',
-      '**/dist/**',
-      '**/build/**',
-      '**/*.min.js',
-    ];
+  }
+
+  private getContextIgnore(dirPath: string): ContextIgnore {
+    let ci = this.contextIgnoreCache.get(dirPath);
+    if (!ci) {
+      ci = new ContextIgnore(dirPath);
+      this.contextIgnoreCache.set(dirPath, ci);
+    }
+    return ci;
   }
 
   watch(dirPath: string, repositoryId: string): void {
@@ -57,8 +62,14 @@ export class FileWatcher extends EventEmitter {
       return;
     }
 
+    const contextIgnore = this.getContextIgnore(dirPath);
+
     const watcher = chokidar.watch(dirPath, {
-      ignored: this.ignorePatterns,
+      ignored: (filePath: string) => {
+        const rel = relative(dirPath, filePath);
+        if (!rel || rel === '.') return false;
+        return contextIgnore.shouldIgnore(rel);
+      },
       persistent: true,
       ignoreInitial: true,
       awaitWriteFinish: {
@@ -67,12 +78,13 @@ export class FileWatcher extends EventEmitter {
       },
     });
 
-    watcher.on('add', (path) => this.handleChange(path, repositoryId, 'add'));
-    watcher.on('change', (path) => this.handleChange(path, repositoryId, 'change'));
-    watcher.on('unlink', (path) => this.handleDelete(path, repositoryId));
+    watcher.on('add', (path) => this.handleChange(path, repositoryId, dirPath, 'add'));
+    watcher.on('change', (path) => this.handleChange(path, repositoryId, dirPath, 'change'));
+    watcher.on('unlink', (path) => this.handleDelete(path, repositoryId, dirPath));
     watcher.on('error', (error) => this.emit('error', error));
 
     this.watchers.set(dirPath, watcher);
+    this.watcherRepoIds.set(dirPath, repositoryId);
     this.emit('watching', dirPath);
   }
 
@@ -81,12 +93,19 @@ export class FileWatcher extends EventEmitter {
     if (watcher) {
       watcher.close();
       this.watchers.delete(dirPath);
+      this.watcherRepoIds.delete(dirPath);
+      this.contextIgnoreCache.delete(dirPath);
       this.emit('unwatched', dirPath);
     }
   }
 
-  private handleChange(filePath: string, repositoryId: string, changeType: string): void {
-    this.emit('change', filePath, changeType);
+  private toRelativePath(absolutePath: string, watchRoot: string): string {
+    return relative(watchRoot, resolve(absolutePath));
+  }
+
+  private handleChange(filePath: string, repositoryId: string, watchRoot: string, changeType: string): void {
+    const relativePath = this.toRelativePath(filePath, watchRoot);
+    this.emit('change', relativePath, changeType);
 
     const existing = this.pendingChanges.get(filePath);
     if (existing) {
@@ -101,8 +120,9 @@ export class FileWatcher extends EventEmitter {
     this.pendingChanges.set(filePath, timeout);
   }
 
-  private handleDelete(filePath: string, _repositoryId: string): void {
-    this.emit('delete', filePath);
+  private handleDelete(filePath: string, _repositoryId: string, watchRoot: string): void {
+    const relativePath = this.toRelativePath(filePath, watchRoot);
+    this.emit('delete', relativePath);
 
     const existing = this.pendingChanges.get(filePath);
     if (existing) {
@@ -111,19 +131,28 @@ export class FileWatcher extends EventEmitter {
     }
 
     this.indexer.storage.transaction(() => {
-      this.indexer.graph.removeNodesInFile(filePath);
-      this.indexer.storage.deleteNodesInFile(filePath);
-      this.indexer.storage.deleteFile(filePath);
+      this.indexer.graph.removeNodesInFile(relativePath);
+      this.indexer.storage.deleteNodesInFile(relativePath);
+      this.indexer.storage.deleteFile(relativePath);
     });
 
-    this.emit('reindexed', filePath, 0);
+    this.emit('reindexed', relativePath, 0);
   }
 
   private async reindexFile(filePath: string, repositoryId: string): Promise<void> {
     try {
+      const repos = this.indexer.storage.listRepositories();
+      const repoExists = repos.some((r) => r.id === repositoryId);
+      
+      if (!repoExists) {
+        console.warn(`Repository ${repositoryId} no longer exists, skipping reindex of ${filePath}`);
+        return;
+      }
+
       await this.indexer.indexFile(filePath, repositoryId, true);
       this.emit('reindexed', filePath, 1);
     } catch (error) {
+      console.error(`Failed to reindex ${filePath}:`, error);
       this.emit('error', error);
     }
   }

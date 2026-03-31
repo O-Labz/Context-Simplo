@@ -28,7 +28,7 @@
  */
 
 import { readdir, stat, readFile } from 'fs/promises';
-import { resolve, relative, basename } from 'path';
+import { resolve, relative, basename, dirname, join } from 'path';
 import { createHash } from 'crypto';
 import { parseFile } from './parser.js';
 import type { CodeGraph } from './graph.js';
@@ -373,6 +373,47 @@ export class Indexer extends EventEmitter {
             sourceId: inheritance.childNodeId,
             targetId: parent.id,
             kind: inheritance.kind,
+            confidence: 1.0,
+            repositoryId,
+            createdAt: now,
+            updatedAt: now,
+          });
+        }
+      }
+    }
+
+    for (const imp of parsed.imports) {
+      if (!imp.source || !imp.source.startsWith('.')) continue;
+
+      const importDir = dirname(parsed.filePath);
+      const resolvedBase = join(importDir, imp.source).replace(/\\/g, '/');
+      const extensions = ['', '.ts', '.tsx', '.js', '.jsx', '/index.ts', '/index.tsx', '/index.js'];
+
+      for (const importedName of imp.imported) {
+        const targetNodes = this.graph.findByName(importedName);
+        for (const target of targetNodes) {
+          if (target.repositoryId !== repositoryId) continue;
+          if (target.filePath === parsed.filePath) continue;
+
+          const targetFileBase = target.filePath.replace(/\.(ts|tsx|js|jsx)$/, '').replace(/\/index$/, '');
+          const matchesPath = extensions.some(ext => {
+            const candidate = resolvedBase + ext;
+            return target.filePath === candidate || targetFileBase === resolvedBase;
+          });
+
+          if (!matchesPath) continue;
+
+          const sourceNode = parsed.nodes.find(n =>
+            n.kind === 'function' || n.kind === 'class' || n.kind === 'method'
+          ) || parsed.nodes[0];
+
+          if (!sourceNode) continue;
+
+          edges.push({
+            id: this.generateEdgeId(sourceNode.id, target.id, 'imports'),
+            sourceId: sourceNode.id,
+            targetId: target.id,
+            kind: 'imports',
             confidence: 1.0,
             repositoryId,
             createdAt: now,
