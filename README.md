@@ -13,13 +13,23 @@ Context-Simplo is a production-ready MCP (Model Context Protocol) server that au
 
 ## Quickstart (Docker)
 
+**Important**: Context-Simplo does NOT include embedded AI models. You must provide an external embedding service for semantic search. Choose one of the options below:
+
+### Option 1: Local AI (Ollama) - Recommended for Privacy
+
+Run Ollama locally on your machine for free, private embeddings:
+
 ```bash
-# 1. Pull the image
+# 1. Install and run Ollama (if not already installed)
+# Visit https://ollama.ai or use: brew install ollama
+ollama pull nomic-embed-text
+
+# 2. Pull the Context-Simplo image
 docker pull ohopson/context-simplo:latest
 # or for development version
 docker pull ohopson/context-simplo:dev
 
-# 2. Run with your project mounted
+# 3. Run with Ollama connection
 docker run -d \
   --name context-simplo \
   -p 3000:3000 -p 3001:3001 \
@@ -27,6 +37,33 @@ docker run -d \
   -v context-simplo-data:/data \
   -e LLM_PROVIDER=ollama \
   -e LLM_BASE_URL=http://host.docker.internal:11434 \
+  -e LLM_EMBEDDING_MODEL=nomic-embed-text \
+  ohopson/context-simplo:latest
+
+# 4. Open the dashboard
+open http://localhost:3000
+
+# 5. Configure your IDE to use http://localhost:3001/mcp
+```
+
+### Option 2: Cloud AI (OpenAI) - Requires API Key
+
+Use OpenAI's embedding API (costs ~$0.02 per 1M tokens):
+
+```bash
+# 1. Pull the image
+docker pull ohopson/context-simplo:latest
+
+# 2. Run with OpenAI connection
+docker run -d \
+  --name context-simplo \
+  -p 3000:3000 -p 3001:3001 \
+  -v $(pwd):/workspace:ro \
+  -v context-simplo-data:/data \
+  -e LLM_PROVIDER=openai \
+  -e LLM_API_KEY=sk-your-api-key-here \
+  -e LLM_BASE_URL=https://api.openai.com/v1 \
+  -e LLM_EMBEDDING_MODEL=text-embedding-3-small \
   ohopson/context-simplo:latest
 
 # 3. Open the dashboard
@@ -34,6 +71,31 @@ open http://localhost:3000
 
 # 4. Configure your IDE to use http://localhost:3001/mcp
 ```
+
+### Option 3: No AI (Structural Tools Only) - Free, No Setup
+
+Run without embeddings - still provides call hierarchies, impact analysis, and other structural features:
+
+```bash
+# 1. Pull the image
+docker pull ohopson/context-simplo:latest
+
+# 2. Run without AI
+docker run -d \
+  --name context-simplo \
+  -p 3000:3000 -p 3001:3001 \
+  -v $(pwd):/workspace:ro \
+  -v context-simplo-data:/data \
+  -e LLM_PROVIDER=none \
+  ohopson/context-simplo:latest
+
+# 3. Open the dashboard
+open http://localhost:3000
+
+# 4. Configure your IDE to use http://localhost:3001/mcp
+```
+
+**Note**: Without embeddings, semantic search will not be available, but all structural analysis tools (call hierarchies, impact analysis, dead code detection, etc.) will still work.
 
 ## Quickstart (npm/CLI)
 
