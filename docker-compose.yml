@@ -15,7 +15,7 @@ services:
       - CONTEXT_SIMPLO_AUTO_INDEX=true
       - CONTEXT_SIMPLO_WATCH=true
       - CONTEXT_SIMPLO_LOG_LEVEL=info
-      - NODE_OPTIONS=--max-old-space-size=4096
+      - NODE_OPTIONS=--max-old-space-size=8192
     extra_hosts:
       - "host.docker.internal:host-gateway"   # Required for Linux, harmless on macOS/Windows
     stdin_open: true

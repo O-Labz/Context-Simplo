@@ -66,6 +66,7 @@ RUN mkdir -p /data /workspace
 ENV NODE_ENV=production
 ENV DATA_DIR=/data
 ENV WORKSPACE_ROOT=/workspace
+ENV NODE_OPTIONS=--max-old-space-size=8192
 
 # Expose port
 EXPOSE 3001
