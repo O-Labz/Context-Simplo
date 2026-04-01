@@ -1,0 +1,31 @@
+---
+description: Use Context-Simplo MCP for code intelligence and analysis
+alwaysApply: true
+---
+
+# Context-Simplo MCP
+
+MCP server: `user-context-simplo`. Use it **instead of** grep/ripgrep/Glob/SemanticSearch when the codebase is indexed.
+
+## Startup: call `list_repositories` first. If empty, call `index_repository` with path `/workspace`.
+
+## Tool selection
+
+- **Symbol by name** → `find_symbol` (with optional `kind` filter)
+- **Who calls X / what does X call** → `find_callers` / `find_callees`
+- **Execution path A→B** → `find_path`
+- **Conceptual search** ("how do we handle auth?") → `semantic_search`
+- **Literal search** (exact name/string) → `exact_search`
+- **Unsure** → `hybrid_search`
+- **Before any refactor** → `get_impact_radius` (check blast radius first)
+- **Code quality** → `find_dead_code`, `find_complex_functions`, `calculate_complexity`
+- **Architecture overview** → `explain_architecture`
+- **Validate proposed code** → `lint_context`
+
+## Cost-saving rules
+
+- Prefer Context-Simplo over multi-file Read/Grep chains — one MCP call replaces many tool calls
+- Use `limit` parameter to cap results (default 10, increase only if needed)
+- Pass `repositoryId` to scope queries and avoid full-index scans
+- Use `incremental: true` when re-indexing after changes
+- Skip Context-Simplo for single-file edits where the file is already open/known
