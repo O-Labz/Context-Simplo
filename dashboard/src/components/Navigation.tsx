@@ -43,6 +43,7 @@ export default function Navigation() {
             <Link
               key={item.path}
               to={item.path}
+              aria-current={isActive(item.path) ? 'page' : undefined}
               className={`font-label text-[0.6875rem] font-semibold uppercase tracking-wider transition-colors ${
                 isActive(item.path)
                   ? 'text-tertiary border-b-2 border-tertiary pb-1'
@@ -59,6 +60,8 @@ export default function Navigation() {
         <button
           onClick={() => setShowMobileMenu(!showMobileMenu)}
           className="md:hidden p-2 rounded-lg hover:bg-surface-container transition-all duration-200 active:scale-95"
+          aria-label={showMobileMenu ? 'Close menu' : 'Open menu'}
+          aria-expanded={showMobileMenu}
         >
           <span className="material-symbols-outlined text-on-surface-variant">
             {showMobileMenu ? 'close' : 'menu'}
@@ -69,6 +72,9 @@ export default function Navigation() {
           <button
             onClick={() => setShowSettings(!showSettings)}
             className="p-2 rounded-lg hover:bg-surface-container transition-all duration-200 active:scale-95"
+            aria-label="Settings"
+            aria-expanded={showSettings}
+            aria-haspopup="true"
           >
             <span className="material-symbols-outlined text-on-surface-variant">settings</span>
           </button>
@@ -78,8 +84,13 @@ export default function Navigation() {
               <div
                 className="fixed inset-0 z-40"
                 onClick={() => setShowSettings(false)}
+                aria-hidden="true"
               />
-              <div className="absolute right-0 mt-2 w-64 bg-surface-container-lowest rounded-xl shadow-xl border border-outline-variant/20 py-2 z-50">
+              <div 
+                className="absolute right-0 mt-2 w-64 bg-surface-container-lowest rounded-xl shadow-xl border border-outline-variant/20 py-2 z-50"
+                role="menu"
+                aria-label="Settings menu"
+              >
                 <div className="px-4 py-2 border-b border-outline-variant/20">
                   <p className="text-[0.6875rem] font-semibold uppercase tracking-wider text-on-surface-variant">
                     LLM Provider
@@ -109,7 +120,7 @@ export default function Navigation() {
         <button
           onClick={() => navigate('/setup')}
           className="p-2 rounded-lg hover:bg-surface-container transition-all duration-200 active:scale-95"
-          title="Account & Setup"
+          aria-label="Account & Setup"
         >
           <span className="material-symbols-outlined text-on-surface-variant">account_circle</span>
         </button>

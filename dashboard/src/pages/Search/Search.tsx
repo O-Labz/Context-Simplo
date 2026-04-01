@@ -141,8 +141,10 @@ export default function Search() {
           <div className={`search-hero-glow ${focused ? 'focused' : ''}`}></div>
           <div className="relative bg-surface-container-lowest rounded-xl p-2 shadow-sm flex flex-col md:flex-row items-stretch md:items-center gap-2">
             <div className="flex-1 flex items-center px-4 gap-3">
-              <span className="material-symbols-outlined text-outline-variant">search</span>
+              <label htmlFor="search-input" className="sr-only">Search code</label>
+              <span className="material-symbols-outlined text-outline-variant" aria-hidden="true">search</span>
               <input
+                id="search-input"
                 className="w-full bg-transparent border-none focus:ring-0 text-on-surface placeholder:text-outline-variant font-body text-lg py-3 outline-none"
                 placeholder="symbols, functions, classes..."
                 type="text"
@@ -151,6 +153,7 @@ export default function Search() {
                 onKeyDown={(e) => e.key === 'Enter' && handleSearch()}
                 onFocus={() => setFocused(true)}
                 onBlur={() => setFocused(false)}
+                aria-label="Search code symbols, functions, and classes"
               />
             </div>
             <div className="flex items-center gap-1 p-1 bg-surface-container-low rounded-lg">

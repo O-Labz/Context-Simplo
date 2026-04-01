@@ -93,15 +93,15 @@ describe('Parser', () => {
   });
 
   describe('isLanguageSupported', () => {
-    it('should return true for supported languages', () => {
-      expect(isLanguageSupported('typescript')).toBe(true);
-      expect(isLanguageSupported('python')).toBe(true);
-      expect(isLanguageSupported('rust')).toBe(true);
+    it('should return true for supported languages', async () => {
+      expect(await isLanguageSupported('typescript')).toBe(true);
+      expect(await isLanguageSupported('python')).toBe(true);
+      expect(await isLanguageSupported('rust')).toBe(true);
     });
 
-    it('should return false for unsupported languages', () => {
-      expect(isLanguageSupported('brainfuck')).toBe(false);
-      expect(isLanguageSupported('unknown')).toBe(false);
+    it('should return false for unsupported languages', async () => {
+      expect(await isLanguageSupported('brainfuck')).toBe(false);
+      expect(await isLanguageSupported('unknown')).toBe(false);
     });
   });
 });

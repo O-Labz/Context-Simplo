@@ -306,7 +306,7 @@ export function scrubSecrets(content: string): { scrubbed: string; detected: Det
       const line = lines[lineNumber - 1] || '';
 
       if (shouldRedact(line, pattern)) {
-        scrubbed = scrubbed.replace(match[0], `[REDACTED:${pattern.category}]`);
+        scrubbed = scrubbed.replaceAll(match[0], `[REDACTED:${pattern.category}]`);
         detected.push({
           category: pattern.category,
           line: lineNumber,

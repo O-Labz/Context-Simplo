@@ -446,14 +446,16 @@ export class SqliteStorageProvider implements StorageProvider {
 
   upsertEdges(edges: GraphEdge[]): void {
     const stmt = this.db.prepare(
-      `INSERT INTO edges (id, source_id, target_id, kind, confidence, metadata, created_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?)
+      `INSERT INTO edges (id, source_id, target_id, kind, confidence, metadata, repository_id, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
        ON CONFLICT(id) DO UPDATE SET
        source_id = excluded.source_id,
        target_id = excluded.target_id,
        kind = excluded.kind,
        confidence = excluded.confidence,
-       metadata = excluded.metadata`
+       metadata = excluded.metadata,
+       repository_id = excluded.repository_id,
+       updated_at = excluded.updated_at`
     );
 
     for (const edge of edges) {
@@ -464,7 +466,9 @@ export class SqliteStorageProvider implements StorageProvider {
         edge.kind,
         edge.confidence,
         edge.metadata ? JSON.stringify(edge.metadata) : null,
-        edge.createdAt.toISOString()
+        edge.repositoryId,
+        edge.createdAt.toISOString(),
+        edge.updatedAt.toISOString()
       );
     }
   }
@@ -487,6 +491,10 @@ export class SqliteStorageProvider implements StorageProvider {
   }
 
   search(query: string, limit: number, offset: number): SearchResult[] {
+    // Escape FTS5 query to prevent query injection
+    // Wrap in double quotes to treat as a phrase and escape internal quotes
+    const escapedQuery = `"${query.replace(/"/g, '""')}"`;
+    
     const rows = this.db
       .prepare(
         `SELECT n.id, n.name, n.qualified_name, n.kind, n.file_path, n.line_start, n.line_end, 
@@ -497,7 +505,7 @@ export class SqliteStorageProvider implements StorageProvider {
          ORDER BY rank
          LIMIT ? OFFSET ?`
       )
-      .all(query, limit, offset) as any[];
+      .all(escapedQuery, limit, offset) as any[];
 
     return rows.map((row) => ({
       nodeId: row.id,

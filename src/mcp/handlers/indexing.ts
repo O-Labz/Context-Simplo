@@ -11,6 +11,7 @@ import {
   UnwatchDirectoryInputSchema,
   DeleteRepositoryInputSchema,
 } from '../tools.js';
+import path from 'node:path';
 import type { CodeGraph } from '../../core/graph.js';
 import type { StorageProvider } from '../../store/provider.js';
 import type { Indexer } from '../../core/indexer.js';
@@ -19,6 +20,7 @@ import type { VectorSearch } from '../../search/vector.js';
 import type { HybridSearch } from '../../search/hybrid.js';
 import type { FileWatcher } from '../../core/watcher.js';
 import type { LanceDBVectorStore } from '../../store/lance.js';
+import { isSubpath } from '../../core/path-utils.js';
 
 export interface HandlerContext {
   storage: StorageProvider;
@@ -38,7 +40,13 @@ export async function indexRepository(
 ): Promise<unknown> {
   const input = IndexRepositoryInputSchema.parse(args);
 
-  const job = await context.indexer.indexRepository(input.path, {
+  // Validate path is within workspace
+  const absolutePath = path.resolve(context.workspaceRoot, input.path);
+  if (!isSubpath(context.workspaceRoot, absolutePath)) {
+    throw new Error('Path traversal detected: repository path must be within workspace root');
+  }
+
+  const job = await context.indexer.indexRepository(absolutePath, {
     incremental: input.incremental || false,
     respectIgnore: true,
   });
@@ -73,11 +81,17 @@ export async function watchDirectory(
     };
   }
 
+  // Validate path is within workspace
+  const absolutePath = path.resolve(context.workspaceRoot, input.path);
+  if (!isSubpath(context.workspaceRoot, absolutePath)) {
+    throw new Error('Path traversal detected: watch path must be within workspace root');
+  }
+
   const repos = context.storage.listRepositories();
   const repo = repos.find(r => r.path === input.path || r.path.endsWith(input.path));
 
   const repositoryId = repo?.id || 'default-repo';
-  context.watcher.watch(input.path, repositoryId);
+  context.watcher.watch(absolutePath, repositoryId);
 
   if (repo) {
     context.storage.updateRepositoryWatchStatus(repo.id, true);
@@ -160,15 +174,18 @@ export async function deleteRepository(
     };
   }
 
+  // Remove from graph first (with mutex)
+  const nodesToRemove = context.graph.getAllNodes({ repositoryId: input.repositoryId });
+  for (const node of nodesToRemove) {
+    await context.graph.removeNode(node.id);
+  }
+
+  // Then update database
   context.storage.transaction(() => {
     context.storage.deleteNodesInRepository(input.repositoryId);
     context.storage.deleteEdgesInRepository(input.repositoryId);
     context.storage.deleteFilesInRepository(input.repositoryId);
     context.storage.deleteRepository(input.repositoryId);
-  });
-
-  context.graph.getAllNodes({ repositoryId: input.repositoryId }).forEach(node => {
-    context.graph.removeNode(node.id);
   });
 
   if (context.vectorStore) {

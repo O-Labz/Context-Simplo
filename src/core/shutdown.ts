@@ -46,6 +46,13 @@ export class ShutdownManager {
     process.on('SIGINT', () => this.shutdown('SIGINT'));
   }
 
+  /**
+   * Trigger graceful shutdown programmatically
+   */
+  async triggerShutdown(reason: string = 'manual'): Promise<void> {
+    return this.shutdown(reason);
+  }
+
   private async shutdown(signal: string): Promise<void> {
     if (this.isShuttingDown) {
       return;

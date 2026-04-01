@@ -12,6 +12,7 @@
 import type { FastifyInstance } from 'fastify';
 import { readdir, stat } from 'node:fs/promises';
 import path from 'node:path';
+import { isSubpath } from '../../core/path-utils.js';
 
 export interface BrowseRouteOptions {
   workspaceRoot: string;
@@ -29,7 +30,7 @@ export async function registerBrowseRoutes(
         ? path.resolve(options.workspaceRoot, relPath)
         : options.workspaceRoot;
 
-      if (!absolutePath.startsWith(options.workspaceRoot)) {
+      if (!isSubpath(options.workspaceRoot, absolutePath)) {
         return reply.status(400).send({
           error: 'Path traversal detected',
           message: 'Browse path must be within workspace root',

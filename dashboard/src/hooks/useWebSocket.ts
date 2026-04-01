@@ -39,11 +39,11 @@ export interface UseWebSocketReturn {
 /**
  * WebSocket hook with automatic reconnection
  *
- * @param url - WebSocket URL (default: ws://localhost:3000/ws)
+ * @param url - WebSocket URL (default: derived from window.location)
  * @param options - Configuration options
  */
 export function useWebSocket(
-  url: string = 'ws://localhost:3000/ws',
+  url?: string,
   options: {
     reconnect?: boolean;
     reconnectInterval?: number;
@@ -51,6 +51,12 @@ export function useWebSocket(
     reconnectDecay?: number;
   } = {}
 ): UseWebSocketReturn {
+  // Derive WebSocket URL from current location if not provided
+  const defaultUrl = typeof window !== 'undefined'
+    ? `${window.location.protocol === 'https:' ? 'wss' : 'ws'}://${window.location.host}/ws`
+    : 'ws://localhost:3001/ws';
+  
+  const wsUrl = url || defaultUrl;
   const {
     reconnect = true,
     reconnectInterval = 1000,
@@ -72,7 +78,7 @@ export function useWebSocket(
     if (!mountedRef.current) return;
 
     try {
-      const ws = new WebSocket(url);
+      const ws = new WebSocket(wsUrl);
 
       ws.onopen = () => {
         if (!mountedRef.current) {
@@ -152,7 +158,7 @@ export function useWebSocket(
     } catch (err) {
       console.error('[WebSocket] Connection error:', err);
     }
-  }, [url, reconnect, reconnectInterval, maxReconnectInterval, reconnectDecay]);
+  }, [wsUrl, reconnect, reconnectInterval, maxReconnectInterval, reconnectDecay]);
 
   /**
    * Subscribe to WebSocket events

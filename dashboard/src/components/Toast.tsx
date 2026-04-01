@@ -63,15 +63,17 @@ function ToastItem({ toast, onDismiss }: { toast: ToastMessage; onDismiss: (id: 
 
   return (
     <div
+      role={toast.type === 'error' ? 'alert' : 'status'}
+      aria-live={toast.type === 'error' ? 'assertive' : 'polite'}
       className={`flex items-center gap-3 px-4 py-3 rounded-xl shadow-lg text-sm font-medium transition-all duration-300 cursor-pointer ${
         visible ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-2'
       }`}
       style={{ backgroundColor: BG_COLORS[toast.type], color: '#ffffff' }}
       onClick={() => onDismiss(toast.id)}
     >
-      <span className="material-symbols-outlined text-[18px]">{ICONS[toast.type]}</span>
+      <span className="material-symbols-outlined text-[18px]" aria-hidden="true">{ICONS[toast.type]}</span>
       <span className="flex-1">{toast.text}</span>
-      <span className="material-symbols-outlined text-[16px] opacity-70 hover:opacity-100">close</span>
+      <span className="material-symbols-outlined text-[16px] opacity-70 hover:opacity-100" aria-label="Dismiss">close</span>
     </div>
   );
 }
