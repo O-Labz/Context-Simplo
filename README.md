@@ -373,6 +373,50 @@ When adding repositories via the dashboard or MCP tools, use **paths as they app
 
 The dashboard's **Browse** tab shows the container's filesystem, so you can just click to select. The **Enter Path** tab accepts relative paths within the workspace (e.g., `src`, `backend/api`).
 
+## Automatic AI Agent Usage (Cursor Rules)
+
+Context-Simplo tools are most effective when your AI agent uses them automatically instead of falling back to file-by-file search. You can add a Cursor rule that instructs the agent to prefer Context-Simplo for code intelligence tasks — reducing tool call chains and lowering token costs.
+
+**Create `.cursor/rules/context-simplo-usage.mdc` in your project:**
+
+```markdown
+---
+description: Use Context-Simplo MCP for code intelligence and analysis
+alwaysApply: true
+---
+
+# Context-Simplo MCP
+
+MCP server: `user-context-simplo`. Use it **instead of** grep/ripgrep/Glob/SemanticSearch when the codebase is indexed.
+
+## Startup: call `list_repositories` first. If empty, call `index_repository` with path `/workspace`.
+
+## Tool selection
+
+- **Symbol by name** → `find_symbol` (with optional `kind` filter)
+- **Who calls X / what does X call** → `find_callers` / `find_callees`
+- **Execution path A→B** → `find_path`
+- **Conceptual search** ("how do we handle auth?") → `semantic_search`
+- **Literal search** (exact name/string) → `exact_search`
+- **Unsure** → `hybrid_search`
+- **Before any refactor** → `get_impact_radius` (check blast radius first)
+- **Code quality** → `find_dead_code`, `find_complex_functions`, `calculate_complexity`
+- **Architecture overview** → `explain_architecture`
+- **Validate proposed code** → `lint_context`
+
+## Cost-saving rules
+
+- Prefer Context-Simplo over multi-file Read/Grep chains — one MCP call replaces many tool calls
+- Use `limit` parameter to cap results (default 10, increase only if needed)
+- Pass `repositoryId` to scope queries and avoid full-index scans
+- Use `incremental: true` when re-indexing after changes
+- Skip Context-Simplo for single-file edits where the file is already open/known
+```
+
+**Why this reduces cost:** Without the rule, AI agents explore codebases by chaining multiple Grep → Read → Grep → Read calls, each consuming tokens. A single Context-Simplo MCP call (e.g., `find_callers` or `get_impact_radius`) replaces entire chains of exploration, returning structured results in one round-trip.
+
+This also works with other MCP-compatible clients (VS Code, Claude Desktop, Claude Code) — adapt the rule format to your IDE's conventions.
+
 ## Quickstart (npm/CLI)
 
 ```bash
