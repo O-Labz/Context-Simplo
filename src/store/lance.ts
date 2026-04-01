@@ -52,11 +52,26 @@ export class LanceDBVectorStore {
     try {
       let table = this.tables.get(repositoryId);
 
+      const newDims = chunks[0]?.embedding?.length ?? 0;
+      if (newDims === 0) return;
+
       if (!table) {
         const tableNames = await this.connection.tableNames();
         if (tableNames.includes(repositoryId)) {
           table = await this.connection.openTable(repositoryId);
-        } else {
+
+          const existingDims = await this.detectTableDimensions(table);
+          if (existingDims > 0 && existingDims !== newDims) {
+            console.warn(
+              `Embedding dimensions changed (${existingDims} → ${newDims}) for table ${repositoryId}. ` +
+              `Dropping and recreating table to avoid native crash.`
+            );
+            await this.connection.dropTable(repositoryId);
+            table = undefined;
+          }
+        }
+
+        if (!table) {
           const data = chunks.map((chunk) => ({
             id: chunk.id,
             nodeId: chunk.nodeId || '',
@@ -150,6 +165,21 @@ export class LanceDBVectorStore {
     } catch (error) {
       throw new StoreError('search', 'Vector search failed', error as Error);
     }
+  }
+
+  private async detectTableDimensions(table: Table): Promise<number> {
+    try {
+      const results = await table.query().limit(1).toArray();
+      if (results.length > 0) {
+        const row = results[0] as any;
+        if (row?.vector && Array.isArray(row.vector)) {
+          return row.vector.length;
+        }
+      }
+    } catch {
+      // Table might be empty or schema-only
+    }
+    return 0;
   }
 
   async deleteRepository(repositoryId: string): Promise<void> {
