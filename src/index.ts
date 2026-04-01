@@ -61,6 +61,17 @@ async function main() {
   });
   console.log(`LLM provider: ${config.llmProvider.value}`);
 
+  if (config.llmProvider.value === 'ollama' && embeddingProvider && 'isEmbeddingModel' in embeddingProvider) {
+    const ollamaProvider = embeddingProvider as import('./llm/ollama.js').OllamaEmbeddingProvider;
+    if (!ollamaProvider.isEmbeddingModel()) {
+      console.warn(
+        `WARNING: "${config.llmEmbeddingModel.value}" is not a dedicated embedding model. ` +
+        `This will work but is slower and uses more memory. ` +
+        `Recommended models: nomic-embed-text, mxbai-embed-large, all-minilm`
+      );
+    }
+  }
+
   const embeddingQueue = config.llmProvider.value !== 'none'
     ? new EmbeddingQueue(embeddingProvider, {
         concurrency: config.embeddingConcurrency.value,

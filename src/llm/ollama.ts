@@ -22,6 +22,7 @@ export class OllamaEmbeddingProvider implements EmbeddingProvider {
   private baseUrl: string;
   private model: string;
   private dims: number;
+  private detectedDims: number | null = null;
 
   constructor(config: OllamaConfig) {
     this.baseUrl = config.baseUrl;
@@ -29,11 +30,29 @@ export class OllamaEmbeddingProvider implements EmbeddingProvider {
     this.dims = this.getDimensionsForModel(config.model);
   }
 
+  private static readonly KNOWN_DIMENSIONS: Record<string, number> = {
+    'nomic-embed-text': 768,
+    'mxbai-embed-large': 1024,
+    'all-minilm': 384,
+    'snowflake-arctic-embed': 1024,
+    'bge-m3': 1024,
+    'bge-large': 1024,
+    'llama3.1': 4096,
+    'llama3.2': 3072,
+    'llama3': 4096,
+    'llama2': 4096,
+    'mistral': 4096,
+    'codellama': 4096,
+    'gemma': 2048,
+    'gemma2': 2304,
+    'phi3': 3072,
+    'qwen2': 3584,
+    'deepseek-coder': 4096,
+  };
+
   private getDimensionsForModel(model: string): number {
-    if (model === 'nomic-embed-text') return 768;
-    if (model === 'mxbai-embed-large') return 1024;
-    if (model === 'all-minilm') return 384;
-    return 768;
+    const base = model.split(':')[0]?.toLowerCase() ?? '';
+    return OllamaEmbeddingProvider.KNOWN_DIMENSIONS[base] ?? 0;
   }
 
   async embed(texts: string[]): Promise<number[][]> {
@@ -58,8 +77,23 @@ export class OllamaEmbeddingProvider implements EmbeddingProvider {
         }
 
         const data = (await response.json()) as { embedding: number[] };
+        if (!data.embedding || !Array.isArray(data.embedding)) {
+          throw new LLMError('ollama', `Model "${this.model}" returned no embedding — it may not support embedding generation`, false);
+        }
         embeddings.push(data.embedding);
+
+        if (this.detectedDims === null) {
+          this.detectedDims = data.embedding.length;
+          if (this.dims === 0) {
+            this.dims = this.detectedDims;
+            console.log(`Auto-detected embedding dimensions for ${this.model}: ${this.dims}`);
+          } else if (this.dims !== this.detectedDims) {
+            console.warn(`Dimension mismatch for ${this.model}: expected ${this.dims}, got ${this.detectedDims}. Using actual: ${this.detectedDims}`);
+            this.dims = this.detectedDims;
+          }
+        }
       } catch (error) {
+        if (error instanceof LLMError) throw error;
         throw new LLMError('ollama', (error as Error).message, true, error as Error);
       }
     }
@@ -68,11 +102,21 @@ export class OllamaEmbeddingProvider implements EmbeddingProvider {
   }
 
   dimensions(): number {
-    return this.dims;
+    return this.detectedDims ?? this.dims;
   }
 
   modelName(): string {
     return this.model;
+  }
+
+  private static readonly EMBEDDING_MODELS = new Set([
+    'nomic-embed-text', 'mxbai-embed-large', 'all-minilm',
+    'snowflake-arctic-embed', 'bge-m3', 'bge-large',
+  ]);
+
+  isEmbeddingModel(): boolean {
+    const base = this.model.split(':')[0]?.toLowerCase() ?? '';
+    return OllamaEmbeddingProvider.EMBEDDING_MODELS.has(base);
   }
 
   async healthCheck(): Promise<boolean> {
