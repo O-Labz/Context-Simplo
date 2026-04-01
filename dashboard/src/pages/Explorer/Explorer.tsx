@@ -67,6 +67,7 @@ export default function Explorer() {
   const [refreshTrigger, setRefreshTrigger] = useState(0);
   const [rawData, setRawData] = useState<GraphData | null>(null);
   const [highlightedNode, setHighlightedNode] = useState<string | null>(null);
+  const [nodeError, setNodeError] = useState<string | null>(null);
 
   useEffect(() => {
     fetch('/api/repositories')
@@ -96,14 +97,20 @@ export default function Explorer() {
 
   const loadNodeDetails = useCallback(async (nodeId: string) => {
     if (!selectedRepo) return;
+    setNodeError(null);
     try {
       const response = await fetch(`/api/graph/${selectedRepo}/node/${nodeId}`);
-      if (!response.ok) return;
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => null);
+        setNodeError(errorData?.error || `Failed to load node (${response.status})`);
+        return;
+      }
       const data: NodeDetails = await response.json();
       setSelectedNode(data);
       setHighlightedNode(nodeId);
     } catch (error) {
       console.error('Failed to load node details:', error);
+      setNodeError('Network error loading node details');
     }
   }, [selectedRepo]);
 
@@ -502,7 +509,18 @@ export default function Explorer() {
           )}
 
           {/* Details Inspector (both modes) */}
-          <div className="absolute right-6 top-6 bottom-6 w-80 glass-panel rounded-xl border border-outline-variant/20 p-6 flex flex-col gap-6 shadow-2xl details-panel overflow-y-auto">
+          <div className="absolute right-6 top-6 bottom-6 w-80 glass-panel rounded-xl border border-outline-variant/20 p-6 flex flex-col gap-6 shadow-2xl details-panel overflow-y-auto z-20">
+            {nodeError && (
+              <div className="px-3 py-2 bg-error/10 border border-error/20 rounded-lg">
+                <p className="text-sm text-error font-medium">{nodeError}</p>
+                <button
+                  onClick={() => setNodeError(null)}
+                  className="text-xs text-error/70 mt-1 underline"
+                >
+                  Dismiss
+                </button>
+              </div>
+            )}
             {selectedNode ? (
               <>
                 <div>
