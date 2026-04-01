@@ -61,6 +61,48 @@ interface MetricsData {
   timestamp: string;
 }
 
+function StatTile({ icon, label, value, sublabel, accent }: {
+  icon: string;
+  label: string;
+  value: string | number;
+  sublabel?: string;
+  accent?: 'tertiary' | 'primary' | 'error' | 'green';
+}) {
+  const accentColor = accent === 'tertiary' ? 'text-tertiary'
+    : accent === 'primary' ? 'text-primary'
+    : accent === 'error' ? 'text-error'
+    : accent === 'green' ? 'text-green-600'
+    : 'text-on-surface';
+
+  return (
+    <div className="stat-tile">
+      <div className="flex items-center gap-2 mb-3">
+        <span className={`material-symbols-outlined text-lg ${accentColor}`}>{icon}</span>
+        <span className="stat-label">{label}</span>
+      </div>
+      <span className={`stat-value ${accentColor}`}>{value}</span>
+      {sublabel && <span className="stat-sublabel">{sublabel}</span>}
+    </div>
+  );
+}
+
+function SectionCard({ title, icon, children, className = '' }: {
+  title: string;
+  icon: string;
+  children: React.ReactNode;
+  className?: string;
+}) {
+  return (
+    <div className={`section-card ${className}`}>
+      <div className="section-header">
+        <span className="material-symbols-outlined text-tertiary">{icon}</span>
+        <h3>{title}</h3>
+      </div>
+      {children}
+    </div>
+  );
+}
+
 export default function Metrics() {
   const [metrics, setMetrics] = useState<MetricsData | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -136,11 +178,23 @@ export default function Metrics() {
     );
   }
 
-  const memoryUsagePercent = (metrics.memory.heapUsed / metrics.memory.heapTotal) * 100;
+  const heapPercent = (metrics.memory.heapUsed / metrics.memory.heapTotal) * 100;
+  const totalDisk = metrics.storage.totalDiskUsage || (metrics.storage.sqliteSize + metrics.storage.lancedbSize) || 1;
+  const sqlitePct = Math.min(100, Math.round((metrics.storage.sqliteSize / totalDisk) * 100));
+  const lancePct = Math.min(100, Math.round((metrics.storage.lancedbSize / totalDisk) * 100));
+
+  const topLanguages = Object.entries(metrics.index.languages || {})
+    .sort(([, a], [, b]) => b - a)
+    .slice(0, 5);
+
+  const topTools = Object.entries(metrics.mcp?.toolBreakdown || {})
+    .sort(([, a], [, b]) => b - a)
+    .slice(0, 5);
+
+  const totalIndexFiles = metrics.index.filesIndexing + metrics.index.filesPending + metrics.index.filesError;
 
   return (
     <div className="pt-24 pb-12 px-8 max-w-[1440px] mx-auto">
-      {/* Header Section */}
       <header className="mb-10 flex justify-between items-end">
         <div>
           <span className="text-[0.6875rem] font-semibold uppercase tracking-wider text-on-surface-variant mb-2 block">
@@ -167,290 +221,339 @@ export default function Metrics() {
             onClick={loadMetrics}
             className="px-4 py-2 bg-gradient-to-br from-tertiary to-tertiary-dim text-white text-[0.875rem] font-semibold rounded-xl hover:shadow-lg transition-all active:scale-95"
           >
-            Refresh Dashboard
+            Refresh
           </button>
         </div>
       </header>
 
-      {/* Bento Grid Metrics */}
-      <div className="bento-grid">
-        {/* Memory Usage Card (Primary Focus) */}
-        <div className="col-span-12 md:col-span-8 bg-surface-container-lowest p-8 rounded-xl relative overflow-hidden metric-card">
-          <div className="flex justify-between items-start mb-8 relative z-10">
-            <div>
-              <h3 className="text-sm font-semibold text-on-surface-variant uppercase tracking-wider mb-1">
-                Total System Memory
-              </h3>
-              <div className="flex items-baseline gap-2">
-                <span className="text-5xl font-bold tracking-tight">
-                  {formatBytes(metrics.memory.heapUsed)}
-                </span>
-                <span className="text-xl font-medium text-on-surface-variant">
-                  / {formatBytes(metrics.memory.heapTotal)}
-                </span>
-              </div>
-            </div>
-            <div className="text-right">
-              <span className="text-[0.6875rem] font-bold text-tertiary bg-tertiary/10 px-2 py-1 rounded-full">
-                ACTIVE SESSION
-              </span>
-            </div>
-          </div>
-          <div className="h-48 w-full bg-surface-container-low rounded-lg relative overflow-hidden mt-4">
-            <div className="absolute inset-0 flex items-center justify-center">
-              <div className="flex gap-4">
-                <div className="text-center">
-                  <span className="block text-2xl font-bold text-tertiary">
-                    {memoryUsagePercent.toFixed(0)}%
-                  </span>
-                  <span className="text-[0.6875rem] font-medium text-on-surface-variant uppercase tracking-widest">
-                    In Use
-                  </span>
-                </div>
-                <div className="w-px h-8 bg-outline-variant/20 self-center"></div>
-                <div className="text-center">
-                  <span className="block text-2xl font-bold text-on-surface">
-                    {formatBytes(metrics.memory.heapTotal - metrics.memory.heapUsed)}
-                  </span>
-                  <span className="text-[0.6875rem] font-medium text-on-surface-variant uppercase tracking-widest">
-                    Free
-                  </span>
-                </div>
-              </div>
-            </div>
-          </div>
-          <div className="mt-6 flex gap-4 overflow-x-auto pb-2">
-            <div className="flex-shrink-0 bg-surface-container-low px-4 py-3 rounded-xl border-l-4 border-tertiary">
-              <span className="block text-[0.6875rem] text-on-surface-variant font-bold uppercase mb-1">
-                Graph Memory
-              </span>
-              <span className="text-lg font-bold">{formatBytes(metrics.memory.graphMemory)}</span>
-            </div>
-            <div className="flex-shrink-0 bg-surface-container-low px-4 py-3 rounded-xl border-l-4 border-primary">
-              <span className="block text-[0.6875rem] text-on-surface-variant font-bold uppercase mb-1">
-                RSS
-              </span>
-              <span className="text-lg font-bold">{formatBytes(metrics.memory.rss)}</span>
-            </div>
-            <div className="flex-shrink-0 bg-surface-container-low px-4 py-3 rounded-xl border-l-4 border-outline">
-              <span className="block text-[0.6875rem] text-on-surface-variant font-bold uppercase mb-1">
-                External
-              </span>
-              <span className="text-lg font-bold">{formatBytes(metrics.memory.external)}</span>
-            </div>
-          </div>
-        </div>
+      {/* Row 1: At-a-glance status tiles */}
+      <div className="metrics-grid mb-6">
+        <StatTile
+          icon="timer"
+          label="Process Uptime"
+          value={formatUptime(metrics.system.uptime)}
+          sublabel={`${metrics.system.platform} · ${metrics.system.arch}`}
+          accent="tertiary"
+        />
+        <StatTile
+          icon="memory"
+          label="Heap Usage"
+          value={`${heapPercent.toFixed(0)}%`}
+          sublabel={`${formatBytes(metrics.memory.heapUsed)} of ${formatBytes(metrics.memory.heapTotal)}`}
+          accent={heapPercent > 85 ? 'error' : heapPercent > 60 ? 'primary' : 'green'}
+        />
+        <StatTile
+          icon="folder_open"
+          label="Indexed Files"
+          value={formatNumber(metrics.index.fileCount)}
+          sublabel={`Across ${metrics.index.repositoryCount} ${metrics.index.repositoryCount === 1 ? 'repository' : 'repositories'}`}
+          accent="primary"
+        />
+        <StatTile
+          icon="smart_toy"
+          label="Embedding Provider"
+          value={metrics.llm.provider === 'none' ? 'Not configured' : metrics.llm.provider}
+          sublabel={metrics.llm.connected ? 'Connected' : 'Disconnected'}
+          accent={metrics.llm.connected ? 'green' : 'error'}
+        />
+      </div>
 
-        {/* Uptime Metric */}
-        <div className="col-span-12 md:col-span-4 bg-surface-container-low p-8 rounded-xl flex flex-col justify-between metric-card">
-          <div>
-            <span className="material-symbols-outlined text-tertiary text-4xl mb-4 block">
-              timer
+      {/* Row 2: Detailed sections */}
+      <div className="metrics-grid-sections">
+
+        {/* Memory Breakdown */}
+        <SectionCard title="Memory Breakdown" icon="memory">
+          <div className="mb-4">
+            <div className="flex justify-between text-sm mb-1.5">
+              <span className="text-on-surface-variant">Heap Used / Total</span>
+              <span className="font-semibold">{formatBytes(metrics.memory.heapUsed)} / {formatBytes(metrics.memory.heapTotal)}</span>
+            </div>
+            <div className="w-full bg-surface-container-low h-2.5 rounded-full overflow-hidden">
+              <div
+                className="h-full rounded-full progress-bar"
+                style={{
+                  width: `${heapPercent}%`,
+                  background: heapPercent > 85
+                    ? 'var(--error)'
+                    : heapPercent > 60
+                      ? 'var(--primary)'
+                      : '#16a34a',
+                }}
+              />
+            </div>
+          </div>
+          <div className="detail-grid">
+            <div className="detail-row">
+              <span>Resident Set Size (RSS)</span>
+              <span className="font-semibold">{formatBytes(metrics.memory.rss)}</span>
+            </div>
+            <div className="detail-row">
+              <span>Knowledge Graph Memory</span>
+              <span className="font-semibold">{formatBytes(metrics.memory.graphMemory)}</span>
+            </div>
+            <div className="detail-row">
+              <span>External (C++ objects)</span>
+              <span className="font-semibold">{formatBytes(metrics.memory.external)}</span>
+            </div>
+            <div className="detail-row">
+              <span>Free Heap</span>
+              <span className="font-semibold">{formatBytes(metrics.memory.heapTotal - metrics.memory.heapUsed)}</span>
+            </div>
+          </div>
+        </SectionCard>
+
+        {/* Knowledge Graph */}
+        <SectionCard title="Knowledge Graph" icon="hub">
+          <div className="inner-grid-2">
+            <div className="inner-stat">
+              <span className="inner-stat-value">{formatNumber(metrics.index.nodeCount)}</span>
+              <span className="inner-stat-label">Graph Nodes</span>
+            </div>
+            <div className="inner-stat">
+              <span className="inner-stat-value">{formatNumber(metrics.index.edgeCount)}</span>
+              <span className="inner-stat-label">Graph Edges</span>
+            </div>
+          </div>
+
+          {topLanguages.length > 0 && (
+            <div className="mt-4">
+              <span className="text-xs font-bold text-on-surface-variant uppercase tracking-wider block mb-2">
+                Languages
+              </span>
+              <div className="space-y-1.5">
+                {topLanguages.map(([lang, count]) => (
+                  <div key={lang} className="flex items-center justify-between text-sm">
+                    <span className="text-on-surface-variant capitalize">{lang}</span>
+                    <span className="font-semibold">{formatNumber(count)} files</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {totalIndexFiles > 0 && (
+            <div className="mt-4 pt-3 border-t border-outline-variant/15">
+              <span className="text-xs font-bold text-on-surface-variant uppercase tracking-wider block mb-2">
+                Indexing Activity
+              </span>
+              <div className="flex gap-3">
+                {metrics.index.filesIndexing > 0 && (
+                  <span className="index-badge badge-active">
+                    {metrics.index.filesIndexing} indexing
+                  </span>
+                )}
+                {metrics.index.filesPending > 0 && (
+                  <span className="index-badge badge-pending">
+                    {metrics.index.filesPending} pending
+                  </span>
+                )}
+                {metrics.index.filesError > 0 && (
+                  <span className="index-badge badge-error">
+                    {metrics.index.filesError} errors
+                  </span>
+                )}
+              </div>
+            </div>
+          )}
+        </SectionCard>
+
+        {/* Storage */}
+        <SectionCard title="Disk Usage" icon="database">
+          <div className="mb-1">
+            <span className="text-2xl font-bold">{formatBytes(totalDisk)}</span>
+            <span className="text-sm text-on-surface-variant ml-1.5">total</span>
+          </div>
+
+          <div className="storage-bar mb-4">
+            <div className="storage-segment bg-primary" style={{ width: `${sqlitePct}%` }} />
+            <div className="storage-segment bg-tertiary" style={{ width: `${lancePct}%` }} />
+          </div>
+
+          <div className="detail-grid">
+            <div className="detail-row">
+              <span className="flex items-center gap-2">
+                <span className="w-2.5 h-2.5 rounded-sm bg-primary inline-block" />
+                SQLite Database
+              </span>
+              <span className="font-semibold">{formatBytes(metrics.storage.sqliteSize)}</span>
+            </div>
+            <div className="detail-row">
+              <span className="flex items-center gap-2">
+                <span className="w-2.5 h-2.5 rounded-sm bg-tertiary inline-block" />
+                Vector Store (LanceDB)
+              </span>
+              <span className="font-semibold">{formatBytes(metrics.storage.lancedbSize)}</span>
+            </div>
+          </div>
+        </SectionCard>
+
+        {/* System Info */}
+        <SectionCard title="Runtime Environment" icon="terminal">
+          <div className="detail-grid">
+            <div className="detail-row">
+              <span>Node.js Version</span>
+              <span className="font-mono font-semibold">{metrics.system.nodeVersion}</span>
+            </div>
+            <div className="detail-row">
+              <span>Platform</span>
+              <span className="font-semibold">{metrics.system.platform}</span>
+            </div>
+            <div className="detail-row">
+              <span>Architecture</span>
+              <span className="font-semibold">{metrics.system.arch}</span>
+            </div>
+            <div className="detail-row">
+              <span>Process Uptime</span>
+              <span className="font-semibold">{formatUptime(metrics.system.uptime)}</span>
+            </div>
+          </div>
+        </SectionCard>
+
+        {/* LLM / Embedding Provider */}
+        <SectionCard title="Embedding Provider" icon="smart_toy">
+          <div className="flex items-center gap-3 mb-4">
+            <div className={`w-2.5 h-2.5 rounded-full ${metrics.llm.connected ? 'bg-green-500 pulse-dot' : 'bg-outline-variant'}`} />
+            <span className="text-sm font-semibold">
+              {metrics.llm.provider === 'none' ? 'Not configured' : metrics.llm.provider}
+              <span className={`ml-2 text-xs font-bold ${metrics.llm.connected ? 'text-green-600' : 'text-on-surface-variant'}`}>
+                {metrics.llm.connected ? 'ONLINE' : 'OFFLINE'}
+              </span>
             </span>
-            <h3 className="text-sm font-semibold text-on-surface-variant uppercase tracking-wider mb-2">
-              Total System Uptime
-            </h3>
-            <p className="text-3xl font-bold tracking-tight">{formatUptime(metrics.system.uptime)}</p>
           </div>
-          <div className="mt-8 pt-6 border-t border-outline-variant/10">
-            <div className="flex justify-between items-center mb-2">
-              <span className="text-[0.6875rem] font-bold text-on-surface-variant uppercase">
-                Platform
-              </span>
-              <span className="text-[0.6875rem] font-bold text-on-surface">
-                {metrics.system.platform}
-              </span>
-            </div>
-          </div>
-        </div>
 
-        {/* Storage Analytics */}
-        <div className="col-span-12 md:col-span-4 bg-surface-container-lowest p-8 rounded-xl metric-card">
-          <div className="flex items-center gap-3 mb-6">
-            <span className="material-symbols-outlined text-primary">database</span>
-            <h3 className="text-sm font-bold uppercase tracking-widest text-on-surface">
-              Storage Capacity
-            </h3>
+          <div className="detail-grid">
+            {metrics.llm.model && (
+              <div className="detail-row">
+                <span>Model</span>
+                <span className="font-mono font-semibold text-xs">{metrics.llm.model}</span>
+              </div>
+            )}
+            {metrics.llm.totalCalls !== undefined && (
+              <div className="detail-row">
+                <span>Total API Calls</span>
+                <span className="font-semibold">{formatNumber(metrics.llm.totalCalls)}</span>
+              </div>
+            )}
+            {metrics.llm.estimatedCost !== undefined && metrics.llm.estimatedCost > 0 && (
+              <div className="detail-row">
+                <span>Estimated Cost</span>
+                <span className="font-semibold">${metrics.llm.estimatedCost.toFixed(4)}</span>
+              </div>
+            )}
           </div>
-          <div className="space-y-6">
-            {(() => {
-              const totalDisk = metrics.storage.totalDiskUsage || (metrics.storage.sqliteSize + metrics.storage.lancedbSize) || 1;
-              const sqlitePct = Math.min(100, Math.round((metrics.storage.sqliteSize / totalDisk) * 100));
-              const lancePct = Math.min(100, Math.round((metrics.storage.lancedbSize / totalDisk) * 100));
-              return (
-                <>
-                  <div>
-                    <div className="flex justify-between text-[0.875rem] mb-2">
-                      <span className="font-medium">SQLite Database</span>
-                      <span className="font-bold">{formatBytes(metrics.storage.sqliteSize)}</span>
-                    </div>
-                    <div className="w-full bg-surface-container-low h-2 rounded-full">
-                      <div className="bg-primary h-full rounded-full progress-bar transition-all" style={{ width: `${sqlitePct}%` }}></div>
-                    </div>
-                  </div>
-                  <div>
-                    <div className="flex justify-between text-[0.875rem] mb-2">
-                      <span className="font-medium">Vector Storage</span>
-                      <span className="font-bold">{formatBytes(metrics.storage.lancedbSize)}</span>
-                    </div>
-                    <div className="w-full bg-surface-container-low h-2 rounded-full">
-                      <div className="bg-tertiary h-full rounded-full progress-bar transition-all" style={{ width: `${lancePct}%` }}></div>
-                    </div>
-                  </div>
-                </>
-              );
-            })()}
-          </div>
-        </div>
+        </SectionCard>
 
-        {/* Graph Topology Status */}
-        <div className="col-span-12 md:col-span-8 bg-surface-container-lowest p-8 rounded-xl grid grid-cols-1 md:grid-cols-2 gap-8 metric-card">
-          <div>
-            <div className="flex items-center gap-3 mb-6">
-              <span className="material-symbols-outlined text-tertiary">hub</span>
-              <h3 className="text-sm font-bold uppercase tracking-widest text-on-surface">
-                Knowledge Graph
-              </h3>
-            </div>
-            <div className="grid grid-cols-2 gap-4">
-              <div className="bg-surface-container-low p-4 rounded-xl">
-                <span className="block text-[0.6875rem] text-on-surface-variant font-bold uppercase mb-1">
-                  Nodes
-                </span>
-                <span className="text-2xl font-bold tracking-tight">
-                  {formatNumber(metrics.index.nodeCount)}
-                </span>
-              </div>
-              <div className="bg-surface-container-low p-4 rounded-xl">
-                <span className="block text-[0.6875rem] text-on-surface-variant font-bold uppercase mb-1">
-                  Edges
-                </span>
-                <span className="text-2xl font-bold tracking-tight">
-                  {formatNumber(metrics.index.edgeCount)}
-                </span>
-              </div>
-            </div>
-            <div className="mt-6 flex items-center gap-2">
-              {metrics.watcher && metrics.watcher.watchedDirectories > 0 ? (
-                <>
-                  <div className="w-2 h-2 rounded-full bg-green-500 pulse-dot"></div>
-                  <span className="text-[0.6875rem] font-bold text-on-surface-variant uppercase">
-                    Watching {metrics.watcher.watchedDirectories} {metrics.watcher.watchedDirectories === 1 ? 'directory' : 'directories'}
-                  </span>
-                </>
-              ) : (
-                <>
-                  <div className="w-2 h-2 rounded-full bg-outline-variant"></div>
-                  <span className="text-[0.6875rem] font-bold text-on-surface-variant uppercase">
-                    File watching inactive
-                  </span>
-                </>
-              )}
-            </div>
+        {/* File Watcher */}
+        <SectionCard title="File Watcher" icon="visibility">
+          <div className="flex items-center gap-3 mb-4">
+            <div className={`w-2.5 h-2.5 rounded-full ${metrics.watcher && metrics.watcher.watchedDirectories > 0 ? 'bg-green-500 pulse-dot' : 'bg-outline-variant'}`} />
+            <span className="text-sm font-semibold">
+              {metrics.watcher && metrics.watcher.watchedDirectories > 0
+                ? `Monitoring ${metrics.watcher.watchedDirectories} ${metrics.watcher.watchedDirectories === 1 ? 'directory' : 'directories'}`
+                : 'Inactive'}
+            </span>
           </div>
-          <div className="border-l border-outline-variant/10 pl-0 md:pl-8">
-            <h3 className="text-sm font-bold uppercase tracking-widest text-on-surface mb-6">
-              Provider Status
-            </h3>
-            <div className="space-y-4">
-              <div className="flex items-center justify-between p-3 bg-surface-container-low rounded-lg">
-                <div className="flex items-center gap-3">
-                  <div className="w-8 h-8 rounded bg-surface-container-highest flex items-center justify-center">
-                    <span className="material-symbols-outlined text-sm">smart_toy</span>
-                  </div>
-                  <span className="text-[0.875rem] font-semibold">
-                    {metrics.llm.provider === 'none' ? 'Not configured' : metrics.llm.provider}
-                  </span>
-                </div>
-                <span
-                  className={`text-[0.6875rem] font-bold ${
-                    metrics.llm.connected ? 'text-green-600' : 'text-on-surface-variant'
-                  }`}
-                >
-                  {metrics.llm.connected ? 'ONLINE' : 'OFFLINE'}
-                </span>
+          {metrics.watcher && (
+            <div className="detail-grid">
+              <div className="detail-row">
+                <span>Watched Directories</span>
+                <span className="font-semibold">{metrics.watcher.watchedDirectories}</span>
               </div>
-              {metrics.llm.model && (
-                <div className="flex items-center justify-between p-3 bg-surface-container-low rounded-lg mt-2">
-                  <span className="text-xs text-on-surface-variant">Model</span>
-                  <span className="text-xs font-mono font-bold text-on-surface">{metrics.llm.model}</span>
-                </div>
-              )}
-              {metrics.llm.totalCalls !== undefined && metrics.llm.totalCalls > 0 && (
-                <div className="flex items-center justify-between p-3 bg-surface-container-low rounded-lg mt-2">
-                  <span className="text-xs text-on-surface-variant">Total Calls</span>
-                  <span className="text-xs font-bold text-on-surface">{formatNumber(metrics.llm.totalCalls)}</span>
-                </div>
-              )}
+              <div className="detail-row">
+                <span>Change Queue Depth</span>
+                <span className="font-semibold">{metrics.watcher.queueDepth}</span>
+              </div>
             </div>
-          </div>
-        </div>
+          )}
+        </SectionCard>
 
         {/* Embedding Pipeline */}
-        {metrics.embedding && (metrics.embedding.completed > 0 || metrics.embedding.queueDepth > 0) && (
-          <div className="col-span-12 md:col-span-6 bg-surface-container-lowest p-8 rounded-xl metric-card">
-            <div className="flex items-center gap-3 mb-6">
-              <span className="material-symbols-outlined text-tertiary">neurology</span>
-              <h3 className="text-sm font-bold uppercase tracking-widest text-on-surface">
-                Embedding Pipeline
-              </h3>
-            </div>
-            <div className="grid grid-cols-2 gap-4">
-              <div className="bg-surface-container-low p-4 rounded-xl">
-                <span className="block text-[0.6875rem] text-on-surface-variant font-bold uppercase mb-1">Queue</span>
-                <span className="text-2xl font-bold">{metrics.embedding.queueDepth}</span>
+        <SectionCard title="Embedding Pipeline" icon="neurology">
+          {metrics.embedding ? (
+            <>
+              <div className="inner-grid-2 mb-3">
+                <div className="inner-stat">
+                  <span className="inner-stat-value">{formatNumber(metrics.embedding.completed)}</span>
+                  <span className="inner-stat-label">Completed</span>
+                </div>
+                <div className="inner-stat">
+                  <span className="inner-stat-value text-error">{metrics.embedding.failed}</span>
+                  <span className="inner-stat-label">Failed</span>
+                </div>
               </div>
-              <div className="bg-surface-container-low p-4 rounded-xl">
-                <span className="block text-[0.6875rem] text-on-surface-variant font-bold uppercase mb-1">In Flight</span>
-                <span className="text-2xl font-bold">{metrics.embedding.inFlight}</span>
-              </div>
-              <div className="bg-surface-container-low p-4 rounded-xl">
-                <span className="block text-[0.6875rem] text-on-surface-variant font-bold uppercase mb-1">Completed</span>
-                <span className="text-2xl font-bold">{formatNumber(metrics.embedding.completed)}</span>
-              </div>
-              <div className="bg-surface-container-low p-4 rounded-xl">
-                <span className="block text-[0.6875rem] text-on-surface-variant font-bold uppercase mb-1">Failed</span>
-                <span className="text-2xl font-bold text-error">{metrics.embedding.failed}</span>
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* MCP Traffic */}
-        {metrics.mcp && metrics.mcp.totalRequests !== undefined && (
-          <div className="col-span-12 md:col-span-6 bg-surface-container-lowest p-8 rounded-xl metric-card">
-            <div className="flex items-center gap-3 mb-6">
-              <span className="material-symbols-outlined text-primary">swap_horiz</span>
-              <h3 className="text-sm font-bold uppercase tracking-widest text-on-surface">
-                MCP Traffic
-              </h3>
-            </div>
-            <div className="grid grid-cols-2 gap-4">
-              <div className="bg-surface-container-low p-4 rounded-xl">
-                <span className="block text-[0.6875rem] text-on-surface-variant font-bold uppercase mb-1">Req/min</span>
-                <span className="text-2xl font-bold">{metrics.mcp.requestsPerMinute}</span>
-              </div>
-              <div className="bg-surface-container-low p-4 rounded-xl">
-                <span className="block text-[0.6875rem] text-on-surface-variant font-bold uppercase mb-1">Avg Response</span>
-                <span className="text-2xl font-bold">{metrics.mcp.averageResponseTime.toFixed(0)}ms</span>
-              </div>
-              <div className="bg-surface-container-low p-4 rounded-xl">
-                <span className="block text-[0.6875rem] text-on-surface-variant font-bold uppercase mb-1">Error Rate</span>
-                <span className={`text-2xl font-bold ${metrics.mcp.errorRate > 0.1 ? 'text-error' : ''}`}>
-                  {(metrics.mcp.errorRate * 100).toFixed(1)}%
-                </span>
-              </div>
-              {metrics.mcp.toolBreakdown && Object.keys(metrics.mcp.toolBreakdown).length > 0 && (
-                <div className="bg-surface-container-low p-4 rounded-xl">
-                  <span className="block text-[0.6875rem] text-on-surface-variant font-bold uppercase mb-1">Top Tool</span>
-                  <span className="text-sm font-bold font-mono">
-                    {Object.entries(metrics.mcp.toolBreakdown).sort(([,a],[,b]) => b - a)[0]?.[0] || '-'}
+              <div className="detail-grid">
+                <div className="detail-row">
+                  <span>Queued</span>
+                  <span className="font-semibold">{metrics.embedding.queueDepth}</span>
+                </div>
+                <div className="detail-row">
+                  <span>In Flight</span>
+                  <span className="font-semibold">{metrics.embedding.inFlight}</span>
+                </div>
+                <div className="detail-row">
+                  <span>Total Tokens Processed</span>
+                  <span className="font-semibold">{formatNumber(metrics.embedding.totalTokens)}</span>
+                </div>
+                <div className="detail-row">
+                  <span>Rate Limit Hits</span>
+                  <span className={`font-semibold ${metrics.embedding.rateLimitHits > 0 ? 'text-error' : ''}`}>
+                    {metrics.embedding.rateLimitHits}
                   </span>
                 </div>
+              </div>
+            </>
+          ) : (
+            <p className="text-sm text-on-surface-variant">No embedding pipeline active.</p>
+          )}
+        </SectionCard>
+
+        {/* MCP Server Traffic */}
+        <SectionCard title="MCP Server Traffic" icon="swap_horiz">
+          {metrics.mcp && metrics.mcp.totalRequests !== undefined ? (
+            <>
+              <div className="inner-grid-2 mb-3">
+                <div className="inner-stat">
+                  <span className="inner-stat-value">{formatNumber(metrics.mcp.totalRequests)}</span>
+                  <span className="inner-stat-label">Total Requests</span>
+                </div>
+                <div className="inner-stat">
+                  <span className="inner-stat-value">{metrics.mcp.requestsPerMinute}</span>
+                  <span className="inner-stat-label">Requests / min</span>
+                </div>
+              </div>
+              <div className="detail-grid">
+                <div className="detail-row">
+                  <span>Avg Response Time</span>
+                  <span className="font-semibold">{metrics.mcp.averageResponseTime.toFixed(0)} ms</span>
+                </div>
+                <div className="detail-row">
+                  <span>Error Rate</span>
+                  <span className={`font-semibold ${metrics.mcp.errorRate > 0.05 ? 'text-error' : ''}`}>
+                    {(metrics.mcp.errorRate * 100).toFixed(1)}%
+                  </span>
+                </div>
+              </div>
+
+              {topTools.length > 0 && (
+                <div className="mt-3 pt-3 border-t border-outline-variant/15">
+                  <span className="text-xs font-bold text-on-surface-variant uppercase tracking-wider block mb-2">
+                    Tool Usage
+                  </span>
+                  <div className="space-y-1.5">
+                    {topTools.map(([tool, count]) => (
+                      <div key={tool} className="flex items-center justify-between text-sm">
+                        <span className="font-mono text-xs text-on-surface-variant">{tool}</span>
+                        <span className="font-semibold">{formatNumber(count)}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
               )}
-            </div>
-          </div>
-        )}
+            </>
+          ) : (
+            <p className="text-sm text-on-surface-variant">No MCP server running.</p>
+          )}
+        </SectionCard>
       </div>
     </div>
   );

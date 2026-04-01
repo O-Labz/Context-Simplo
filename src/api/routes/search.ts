@@ -46,6 +46,7 @@ export interface SearchRouteOptions {
   symbolicSearch?: any;
   vectorSearch?: any;
   hybridSearch?: any;
+  configManager?: any;
 }
 
 export async function registerSearchRoutes(
@@ -100,7 +101,8 @@ export async function registerSearchRoutes(
         total = response.total;
         hasMore = response.hasMore;
       } else if (input.mode === 'semantic') {
-        if (!options.vectorSearch) {
+        const vectorSearch = options.configManager?.getVectorSearch() || options.vectorSearch;
+        if (!vectorSearch) {
           return reply.status(400).send({
             error: 'Semantic search not available',
             message: 'No LLM provider configured. Configure via /setup',
@@ -108,7 +110,7 @@ export async function registerSearchRoutes(
         }
 
         const semanticStart = Date.now();
-        const response = await options.vectorSearch.search(
+        const response = await vectorSearch.search(
           input.query,
           input.repositoryId || '',
           input.limit,
@@ -120,7 +122,8 @@ export async function registerSearchRoutes(
         total = response.total;
         hasMore = response.hasMore;
       } else if (input.mode === 'hybrid') {
-        if (!options.hybridSearch) {
+        const hybridSearch = options.configManager?.getHybridSearch() || options.hybridSearch;
+        if (!hybridSearch) {
           return reply.status(400).send({
             error: 'Hybrid search not available',
             message: 'No LLM provider configured. Configure via /setup',
@@ -128,7 +131,7 @@ export async function registerSearchRoutes(
         }
 
         const hybridStart = Date.now();
-        const response = await options.hybridSearch.search(
+        const response = await hybridSearch.search(
           input.query,
           input.repositoryId || '',
           input.limit,

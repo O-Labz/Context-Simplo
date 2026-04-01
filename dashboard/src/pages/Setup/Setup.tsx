@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useWebSocket } from '../../hooks/useWebSocket';
 import './Setup.css';
 
 const PROVIDERS = [
@@ -34,7 +34,7 @@ const PROVIDERS = [
 ];
 
 export default function Setup() {
-  const navigate = useNavigate();
+  const { connected, subscribe } = useWebSocket();
   const [provider, setProvider] = useState<string>('ollama');
   const [apiKey, setApiKey] = useState<string>('');
   const [baseUrl, setBaseUrl] = useState<string>('http://host.docker.internal:11434');
@@ -42,18 +42,66 @@ export default function Setup() {
   const [testing, setTesting] = useState<boolean>(false);
   const [testResult, setTestResult] = useState<string | null>(null);
   const [saving, setSaving] = useState<boolean>(false);
+  const [reloading, setReloading] = useState<boolean>(false);
+  const [reloadStatus, setReloadStatus] = useState<{
+    type: 'success' | 'error' | null;
+    message: string;
+  }>({ type: null, message: '' });
 
   useEffect(() => {
     fetch('/api/config')
       .then(res => res.json())
       .then(data => {
         const cfg = data.config || {};
+        
+        // Load current configuration values
         if (cfg.llmProvider) setProvider(cfg.llmProvider);
         if (cfg.llmBaseUrl) setBaseUrl(cfg.llmBaseUrl);
         if (cfg.llmEmbeddingModel) setModel(cfg.llmEmbeddingModel);
       })
       .catch((err) => console.error('Failed to load config:', err));
   }, []);
+
+  useEffect(() => {
+    const unsubscribeReloading = subscribe('config:reloading', () => {
+      setReloading(true);
+      setReloadStatus({ type: null, message: '' });
+    });
+
+    const unsubscribeComplete = subscribe('config:reload_complete', (payload: any) => {
+      setReloading(false);
+      const changes = payload.changes || [];
+      const warnings = payload.warnings || [];
+      
+      let message = 'Configuration updated successfully';
+      if (changes.length > 0) {
+        message += ': ' + changes.join(', ');
+      }
+      if (warnings.length > 0) {
+        message += '. Warnings: ' + warnings.join(', ');
+      }
+      
+      setReloadStatus({ type: 'success', message });
+      
+      setTimeout(() => {
+        setReloadStatus({ type: null, message: '' });
+      }, 5000);
+    });
+
+    const unsubscribeError = subscribe('config:reload_error', (payload: any) => {
+      setReloading(false);
+      setReloadStatus({
+        type: 'error',
+        message: `Failed to apply configuration: ${payload.error || 'Unknown error'}`,
+      });
+    });
+
+    return () => {
+      unsubscribeReloading();
+      unsubscribeComplete();
+      unsubscribeError();
+    };
+  }, [subscribe]);
 
   const handleTestConnection = async () => {
     setTesting(true);
@@ -66,11 +114,12 @@ export default function Setup() {
         body: JSON.stringify({ provider, apiKey, baseUrl, model }),
       });
 
-      if (response.ok) {
+      const data = await response.json();
+      
+      if (data.success) {
         setTestResult('success');
       } else {
-        const error = await response.text();
-        setTestResult(`error: ${error}`);
+        setTestResult(`error: ${data.error || 'Connection test failed'}`);
       }
     } catch (error) {
       setTestResult(`error: ${(error as Error).message}`);
@@ -81,6 +130,7 @@ export default function Setup() {
 
   const handleSave = async () => {
     setSaving(true);
+    setReloadStatus({ type: null, message: '' });
     try {
       const response = await fetch('/api/config', {
         method: 'PUT',
@@ -92,13 +142,26 @@ export default function Setup() {
           llmEmbeddingModel: model || undefined,
         }),
       });
-      if (!response.ok) {
-        const errData = await response.json().catch(() => ({ error: 'Save failed' }));
-        console.error('Failed to save config:', errData);
+      
+      const result = await response.json();
+      
+      if (!response.ok || result.reloadError) {
+        setReloadStatus({
+          type: 'error',
+          message: result.reloadError || result.error || 'Failed to save configuration',
+        });
+      } else if (!result.success) {
+        setReloadStatus({
+          type: 'error',
+          message: 'Configuration saved but failed to apply changes',
+        });
       }
-      navigate('/');
     } catch (error) {
       console.error('Failed to save config:', error);
+      setReloadStatus({
+        type: 'error',
+        message: error instanceof Error ? error.message : 'Failed to save configuration',
+      });
     } finally {
       setSaving(false);
     }
@@ -312,13 +375,18 @@ export default function Setup() {
               </div>
               <button
                 onClick={handleSave}
-                disabled={saving}
+                disabled={saving || reloading}
                 className="w-full mt-6 px-6 py-3 primary-gradient text-white text-[0.875rem] font-semibold rounded-lg hover:shadow-lg transition-all active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
               >
                 {saving ? (
                   <>
                     <span className="material-symbols-outlined animate-spin">refresh</span>
                     Saving...
+                  </>
+                ) : reloading ? (
+                  <>
+                    <span className="material-symbols-outlined animate-spin">refresh</span>
+                    Applying changes...
                   </>
                 ) : (
                   <>
@@ -327,29 +395,100 @@ export default function Setup() {
                   </>
                 )}
               </button>
+              {reloadStatus.type && (
+                <div
+                  className={`mt-4 p-4 rounded-lg border-l-4 ${
+                    reloadStatus.type === 'success'
+                      ? 'bg-green-50 border-green-500'
+                      : 'bg-error/10 border-error'
+                  }`}
+                >
+                  <div className="flex items-center gap-3">
+                    <span
+                      className={`material-symbols-outlined ${
+                        reloadStatus.type === 'success' ? 'text-green-600' : 'text-error'
+                      }`}
+                    >
+                      {reloadStatus.type === 'success' ? 'check_circle' : 'error'}
+                    </span>
+                    <p
+                      className={`text-sm ${
+                        reloadStatus.type === 'success' ? 'text-green-900' : 'text-error'
+                      }`}
+                    >
+                      {reloadStatus.message}
+                    </p>
+                  </div>
+                </div>
+              )}
             </div>
           </>
         )}
 
         {provider === 'none' && (
-          <div className="lg:col-span-12 bg-surface-container-low p-8 rounded-xl text-center">
-            <span className="material-symbols-outlined text-6xl text-outline-variant mb-4 block">
-              info
-            </span>
-            <h3 className="text-xl font-bold text-on-surface mb-2">
-              No Provider Selected
-            </h3>
-            <p className="text-on-surface-variant mb-6 max-w-xl mx-auto">
-              Without an LLM provider, you'll have access to structural code analysis tools but
-              semantic search and embeddings will be disabled.
-            </p>
-            <button
-              onClick={handleSave}
-              disabled={saving}
-              className="px-6 py-3 bg-surface-container-highest text-on-surface text-[0.875rem] font-semibold rounded-lg hover:bg-surface-container-high transition-all"
-            >
-              Continue Without Provider
-            </button>
+          <div className="lg:col-span-12 bg-surface-container-low p-8 rounded-xl">
+            <div className="text-center mb-8">
+              <span className="material-symbols-outlined text-6xl text-outline-variant mb-4 block">
+                info
+              </span>
+              <h3 className="text-xl font-bold text-on-surface mb-2">
+                No Provider Selected
+              </h3>
+              <p className="text-on-surface-variant mb-6 max-w-xl mx-auto">
+                Without an LLM provider, you'll have access to structural code analysis tools but
+                semantic search and embeddings will be disabled.
+              </p>
+            </div>
+            <div className="flex flex-col items-center gap-4 max-w-md mx-auto">
+              <button
+                onClick={handleSave}
+                disabled={saving || reloading}
+                className="w-full px-6 py-4 primary-gradient text-white text-[0.875rem] font-semibold rounded-lg hover:shadow-lg transition-all active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+              >
+                {saving ? (
+                  <>
+                    <span className="material-symbols-outlined animate-spin">refresh</span>
+                    Saving...
+                  </>
+                ) : reloading ? (
+                  <>
+                    <span className="material-symbols-outlined animate-spin">refresh</span>
+                    Applying changes...
+                  </>
+                ) : (
+                  <>
+                    <span className="material-symbols-outlined">save</span>
+                    Save Configuration (No Provider)
+                  </>
+                )}
+              </button>
+              {reloadStatus.type && (
+                <div
+                  className={`w-full p-4 rounded-lg border-l-4 ${
+                    reloadStatus.type === 'success'
+                      ? 'bg-green-50 border-green-500'
+                      : 'bg-error/10 border-error'
+                  }`}
+                >
+                  <div className="flex items-center gap-3">
+                    <span
+                      className={`material-symbols-outlined ${
+                        reloadStatus.type === 'success' ? 'text-green-600' : 'text-error'
+                      }`}
+                    >
+                      {reloadStatus.type === 'success' ? 'check_circle' : 'error'}
+                    </span>
+                    <p
+                      className={`text-sm ${
+                        reloadStatus.type === 'success' ? 'text-green-900' : 'text-error'
+                      }`}
+                    >
+                      {reloadStatus.message}
+                    </p>
+                  </div>
+                </div>
+              )}
+            </div>
           </div>
         )}
       </div>
@@ -367,6 +506,24 @@ export default function Setup() {
           </div>
         </div>
       </div>
+
+      {/* WebSocket Connection Status */}
+      {!connected && (
+        <div className="mt-4 bg-yellow-50 border-l-4 border-yellow-500 p-4 rounded-lg">
+          <div className="flex items-start gap-3">
+            <span className="material-symbols-outlined text-yellow-600">warning</span>
+            <div>
+              <p className="text-sm font-semibold text-yellow-900 mb-1">
+                Real-time updates unavailable
+              </p>
+              <p className="text-[0.8125rem] text-yellow-800">
+                WebSocket connection lost. Configuration changes will still be saved, but you won't
+                see real-time reload status.
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

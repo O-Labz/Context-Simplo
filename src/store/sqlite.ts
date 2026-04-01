@@ -314,6 +314,18 @@ export class SqliteStorageProvider implements StorageProvider {
     return rows.map((row) => this.mapNode(row));
   }
 
+  getAllNodes(): CodeNode[] {
+    const rows = this.db
+      .prepare(
+        `SELECT id, name, qualified_name, kind, file_path, line_start, line_end, 
+         column_start, column_end, visibility, is_exported, docstring, complexity, 
+         repository_id, language, created_at, updated_at FROM nodes`
+      )
+      .all() as any[];
+
+    return rows.map((row) => this.mapNode(row));
+  }
+
   getNodesInFile(filePath: string): CodeNode[] {
     const rows = this.db
       .prepare(

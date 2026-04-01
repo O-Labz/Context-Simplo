@@ -157,22 +157,6 @@ export default function Repositories() {
     );
   }
 
-  if (repos.length === 0) {
-    return (
-      <div className="pt-24 pb-12 px-8 max-w-[1400px] mx-auto">
-        <div className="text-center py-12">
-          <span className="material-symbols-outlined text-6xl text-outline-variant mb-4 block">
-            folder_open
-          </span>
-          <h2 className="text-2xl font-bold mb-2">No Repositories Indexed</h2>
-          <p className="text-on-surface-variant">
-            Use the MCP tools to index a repository, or configure auto-indexing in setup.
-          </p>
-        </div>
-      </div>
-    );
-  }
-
   return (
     <div className="pt-24 pb-12 px-8 max-w-[1400px] mx-auto">
       {/* Hero Header Section */}
@@ -197,26 +181,28 @@ export default function Repositories() {
           </p>
         </div>
         <div className="flex gap-3">
-          <button
-            onClick={() => {
-              const data = repos.map(r => ({
-                id: r.id, name: r.name, path: r.path,
-                fileCount: r.fileCount, nodeCount: r.nodeCount, edgeCount: r.edgeCount,
-                languages: r.languages, isWatched: r.isWatched, lastIndexedAt: r.lastIndexedAt,
-              }));
-              const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
-              const url = URL.createObjectURL(blob);
-              const a = document.createElement('a');
-              a.href = url;
-              a.download = `context-simplo-graph-${new Date().toISOString().slice(0, 10)}.json`;
-              a.click();
-              URL.revokeObjectURL(url);
-              toast('success', 'Graph data exported.');
-            }}
-            className="px-6 py-3 bg-surface-container-highest text-on-surface font-semibold text-[0.875rem] rounded-xl hover:bg-surface-dim transition-all"
-          >
-            Export Graph
-          </button>
+          {repos.length > 0 && (
+            <button
+              onClick={() => {
+                const data = repos.map(r => ({
+                  id: r.id, name: r.name, path: r.path,
+                  fileCount: r.fileCount, nodeCount: r.nodeCount, edgeCount: r.edgeCount,
+                  languages: r.languages, isWatched: r.isWatched, lastIndexedAt: r.lastIndexedAt,
+                }));
+                const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = `context-simplo-graph-${new Date().toISOString().slice(0, 10)}.json`;
+                a.click();
+                URL.revokeObjectURL(url);
+                toast('success', 'Graph data exported.');
+              }}
+              className="px-6 py-3 bg-surface-container-highest text-on-surface font-semibold text-[0.875rem] rounded-xl hover:bg-surface-dim transition-all"
+            >
+              Export Graph
+            </button>
+          )}
           <button
             onClick={() => setShowAddDialog(true)}
             className="px-6 py-3 primary-gradient font-semibold text-[0.875rem] rounded-xl shadow-lg shadow-tertiary/10 active:scale-95 transition-all flex items-center gap-2"
@@ -227,6 +213,26 @@ export default function Repositories() {
           </button>
         </div>
       </section>
+
+      {/* Empty State */}
+      {repos.length === 0 && (
+        <div className="text-center py-16">
+          <span className="material-symbols-outlined text-6xl text-outline-variant mb-4 block">
+            folder_open
+          </span>
+          <h2 className="text-2xl font-bold mb-2">No Repositories Indexed</h2>
+          <p className="text-on-surface-variant mb-6">
+            Get started by adding a repository to index for code intelligence.
+          </p>
+          <button
+            onClick={() => setShowAddDialog(true)}
+            className="px-6 py-3 primary-gradient text-white font-semibold text-[0.875rem] rounded-xl shadow-lg shadow-tertiary/10 active:scale-95 transition-all inline-flex items-center gap-2"
+          >
+            <span className="material-symbols-outlined text-[18px]">add</span>
+            Add Repository
+          </button>
+        </div>
+      )}
 
       {/* Bento Grid Layout for Repositories */}
       <div className="grid grid-cols-1 md:grid-cols-12 gap-6">

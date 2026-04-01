@@ -67,27 +67,16 @@ export async function registerGraphRoutes(
       const nodes = filteredNodes.slice(0, query.maxNodes);
 
       const nodeIdSet = new Set(nodes.map(n => n.id));
-      const allEdgeKinds: Array<'calls' | 'imports' | 'extends' | 'implements' | 'references'> =
-        ['calls', 'imports', 'extends', 'implements', 'references'];
 
       const edges = query.includeEdges
-        ? nodes.flatMap((node) => {
-            const results: Array<{ id: string; source: string; target: string; kind: string }> = [];
-            for (const kind of allEdgeKinds) {
-              const targets = options.graph.getCallees(node.id, [kind]);
-              for (const target of targets) {
-                if (nodeIdSet.has(target.id)) {
-                  results.push({
-                    id: `${node.id}-${target.id}-${kind}`,
-                    source: node.id,
-                    target: target.id,
-                    kind,
-                  });
-                }
-              }
-            }
-            return results;
-          })
+        ? options.graph.getAllEdges()
+            .filter(edge => nodeIdSet.has(edge.sourceId) && nodeIdSet.has(edge.targetId))
+            .map(edge => ({
+              id: edge.id,
+              source: edge.sourceId,
+              target: edge.targetId,
+              kind: edge.kind,
+            }))
         : [];
 
       const layoutGraph = new DirectedGraph();
