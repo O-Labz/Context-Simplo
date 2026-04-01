@@ -130,6 +130,33 @@ function generateNodeId(filePath: string, name: string, line: number): string {
   return hash.digest('hex').substring(0, 16);
 }
 
+function getNthLine(content: string, lineNum: number): string {
+  let start = 0;
+  for (let i = 1; i < lineNum; i++) {
+    const idx = content.indexOf('\n', start);
+    if (idx === -1) return '';
+    start = idx + 1;
+  }
+  const end = content.indexOf('\n', start);
+  return end === -1 ? content.substring(start) : content.substring(start, end);
+}
+
+function getLineRange(content: string, startLine: number, endLine: number): string {
+  let start = 0;
+  for (let i = 1; i < startLine; i++) {
+    const idx = content.indexOf('\n', start);
+    if (idx === -1) return '';
+    start = idx + 1;
+  }
+  let end = start;
+  for (let i = startLine; i <= endLine; i++) {
+    const idx = content.indexOf('\n', end);
+    if (idx === -1) { end = content.length; break; }
+    end = idx + 1;
+  }
+  return content.substring(start, end);
+}
+
 export async function parseFile(
   filePath: string,
   repositoryId: string,
@@ -180,7 +207,6 @@ export async function parseFile(
   const inheritance: ParsedInheritance[] = [];
 
   const now = new Date();
-  const lines = content.split('\n');
 
   const exportedNames = new Set<string>();
   if (parseResult.exports) {
@@ -258,7 +284,7 @@ export async function parseFile(
 
       // Fallback: parse extends/implements from source text of the declaration line
       if (!item.extends && !item.superClass && !item.implements && startLine > 0) {
-        const declLine = lines[startLine - 1] || '';
+        const declLine = getNthLine(content, startLine);
         const extendsMatch = declLine.match(/\bextends\s+(\w+)/);
         if (extendsMatch?.[1]) {
           inheritance.push({
@@ -280,10 +306,9 @@ export async function parseFile(
       }
     }
 
-    // Extract function calls from function/method bodies
-    if ((nodeKind === 'function' || nodeKind === 'method') && startLine > 0 && endLine > 0) {
-      const bodyLines = lines.slice(startLine - 1, endLine);
-      const bodyText = bodyLines.join('\n');
+    // Extract function calls from function/method bodies (cap size to avoid huge allocations)
+    if ((nodeKind === 'function' || nodeKind === 'method') && startLine > 0 && endLine > 0 && (endLine - startLine) < 500) {
+      const bodyText = getLineRange(content, startLine, endLine);
       extractCallsFromBody(bodyText, nodeId, startLine);
     }
 
@@ -295,7 +320,6 @@ export async function parseFile(
   }
 
   function extractCallsFromBody(body: string, callerNodeId: string, baseLineOffset: number): void {
-    // Match identifier( patterns — function calls
     const callRegex = /\b([a-zA-Z_$][\w$]*)\s*\(/g;
     const keywords = new Set([
       'if', 'for', 'while', 'switch', 'catch', 'return', 'throw',
@@ -309,33 +333,15 @@ export async function parseFile(
       const calleeName = match[1];
       if (!calleeName || keywords.has(calleeName) || seen.has(calleeName)) continue;
       seen.add(calleeName);
-
-      const linesBefore = body.substring(0, match.index).split('\n');
-      const line = baseLineOffset + linesBefore.length - 1;
-
-      calls.push({
-        callerNodeId,
-        calleeName,
-        line,
-      });
+      calls.push({ callerNodeId, calleeName, line: baseLineOffset });
     }
 
-    // Match member calls: obj.method(
     const memberCallRegex = /\.([a-zA-Z_$][\w$]*)\s*\(/g;
-    const seenMember = new Set<string>();
     while ((match = memberCallRegex.exec(body)) !== null) {
       const calleeName = match[1];
-      if (!calleeName || seenMember.has(calleeName)) continue;
-      seenMember.add(calleeName);
-
-      const linesBefore = body.substring(0, match.index).split('\n');
-      const line = baseLineOffset + linesBefore.length - 1;
-
-      calls.push({
-        callerNodeId,
-        calleeName,
-        line,
-      });
+      if (!calleeName || seen.has(calleeName)) continue;
+      seen.add(calleeName);
+      calls.push({ callerNodeId, calleeName, line: baseLineOffset });
     }
   }
 

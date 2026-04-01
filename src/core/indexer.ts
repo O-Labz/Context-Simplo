@@ -116,14 +116,21 @@ export class Indexer extends EventEmitter {
       const files = await this.discoverFiles(absolutePath, options.respectIgnore);
       job.filesTotal = files.length;
 
-      for (const filePath of files) {
-        try {
-          await this.indexFile(filePath, repositoryId, options.incremental || false);
-          job.filesProcessed++;
-          this.emit('job:progress', job);
-        } catch (error) {
-          job.filesFailed++;
-          this.emit('file:error', filePath, error as Error);
+      const BATCH_SIZE = 50;
+      for (let i = 0; i < files.length; i += BATCH_SIZE) {
+        const batch = files.slice(i, i + BATCH_SIZE);
+        for (const filePath of batch) {
+          try {
+            await this.indexFile(filePath, repositoryId, options.incremental || false);
+            job.filesProcessed++;
+            this.emit('job:progress', job);
+          } catch (error) {
+            job.filesFailed++;
+            this.emit('file:error', filePath, error as Error);
+          }
+        }
+        if (global.gc) {
+          global.gc();
         }
       }
 
@@ -271,14 +278,46 @@ export class Indexer extends EventEmitter {
     }
   }
 
+  private static readonly SKIP_DIRS = new Set([
+    'node_modules', '.git', '.svn', '.hg', 'vendor', '__pycache__',
+    '.venv', 'venv', 'dist', 'build', 'out', 'target', '.next',
+    '.nuxt', '.cache', '.parcel-cache', 'coverage', '.nyc_output',
+    '.tox', '.eggs', 'bower_components', 'jspm_packages',
+  ]);
+
+  private static readonly MAX_FILE_SIZE = 1024 * 1024; // 1MB
+  private static readonly MAX_FILES = 100_000;
+
   private async discoverFiles(
     dirPath: string,
     respectIgnore: boolean = true
   ): Promise<string[]> {
     const files: string[] = [];
-    const entries = await readdir(dirPath, { withFileTypes: true });
+    await this._walkDir(dirPath, respectIgnore, files);
+    return files;
+  }
+
+  private async _walkDir(
+    dirPath: string,
+    respectIgnore: boolean,
+    files: string[]
+  ): Promise<void> {
+    if (files.length >= Indexer.MAX_FILES) return;
+
+    let entries;
+    try {
+      entries = await readdir(dirPath, { withFileTypes: true });
+    } catch {
+      return;
+    }
 
     for (const entry of entries) {
+      if (files.length >= Indexer.MAX_FILES) return;
+
+      if (entry.name.startsWith('.') || Indexer.SKIP_DIRS.has(entry.name)) {
+        continue;
+      }
+
       const fullPath = resolve(dirPath, entry.name);
       const relativePath = relative(this.workspaceRoot, fullPath);
 
@@ -286,22 +325,22 @@ export class Indexer extends EventEmitter {
         continue;
       }
 
-      if (entry.name.startsWith('.') || entry.name === 'node_modules') {
-        continue;
-      }
-
       if (entry.isDirectory()) {
-        const subFiles = await this.discoverFiles(fullPath, respectIgnore);
-        files.push(...subFiles);
+        await this._walkDir(fullPath, respectIgnore, files);
       } else if (entry.isFile()) {
         const ext = entry.name.split('.').pop();
         if (this.isSourceFile(ext || '')) {
-          files.push(fullPath);
+          try {
+            const fileStat = await stat(fullPath);
+            if (fileStat.size <= Indexer.MAX_FILE_SIZE) {
+              files.push(fullPath);
+            }
+          } catch {
+            // Skip files we can't stat
+          }
         }
       }
     }
-
-    return files;
   }
 
   private isSourceFile(ext: string): boolean {

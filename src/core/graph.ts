@@ -59,7 +59,8 @@ export class CodeGraph {
     this.graph = new DirectedGraph();
     this.nameIndex = new Map();
     this.fileIndex = new Map();
-    this.memoryLimitBytes = memoryLimitMb * 1024 * 1024;
+    const capped = Math.min(memoryLimitMb, 4096);
+    this.memoryLimitBytes = capped * 1024 * 1024;
   }
 
   private checkMemoryLimit(): void {
@@ -75,11 +76,12 @@ export class CodeGraph {
   }
 
   addNode(node: CodeNode): void {
+    const lean = { ...node, docstring: undefined, snippet: undefined };
     if (this.graph.hasNode(node.id)) {
-      this.graph.updateNode(node.id, () => node);
+      this.graph.updateNode(node.id, () => lean);
     } else {
       this.checkMemoryLimit();
-      this.graph.addNode(node.id, node);
+      this.graph.addNode(node.id, lean);
     }
 
     if (!this.nameIndex.has(node.name)) {
