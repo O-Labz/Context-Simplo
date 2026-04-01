@@ -62,6 +62,13 @@ export interface IndexerEvents {
 
 export class Indexer extends EventEmitter {
   private contextIgnore: ContextIgnore;
+  private pendingReferences: Array<{
+    calls: Array<{ callerNodeId: string; calleeName: string }>;
+    imports: import('./parser.js').ParsedImport[];
+    inheritance: import('./parser.js').ParsedInheritance[];
+    repositoryId: string;
+    filePath: string;
+  }> = [];
 
   constructor(
     public storage: StorageProvider,
@@ -116,6 +123,8 @@ export class Indexer extends EventEmitter {
       const files = await this.discoverFiles(absolutePath, options.respectIgnore);
       job.filesTotal = files.length;
 
+      this.pendingReferences = [];
+
       const BATCH_SIZE = 50;
       for (let i = 0; i < files.length; i += BATCH_SIZE) {
         const batch = files.slice(i, i + BATCH_SIZE);
@@ -133,6 +142,12 @@ export class Indexer extends EventEmitter {
           global.gc();
         }
       }
+
+      const forwardEdges = this.resolveForwardEdges(repositoryId);
+      if (forwardEdges > 0) {
+        console.log(`Resolved ${forwardEdges} forward-reference edges`);
+      }
+      this.pendingReferences = [];
 
       const stats = this.graph.getStats();
       job.nodesCreated = stats.nodeCount;
@@ -217,6 +232,14 @@ export class Indexer extends EventEmitter {
       }
       this.storage.upsertEdges(edges);
 
+      this.pendingReferences.push({
+        calls: parsed.calls,
+        imports: parsed.imports,
+        inheritance: parsed.inheritance,
+        repositoryId,
+        filePath: parsed.filePath,
+      });
+
       fileMetadata.hash = parsed.hash;
       fileMetadata.language = parsed.language;
       fileMetadata.nodeCount = parsed.nodes.length;
@@ -276,6 +299,110 @@ export class Indexer extends EventEmitter {
         console.error(`Failed to resume indexing ${file.path}:`, error);
       }
     }
+  }
+
+  private resolveForwardEdges(repositoryId: string): number {
+    let created = 0;
+    const now = new Date();
+
+    for (const ref of this.pendingReferences) {
+      if (ref.repositoryId !== repositoryId) continue;
+
+      for (const call of ref.calls) {
+        const targets = this.graph.findByName(call.calleeName);
+        for (const target of targets) {
+          if (target.repositoryId !== repositoryId) continue;
+          const edgeId = this.generateEdgeId(call.callerNodeId, target.id, 'calls');
+          try {
+            if (!this.graph.getNode(call.callerNodeId)) continue;
+            this.graph.addEdge({
+              id: edgeId,
+              sourceId: call.callerNodeId,
+              targetId: target.id,
+              kind: 'calls',
+              confidence: 0.9,
+              repositoryId,
+              createdAt: now,
+              updatedAt: now,
+            });
+            created++;
+          } catch {
+            // Already exists or source/target missing
+          }
+        }
+      }
+
+      for (const inh of ref.inheritance) {
+        const parents = this.graph.findByName(inh.parentName);
+        for (const parent of parents) {
+          if (parent.repositoryId !== repositoryId) continue;
+          const edgeId = this.generateEdgeId(inh.childNodeId, parent.id, inh.kind);
+          try {
+            if (!this.graph.getNode(inh.childNodeId)) continue;
+            this.graph.addEdge({
+              id: edgeId,
+              sourceId: inh.childNodeId,
+              targetId: parent.id,
+              kind: inh.kind,
+              confidence: 1.0,
+              repositoryId,
+              createdAt: now,
+              updatedAt: now,
+            });
+            created++;
+          } catch {
+            // Already exists or source/target missing
+          }
+        }
+      }
+
+      for (const imp of ref.imports) {
+        if (!imp.source || !imp.source.startsWith('.')) continue;
+        const importDir = dirname(ref.filePath);
+        const resolvedBase = join(importDir, imp.source).replace(/\\/g, '/');
+        const extensions = ['', '.ts', '.tsx', '.js', '.jsx', '/index.ts', '/index.tsx', '/index.js'];
+
+        for (const importedName of imp.imported) {
+          const targets = this.graph.findByName(importedName);
+          for (const target of targets) {
+            if (target.repositoryId !== repositoryId) continue;
+            if (target.filePath === ref.filePath) continue;
+
+            const targetFileBase = target.filePath.replace(/\.(ts|tsx|js|jsx)$/, '').replace(/\/index$/, '');
+            const matchesPath = extensions.some(ext => {
+              const candidate = resolvedBase + ext;
+              return target.filePath === candidate || targetFileBase === resolvedBase;
+            });
+            if (!matchesPath) continue;
+
+            const nodesInFile = this.graph.getNodesInFile(ref.filePath);
+            const sourceNode = nodesInFile.find(n =>
+              n.kind === 'function' || n.kind === 'class' || n.kind === 'method'
+            ) || nodesInFile[0];
+            if (!sourceNode) continue;
+
+            const edgeId = this.generateEdgeId(sourceNode.id, target.id, 'imports');
+            try {
+              this.graph.addEdge({
+                id: edgeId,
+                sourceId: sourceNode.id,
+                targetId: target.id,
+                kind: 'imports',
+                confidence: 1.0,
+                repositoryId,
+                createdAt: now,
+                updatedAt: now,
+              });
+              created++;
+            } catch {
+              // Already exists
+            }
+          }
+        }
+      }
+    }
+
+    return created;
   }
 
   private static readonly SKIP_DIRS = new Set([
