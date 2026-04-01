@@ -115,15 +115,20 @@ export default function Explorer() {
   }, [selectedRepo]);
 
   useEffect(() => {
-    if (!containerRef.current || !selectedRepo) return;
+    if (!selectedRepo) return;
 
     setLoading(true);
 
     fetch(`/api/graph/${selectedRepo}?maxNodes=500&includeEdges=true`)
       .then(res => res.json())
       .then((data: GraphData) => {
-        if (!containerRef.current) return;
         setRawData(data);
+        setGraphStats({ nodes: data.nodes.length, edges: data.edges.length });
+
+        if (renderMode !== 'sigma' || !containerRef.current) {
+          setLoading(false);
+          return;
+        }
 
         const graph = new Graph();
 
@@ -169,6 +174,7 @@ export default function Explorer() {
           labelSize: 12,
           labelWeight: 'bold',
           edgeLabelSize: 10,
+          allowInvalidContainer: true,
           nodeReducer: (node, data) => {
             const res = { ...data };
             if (highlightedNode && highlightedNode !== node) {
@@ -204,7 +210,6 @@ export default function Explorer() {
 
         sigmaRef.current = sigma;
         graphRef.current = graph;
-        setGraphStats({ nodes: data.nodes.length, edges: data.edges.length });
         setLoading(false);
 
         requestAnimationFrame(() => {
@@ -223,7 +228,7 @@ export default function Explorer() {
       }
       graphRef.current = null;
     };
-  }, [selectedRepo, refreshTrigger, getNodeColor, loadNodeDetails]);
+  }, [selectedRepo, refreshTrigger, renderMode, getNodeColor, loadNodeDetails]);
 
   useEffect(() => {
     sigmaRef.current?.refresh();
