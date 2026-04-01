@@ -34,7 +34,7 @@ docker pull ohopson/context-simplo:dev
 
 **Step 3: Run with Ollama connection**
 
-<details>
+<details>                                                                                                             
 <summary><b>macOS / Windows</b></summary>
 
 ```bash

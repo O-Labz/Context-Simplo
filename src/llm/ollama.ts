@@ -121,9 +121,28 @@ export class OllamaEmbeddingProvider implements EmbeddingProvider {
 
   async healthCheck(): Promise<boolean> {
     try {
-      const response = await fetch(`${this.baseUrl}/api/tags`);
-      return response.ok;
-    } catch {
+      // Check if Ollama is running
+      const response = await fetch(`${this.baseUrl}/api/tags`, {
+        signal: AbortSignal.timeout(5000), // 5 second timeout
+      });
+      
+      if (!response.ok) {
+        return false;
+      }
+
+      // Verify the model exists
+      const data = (await response.json()) as { models: Array<{ name: string }> };
+      const modelBase = this.model.split(':')[0] || this.model;
+      const modelExists = data.models.some(m => m.name.startsWith(modelBase));
+      
+      if (!modelExists) {
+        console.warn(`Ollama model "${this.model}" not found. Available models: ${data.models.map(m => m.name).join(', ')}`);
+        return false;
+      }
+
+      return true;
+    } catch (error) {
+      console.error(`Ollama health check failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
       return false;
     }
   }

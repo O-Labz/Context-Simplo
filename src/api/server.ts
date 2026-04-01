@@ -41,6 +41,7 @@ export interface APIServerOptions {
   vectorStore?: any;
   embeddingProvider?: any;
   mcpServer?: any;
+  configManager?: any;
 }
 
 export interface APIServer {
@@ -173,6 +174,7 @@ export async function createAPIServer(
     storage: options.storage,
     broadcaster,
     embeddingProvider: options.embeddingProvider,
+    configManager: options.configManager,
   });
 
   await registerRepositoryRoutes(fastify, {
@@ -190,6 +192,7 @@ export async function createAPIServer(
     symbolicSearch: options.symbolicSearch,
     vectorSearch: options.vectorSearch,
     hybridSearch: options.hybridSearch,
+    configManager: options.configManager,
   });
 
   await registerGraphRoutes(fastify, {

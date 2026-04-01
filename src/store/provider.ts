@@ -36,6 +36,7 @@ export interface StorageProvider {
 
   getNode(id: string): CodeNode | null;
   getNodes(filter: NodeFilter): CodeNode[];
+  getAllNodes(): CodeNode[];
   getNodesInFile(filePath: string): CodeNode[];
   upsertNodes(nodes: CodeNode[]): void;
   deleteNode(id: string): void;

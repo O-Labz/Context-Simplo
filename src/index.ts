@@ -19,6 +19,7 @@ import { FileWatcher } from './core/watcher.js';
 import { ShutdownManager } from './core/shutdown.js';
 import { createEmbeddingProvider } from './llm/provider.js';
 import { EmbeddingQueue } from './core/embedding-queue.js';
+import { ConfigManager } from './core/config-manager.js';
 
 // Global error handlers to prevent crashes
 process.on('unhandledRejection', (reason, promise) => {
@@ -53,6 +54,28 @@ async function main() {
 
   const graph = new CodeGraph(config.graphMemoryLimitMb.value);
   console.log(`Graph engine ready (memory limit: ${config.graphMemoryLimitMb.value}MB)`);
+
+  console.log('Hydrating graph from storage...');
+  const allNodes = storage.getAllNodes();
+  const allEdges = storage.getEdges();
+  
+  for (const node of allNodes) {
+    try {
+      graph.addNode(node);
+    } catch (error) {
+      console.warn(`Failed to restore node ${node.id}:`, (error as Error).message);
+    }
+  }
+  
+  for (const edge of allEdges) {
+    try {
+      graph.addEdge(edge);
+    } catch (error) {
+      console.warn(`Failed to restore edge ${edge.id}:`, (error as Error).message);
+    }
+  }
+  
+  console.log(`Graph hydrated: ${allNodes.length} nodes, ${allEdges.length} edges`);
 
   const embeddingProvider = await createEmbeddingProvider(config.llmProvider.value, {
     apiKey: config.llmApiKey.value,
@@ -113,6 +136,34 @@ async function main() {
     watcher,
   });
 
+  const configManager = new ConfigManager({
+    storage,
+    vectorStore,
+    onEmbeddingProviderChange: async (provider) => {
+      if (indexer) {
+        (indexer as any).embeddingProvider = provider;
+      }
+      if (mcpServer) {
+        (mcpServer as any).embeddingProvider = provider;
+      }
+    },
+    onEmbeddingQueueChange: async (queue) => {
+      if (indexer) {
+        (indexer as any).embeddingQueue = queue;
+      }
+    },
+    onVectorSearchChange: async (newVectorSearch, newHybridSearch) => {
+      vectorSearch = newVectorSearch;
+      hybridSearch = newHybridSearch;
+    },
+  });
+
+  configManager.setEmbeddingProvider(embeddingProvider);
+  configManager.setEmbeddingQueue(embeddingQueue);
+  if (vectorSearch && hybridSearch) {
+    configManager.setSearchServices(vectorSearch, hybridSearch);
+  }
+
   await mcpServer.start();
   console.log('MCP server started on stdio');
 
@@ -139,6 +190,7 @@ async function main() {
       vectorStore,
       embeddingProvider,
       mcpServer,
+      configManager,
     })
   );
 

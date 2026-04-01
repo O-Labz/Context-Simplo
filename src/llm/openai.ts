@@ -101,13 +101,37 @@ export class OpenAIEmbeddingProvider implements EmbeddingProvider {
 
   async healthCheck(): Promise<boolean> {
     try {
+      // Check if API is reachable and API key is valid
       const response = await fetch(`${this.baseUrl}/models`, {
         headers: {
           Authorization: `Bearer ${this.apiKey}`,
         },
+        signal: AbortSignal.timeout(10000), // 10 second timeout
       });
-      return response.ok;
-    } catch {
+      
+      if (!response.ok) {
+        const errorText = await response.text().catch(() => 'Unknown error');
+        console.error(`OpenAI health check failed (${response.status}): ${errorText}`);
+        return false;
+      }
+
+      // Verify the response is valid JSON with models
+      const data = await response.json() as { data?: Array<{ id: string }> };
+      if (!data.data || !Array.isArray(data.data)) {
+        console.error('OpenAI health check failed: Invalid response format');
+        return false;
+      }
+
+      // Check if the specified model exists
+      const modelExists = data.data.some((m) => m.id === this.model);
+      if (!modelExists) {
+        console.warn(`OpenAI model "${this.model}" not found in available models`);
+        // Don't fail for this - the model might still work
+      }
+
+      return true;
+    } catch (error) {
+      console.error(`OpenAI health check failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
       return false;
     }
   }

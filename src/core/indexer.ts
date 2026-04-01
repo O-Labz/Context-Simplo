@@ -304,6 +304,7 @@ export class Indexer extends EventEmitter {
   private resolveForwardEdges(repositoryId: string): number {
     let created = 0;
     const now = new Date();
+    const newEdges: GraphEdge[] = [];
 
     for (const ref of this.pendingReferences) {
       if (ref.repositoryId !== repositoryId) continue;
@@ -313,18 +314,20 @@ export class Indexer extends EventEmitter {
         for (const target of targets) {
           if (target.repositoryId !== repositoryId) continue;
           const edgeId = this.generateEdgeId(call.callerNodeId, target.id, 'calls');
+          const edge: GraphEdge = {
+            id: edgeId,
+            sourceId: call.callerNodeId,
+            targetId: target.id,
+            kind: 'calls',
+            confidence: 0.9,
+            repositoryId,
+            createdAt: now,
+            updatedAt: now,
+          };
           try {
             if (!this.graph.getNode(call.callerNodeId)) continue;
-            this.graph.addEdge({
-              id: edgeId,
-              sourceId: call.callerNodeId,
-              targetId: target.id,
-              kind: 'calls',
-              confidence: 0.9,
-              repositoryId,
-              createdAt: now,
-              updatedAt: now,
-            });
+            this.graph.addEdge(edge);
+            newEdges.push(edge);
             created++;
           } catch {
             // Already exists or source/target missing
@@ -337,18 +340,20 @@ export class Indexer extends EventEmitter {
         for (const parent of parents) {
           if (parent.repositoryId !== repositoryId) continue;
           const edgeId = this.generateEdgeId(inh.childNodeId, parent.id, inh.kind);
+          const edge: GraphEdge = {
+            id: edgeId,
+            sourceId: inh.childNodeId,
+            targetId: parent.id,
+            kind: inh.kind,
+            confidence: 1.0,
+            repositoryId,
+            createdAt: now,
+            updatedAt: now,
+          };
           try {
             if (!this.graph.getNode(inh.childNodeId)) continue;
-            this.graph.addEdge({
-              id: edgeId,
-              sourceId: inh.childNodeId,
-              targetId: parent.id,
-              kind: inh.kind,
-              confidence: 1.0,
-              repositoryId,
-              createdAt: now,
-              updatedAt: now,
-            });
+            this.graph.addEdge(edge);
+            newEdges.push(edge);
             created++;
           } catch {
             // Already exists or source/target missing
@@ -382,17 +387,19 @@ export class Indexer extends EventEmitter {
             if (!sourceNode) continue;
 
             const edgeId = this.generateEdgeId(sourceNode.id, target.id, 'imports');
+            const edge: GraphEdge = {
+              id: edgeId,
+              sourceId: sourceNode.id,
+              targetId: target.id,
+              kind: 'imports',
+              confidence: 1.0,
+              repositoryId,
+              createdAt: now,
+              updatedAt: now,
+            };
             try {
-              this.graph.addEdge({
-                id: edgeId,
-                sourceId: sourceNode.id,
-                targetId: target.id,
-                kind: 'imports',
-                confidence: 1.0,
-                repositoryId,
-                createdAt: now,
-                updatedAt: now,
-              });
+              this.graph.addEdge(edge);
+              newEdges.push(edge);
               created++;
             } catch {
               // Already exists
@@ -400,6 +407,10 @@ export class Indexer extends EventEmitter {
           }
         }
       }
+    }
+
+    if (newEdges.length > 0) {
+      this.storage.upsertEdges(newEdges);
     }
 
     return created;

@@ -30,6 +30,7 @@ export interface ConfigRouteOptions {
   storage: StorageProvider;
   broadcaster: WebSocketBroadcaster;
   embeddingProvider?: any;
+  configManager?: any;
 }
 
 /**
@@ -48,7 +49,9 @@ export async function registerConfigRoutes(
    * - Current values from all sources
    */
   fastify.get('/api/config', async () => {
-    const config = options.storage.getConfig();
+    const { loadConfig } = await import('../../core/config.js');
+    const dashboardConfig = options.storage.getConfig();
+    const fullConfig = loadConfig(dashboardConfig as any);
 
     // Check which fields are locked by environment variables
     const envLocked = {
@@ -61,23 +64,30 @@ export async function registerConfigRoutes(
       logLevel: !!process.env.CONTEXT_SIMPLO_LOG_LEVEL,
     };
 
-    // Mask API key if present
-    const maskedConfig = {
-      ...config,
-      llmApiKey: config.llmApiKey ? '***' : undefined,
+    // Extract actual values from config (which includes env vars, dashboard, and defaults)
+    const actualConfig = {
+      llmProvider: fullConfig.llmProvider.value,
+      llmApiKey: fullConfig.llmApiKey.value ? '***' : undefined,
+      llmBaseUrl: fullConfig.llmBaseUrl.value,
+      llmEmbeddingModel: fullConfig.llmEmbeddingModel.value,
+      autoIndex: fullConfig.autoIndex.value,
+      watchEnabled: fullConfig.watchEnabled.value,
+      logLevel: fullConfig.logLevel.value,
+      embeddingConcurrency: fullConfig.embeddingConcurrency.value,
+      embeddingBatchSize: fullConfig.embeddingBatchSize.value,
     };
 
     return {
-      config: maskedConfig,
+      config: actualConfig,
       envLocked,
       source: {
-        llmProvider: envLocked.llmProvider ? 'env' : 'dashboard',
-        llmApiKey: envLocked.llmApiKey ? 'env' : 'dashboard',
-        llmBaseUrl: envLocked.llmBaseUrl ? 'env' : 'dashboard',
-        llmEmbeddingModel: envLocked.llmEmbeddingModel ? 'env' : 'dashboard',
-        autoIndex: envLocked.autoIndex ? 'env' : 'dashboard',
-        watchEnabled: envLocked.watchEnabled ? 'env' : 'dashboard',
-        logLevel: envLocked.logLevel ? 'env' : 'dashboard',
+        llmProvider: fullConfig.llmProvider.source,
+        llmApiKey: fullConfig.llmApiKey.source,
+        llmBaseUrl: fullConfig.llmBaseUrl.source,
+        llmEmbeddingModel: fullConfig.llmEmbeddingModel.source,
+        autoIndex: fullConfig.autoIndex.source,
+        watchEnabled: fullConfig.watchEnabled.source,
+        logLevel: fullConfig.logLevel.source,
       },
     };
   });
@@ -148,6 +158,51 @@ export async function registerConfigRoutes(
       timestamp: new Date().toISOString(),
     });
 
+    // Trigger hot reload if ConfigManager is available
+    if (options.configManager && Object.keys(updates).length > 0) {
+      try {
+        options.broadcaster.broadcast(WebSocketEvents.CONFIG_RELOADING, {
+          fields: Object.keys(updates),
+          timestamp: new Date().toISOString(),
+        });
+
+        const reloadResult = await options.configManager.reloadConfig(updates);
+
+        if (reloadResult.success) {
+          options.broadcaster.broadcast(WebSocketEvents.CONFIG_RELOAD_COMPLETE, {
+            changes: reloadResult.changes,
+            warnings: reloadResult.warnings || [],
+            timestamp: new Date().toISOString(),
+          });
+        } else {
+          options.broadcaster.broadcast(WebSocketEvents.CONFIG_RELOAD_ERROR, {
+            error: reloadResult.error,
+            timestamp: new Date().toISOString(),
+          });
+          
+          return {
+            success: false,
+            updated: Object.keys(updates),
+            ignored: Object.keys(input).filter((key) => !(key in updates)),
+            reloadError: reloadResult.error,
+          };
+        }
+      } catch (error) {
+        const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+        options.broadcaster.broadcast(WebSocketEvents.CONFIG_RELOAD_ERROR, {
+          error: errorMessage,
+          timestamp: new Date().toISOString(),
+        });
+        
+        return {
+          success: false,
+          updated: Object.keys(updates),
+          ignored: Object.keys(input).filter((key) => !(key in updates)),
+          reloadError: errorMessage,
+        };
+      }
+    }
+
     return {
       success: true,
       updated: Object.keys(updates),
@@ -193,20 +248,20 @@ export async function registerConfigRoutes(
       const latency = Date.now() - startTime;
 
       if (!healthy) {
-        return {
+        return reply.status(400).send({
           success: false,
           error: 'Health check failed - provider is not responding correctly',
-        };
+        });
       }
 
       // Test actual embedding generation
       try {
         await testProvider.embed(['test']);
       } catch (error) {
-        return {
+        return reply.status(400).send({
           success: false,
           error: error instanceof Error ? error.message : 'Failed to generate test embedding',
-        };
+        });
       }
 
       return {
@@ -218,10 +273,10 @@ export async function registerConfigRoutes(
         message: 'Connection successful',
       };
     } catch (error) {
-      return {
+      return reply.status(400).send({
         success: false,
         error: error instanceof Error ? error.message : 'Connection failed',
-      };
+      });
     }
   });
 }

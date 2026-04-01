@@ -105,10 +105,10 @@ export class CodeGraph {
       throw new GraphError('addEdge', `Target node ${edge.targetId} does not exist`);
     }
 
-    if (this.graph.hasEdge(edge.sourceId, edge.targetId)) {
-      this.graph.updateEdge(edge.sourceId, edge.targetId, () => edge);
+    if (this.graph.hasEdge(edge.id)) {
+      this.graph.replaceEdgeAttributes(edge.id, edge);
     } else {
-      this.graph.addEdge(edge.sourceId, edge.targetId, edge);
+      this.graph.addEdgeWithKey(edge.id, edge.sourceId, edge.targetId, edge);
     }
 
     this.centralityCache = null;
@@ -451,6 +451,15 @@ export class CodeGraph {
     const INDEX_OVERHEAD = 1.2;
 
     return Math.ceil((nodeCount * NODE_SIZE_ESTIMATE + edgeCount * EDGE_SIZE_ESTIMATE) * INDEX_OVERHEAD);
+  }
+
+  getAllEdges(): GraphEdge[] {
+    const edges: GraphEdge[] = [];
+    for (const edgeId of this.graph.edges()) {
+      const edge = this.graph.getEdgeAttributes(edgeId) as GraphEdge;
+      edges.push(edge);
+    }
+    return edges;
   }
 
   serialize(): string {

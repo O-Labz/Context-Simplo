@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import './Search.css';
 
 interface SearchResult {
@@ -13,6 +13,17 @@ interface SearchResult {
   language: string;
 }
 
+interface Repository {
+  id: string;
+  name: string;
+  path: string;
+}
+
+interface ErrorState {
+  message: string;
+  retryAfter?: number;
+}
+
 export default function Search() {
   const [query, setQuery] = useState('');
   const [searchType, setSearchType] = useState<'exact' | 'semantic' | 'hybrid'>('exact');
@@ -21,22 +32,86 @@ export default function Search() {
   const [focused, setFocused] = useState(false);
   const [bookmarked, setBookmarked] = useState<Set<string>>(new Set());
   const [activeLanguageFilter, setActiveLanguageFilter] = useState<string | null>(null);
+  const [error, setError] = useState<ErrorState | null>(null);
+  const [repositories, setRepositories] = useState<Repository[]>([]);
+  const [selectedRepoId, setSelectedRepoId] = useState<string>('');
+  const [llmConfigured, setLlmConfigured] = useState<boolean | null>(null);
+
+  useEffect(() => {
+    loadRepositories();
+    checkLlmConfig();
+  }, []);
+
+  const loadRepositories = async () => {
+    try {
+      const response = await fetch('/api/repositories');
+      const data = await response.json();
+      const repos = data.repositories || [];
+      setRepositories(repos);
+      if (repos.length === 1) {
+        setSelectedRepoId(repos[0].id);
+      }
+    } catch (err) {
+      console.warn('Failed to load repositories:', err);
+    }
+  };
+
+  const checkLlmConfig = async () => {
+    try {
+      const testResponse = await fetch('/api/search', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ query: 'test', mode: 'semantic', limit: 1 }),
+      });
+      await testResponse.json();
+      setLlmConfigured(testResponse.ok);
+    } catch (err) {
+      console.warn('Failed to check LLM config:', err);
+      setLlmConfigured(false);
+    }
+  };
 
   const handleSearch = async () => {
     if (!query.trim()) return;
 
     setSearching(true);
+    setError(null);
     try {
+      const body: any = { query, mode: searchType };
+      if ((searchType === 'semantic' || searchType === 'hybrid') && selectedRepoId) {
+        body.repositoryId = selectedRepoId;
+      }
+
       const response = await fetch('/api/search', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ query, mode: searchType }),
+        body: JSON.stringify(body),
       });
 
       const data = await response.json();
-      setResults(data.results || []);
-    } catch (error) {
-      console.error('Search failed:', error);
+
+      if (!response.ok) {
+        if (response.status === 429) {
+          setError({
+            message: data.message || 'Rate limit exceeded',
+            retryAfter: data.retryAfter,
+          });
+        } else {
+          setError({
+            message: data.message || data.error || 'Search failed',
+          });
+        }
+        setResults([]);
+      } else {
+        setResults(data.results || []);
+        setError(null);
+      }
+    } catch (err) {
+      console.error('Search failed:', err);
+      setError({
+        message: err instanceof Error ? err.message : 'Network error - could not reach server',
+      });
+      setResults([]);
     } finally {
       setSearching(false);
     }
@@ -79,20 +154,44 @@ export default function Search() {
               />
             </div>
             <div className="flex items-center gap-1 p-1 bg-surface-container-low rounded-lg">
-              {(['exact', 'semantic', 'hybrid'] as const).map((type) => (
-                <button
-                  key={type}
-                  onClick={() => setSearchType(type)}
-                  className={`px-4 py-2 rounded-md text-[0.6875rem] font-semibold uppercase tracking-wider transition-all ${
-                    searchType === type
-                      ? 'bg-surface-container-lowest text-on-surface shadow-sm'
-                      : 'text-on-surface-variant hover:bg-surface-container-highest'
-                  }`}
-                >
-                  {type}
-                </button>
-              ))}
+              {(['exact', 'semantic', 'hybrid'] as const).map((type) => {
+                const disabled = llmConfigured === false && (type === 'semantic' || type === 'hybrid');
+                const loading = llmConfigured === null;
+                return (
+                  <button
+                    key={type}
+                    onClick={() => !disabled && !loading && setSearchType(type)}
+                    disabled={disabled || loading}
+                    title={disabled ? 'Requires an embedding provider — configure in Setup' : loading ? 'Checking availability...' : undefined}
+                    className={`px-4 py-2 rounded-md text-[0.6875rem] font-semibold uppercase tracking-wider transition-all ${
+                      searchType === type
+                        ? 'bg-surface-container-lowest text-on-surface shadow-sm'
+                        : disabled
+                          ? 'text-on-surface-variant/40 cursor-not-allowed opacity-50'
+                          : loading
+                            ? 'text-on-surface-variant/60 cursor-wait'
+                            : 'text-on-surface-variant hover:bg-surface-container-highest'
+                    }`}
+                  >
+                    {type}
+                  </button>
+                );
+              })}
             </div>
+            {repositories.length > 1 && (searchType === 'semantic' || searchType === 'hybrid') && (
+              <select
+                value={selectedRepoId}
+                onChange={(e) => setSelectedRepoId(e.target.value)}
+                className="px-4 py-2 bg-surface-container-low text-on-surface text-sm font-medium rounded-lg border border-outline-variant/30 focus:outline-none focus:ring-2 focus:ring-tertiary/40"
+              >
+                <option value="">All repositories</option>
+                {repositories.map((repo) => (
+                  <option key={repo.id} value={repo.id}>
+                    {repo.name}
+                  </option>
+                ))}
+              </select>
+            )}
             <button
               onClick={handleSearch}
               disabled={searching}
@@ -166,13 +265,30 @@ export default function Search() {
 
         {/* Results Canvas */}
         <div className="col-span-12 lg:col-span-9 space-y-6">
-          {results.length === 0 && query && !searching && (
+          {error && (
+            <div className="bg-error-container rounded-xl p-6 border border-error/20">
+              <div className="flex items-start gap-3">
+                <span className="material-symbols-outlined text-error text-2xl">error</span>
+                <div className="flex-1">
+                  <h3 className="text-lg font-bold text-on-error-container mb-2">Search Error</h3>
+                  <p className="text-on-error-container">{error.message}</p>
+                  {error.retryAfter && (
+                    <p className="text-sm text-on-error-container/80 mt-2">
+                      Please try again in {error.retryAfter} seconds
+                    </p>
+                  )}
+                </div>
+              </div>
+            </div>
+          )}
+
+          {!error && results.length === 0 && query && !searching && (
             <div className="text-center py-12 text-on-surface-variant">
               No results found for "{query}"
             </div>
           )}
 
-          {results.length === 0 && !query && (
+          {!error && results.length === 0 && !query && (
             <div className="text-center py-12 text-on-surface-variant">
               Enter a search query to find symbols, functions, and classes in your codebase
             </div>

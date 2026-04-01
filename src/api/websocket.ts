@@ -172,6 +172,9 @@ export const WebSocketEvents = {
 
   // Config events
   CONFIG_CHANGED: 'config:changed',
+  CONFIG_RELOADING: 'config:reloading',
+  CONFIG_RELOAD_COMPLETE: 'config:reload_complete',
+  CONFIG_RELOAD_ERROR: 'config:reload_error',
 
   // Connection events
   CONNECTION_ESTABLISHED: 'connection:established',
