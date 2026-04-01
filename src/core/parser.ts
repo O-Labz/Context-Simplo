@@ -22,7 +22,7 @@
  * Security: File paths are validated before reading.
  */
 
-import { readFileSync } from 'fs';
+import { readFile } from 'node:fs/promises';
 import { resolve, relative, basename } from 'path';
 import { createHash } from 'crypto';
 import {
@@ -167,7 +167,7 @@ export async function parseFile(
 
   let content: string;
   try {
-    content = readFileSync(absolutePath, 'utf-8');
+    content = await readFile(absolutePath, 'utf-8');
   } catch (error) {
     throw new ParseError(relativePath, 'Failed to read file', error as Error);
   }

@@ -21,6 +21,7 @@ import type { StorageProvider } from '../../store/provider.js';
 import type { CodeGraph } from '../../core/graph.js';
 import type { WebSocketBroadcaster } from '../websocket.js';
 import { WebSocketEvents } from '../websocket.js';
+import { isSubpath } from '../../core/path-utils.js';
 
 const IndexRepositorySchema = z.object({
   path: z.string().min(1),
@@ -99,7 +100,7 @@ export async function registerRepositoryRoutes(
     // Canonicalize and validate path
     const absolutePath = path.resolve(options.workspaceRoot, input.path);
 
-    if (!absolutePath.startsWith(options.workspaceRoot)) {
+    if (!isSubpath(options.workspaceRoot, absolutePath)) {
       return reply.status(400).send({
         error: 'Path traversal detected',
         message: 'Repository path must be within workspace root',
@@ -169,15 +170,18 @@ export async function registerRepositoryRoutes(
           });
         }
 
+        // Remove from graph first (with mutex)
+        const nodesToRemove = options.graph.getAllNodes({ repositoryId: id });
+        for (const node of nodesToRemove) {
+          await options.graph.removeNode(node.id);
+        }
+
+        // Then update database
         options.storage.transaction(() => {
           options.storage.deleteNodesInRepository(id);
           options.storage.deleteEdgesInRepository(id);
           options.storage.deleteFilesInRepository(id);
           options.storage.deleteRepository(id);
-        });
-
-        options.graph.getAllNodes({ repositoryId: id }).forEach(node => {
-          options.graph.removeNode(node.id);
         });
 
         if (options.vectorStore) {

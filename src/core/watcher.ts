@@ -80,7 +80,12 @@ export class FileWatcher extends EventEmitter {
 
     watcher.on('add', (path) => this.handleChange(path, repositoryId, dirPath, 'add'));
     watcher.on('change', (path) => this.handleChange(path, repositoryId, dirPath, 'change'));
-    watcher.on('unlink', (path) => this.handleDelete(path, repositoryId, dirPath));
+    watcher.on('unlink', (path) => {
+      // Handle deletion asynchronously
+      this.handleDelete(path, repositoryId, dirPath).catch((error) => {
+        console.error('Error handling file deletion:', error);
+      });
+    });
     watcher.on('error', (error) => this.emit('error', error));
 
     this.watchers.set(dirPath, watcher);
@@ -120,7 +125,7 @@ export class FileWatcher extends EventEmitter {
     this.pendingChanges.set(filePath, timeout);
   }
 
-  private handleDelete(filePath: string, _repositoryId: string, watchRoot: string): void {
+  private async handleDelete(filePath: string, _repositoryId: string, watchRoot: string): Promise<void> {
     const relativePath = this.toRelativePath(filePath, watchRoot);
     this.emit('delete', relativePath);
 
@@ -130,8 +135,11 @@ export class FileWatcher extends EventEmitter {
       this.pendingChanges.delete(filePath);
     }
 
+    // Remove from graph first (with mutex)
+    await this.indexer.graph.removeNodesInFile(relativePath);
+    
+    // Then update database
     this.indexer.storage.transaction(() => {
-      this.indexer.graph.removeNodesInFile(relativePath);
       this.indexer.storage.deleteNodesInFile(relativePath);
       this.indexer.storage.deleteFile(relativePath);
     });

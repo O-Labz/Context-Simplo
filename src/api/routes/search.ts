@@ -23,7 +23,28 @@ const SearchSchema = z.object({
 
 const RATE_LIMIT_WINDOW_MS = 60_000;
 const RATE_LIMIT_MAX_REQUESTS = 10;
+const RATE_LIMIT_CLEANUP_INTERVAL_MS = 60_000;
 const rateLimitStore = new Map<string, { count: number; resetAt: number }>();
+
+// Periodic cleanup of stale rate limit entries
+setInterval(() => {
+  const now = Date.now();
+  const staleKeys: string[] = [];
+  
+  for (const [ip, entry] of rateLimitStore.entries()) {
+    if (now >= entry.resetAt) {
+      staleKeys.push(ip);
+    }
+  }
+  
+  for (const key of staleKeys) {
+    rateLimitStore.delete(key);
+  }
+  
+  if (staleKeys.length > 0) {
+    console.log(`Cleaned up ${staleKeys.length} stale rate limit entries`);
+  }
+}, RATE_LIMIT_CLEANUP_INTERVAL_MS);
 
 function checkRateLimit(ip: string): { allowed: boolean; remaining: number; resetAt: number } {
   const now = Date.now();
@@ -112,7 +133,7 @@ export async function registerSearchRoutes(
         const semanticStart = Date.now();
         const response = await vectorSearch.search(
           input.query,
-          input.repositoryId || '',
+          input.repositoryId || 'default-repo',
           input.limit,
           input.offset
         );
@@ -133,7 +154,7 @@ export async function registerSearchRoutes(
         const hybridStart = Date.now();
         const response = await hybridSearch.search(
           input.query,
-          input.repositoryId || '',
+          input.repositoryId || 'default-repo',
           input.limit,
           input.offset
         );

@@ -26,6 +26,9 @@ export interface WebSocketMessage {
 export class WebSocketBroadcaster {
   private clients: Set<WebSocket> = new Set();
   private messageCount = 0;
+  private pingIntervals: Map<WebSocket, NodeJS.Timeout> = new Map();
+  private readonly PING_INTERVAL_MS = 30000;
+  private readonly PONG_TIMEOUT_MS = 5000;
 
   /**
    * Register a new WebSocket client
@@ -33,16 +36,47 @@ export class WebSocketBroadcaster {
    * @param ws - WebSocket connection
    */
   addClient(ws: WebSocket): void {
+    if (!ws) {
+      console.error('WebSocket is null or undefined');
+      return;
+    }
+
     this.clients.add(ws);
 
-    ws.on('close', () => {
-      this.clients.delete(ws);
-    });
+    // Check if WebSocket has EventEmitter methods (ws library)
+    const hasEventEmitter = typeof (ws as any).on === 'function' && 
+                           typeof (ws as any).once === 'function' &&
+                           typeof (ws as any).ping === 'function';
 
-    ws.on('error', (err: Error) => {
-      console.error('WebSocket error:', err);
-      this.clients.delete(ws);
-    });
+    if (hasEventEmitter) {
+      // Use EventEmitter interface for ping/pong
+      this.startPingInterval(ws);
+
+      (ws as any).on('pong', () => {
+        // Client responded to ping, connection is alive
+      });
+
+      (ws as any).on('close', () => {
+        this.cleanupClient(ws);
+      });
+
+      (ws as any).on('error', (err: Error) => {
+        console.error('WebSocket error:', err);
+        this.cleanupClient(ws);
+      });
+    } else if (typeof ws.addEventListener === 'function') {
+      // Fallback for standard WebSocket API
+      ws.addEventListener('close', () => {
+        this.cleanupClient(ws);
+      });
+
+      ws.addEventListener('error', (event: Event) => {
+        console.error('WebSocket error:', event);
+        this.cleanupClient(ws);
+      });
+    } else {
+      console.warn('WebSocket does not support event listeners, skipping heartbeat setup');
+    }
 
     // Send initial connection confirmation
     this.sendToClient(ws, {
@@ -53,6 +87,58 @@ export class WebSocketBroadcaster {
       },
       timestamp: new Date().toISOString(),
     });
+  }
+
+  /**
+   * Start ping interval for a client to detect dead connections
+   */
+  private startPingInterval(ws: WebSocket): void {
+    const interval = setInterval(() => {
+      if (ws.readyState === ws.OPEN) {
+        let pongReceived = false;
+
+        const pongHandler = () => {
+          pongReceived = true;
+        };
+
+        (ws as any).once('pong', pongHandler);
+        
+        // Only ping if the method exists
+        if (typeof (ws as any).ping === 'function') {
+          (ws as any).ping();
+        }
+
+        // If no pong within timeout, close the connection
+        setTimeout(() => {
+          if (!pongReceived && typeof (ws as any).ping === 'function') {
+            console.warn('WebSocket client did not respond to ping, closing connection');
+            (ws as any).removeListener?.('pong', pongHandler);
+            this.cleanupClient(ws);
+            if (typeof (ws as any).terminate === 'function') {
+              (ws as any).terminate();
+            } else {
+              ws.close();
+            }
+          }
+        }, this.PONG_TIMEOUT_MS);
+      } else {
+        this.cleanupClient(ws);
+      }
+    }, this.PING_INTERVAL_MS);
+
+    this.pingIntervals.set(ws, interval);
+  }
+
+  /**
+   * Clean up client resources
+   */
+  private cleanupClient(ws: WebSocket): void {
+    this.clients.delete(ws);
+    const interval = this.pingIntervals.get(ws);
+    if (interval) {
+      clearInterval(interval);
+      this.pingIntervals.delete(ws);
+    }
   }
 
   /**
@@ -122,12 +208,14 @@ export class WebSocketBroadcaster {
   closeAll(): void {
     for (const client of this.clients) {
       try {
+        this.cleanupClient(client);
         client.close(1000, 'Server shutting down');
       } catch (err) {
         console.error('Error closing WebSocket:', err);
       }
     }
     this.clients.clear();
+    this.pingIntervals.clear();
   }
 }
 
@@ -144,8 +232,12 @@ export async function registerWebSocketRoute(
   fastify.get(
     '/ws',
     { websocket: true },
-    (connection /* SocketStream */) => {
-      broadcaster.addClient(connection.socket);
+    (socket /* WebSocket */, _req) => {
+      if (!socket) {
+        console.error('WebSocket socket is undefined');
+        return;
+      }
+      broadcaster.addClient(socket);
     }
   );
 }

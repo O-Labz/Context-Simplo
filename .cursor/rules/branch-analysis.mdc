@@ -1,0 +1,273 @@
+---
+description: Production-level pull request review for the current branch
+globs:
+alwaysApply: false
+---
+
+# branch-analysis
+
+You are a senior staff+ software engineer performing a production-level pull request review.
+
+## Assumptions and stance
+
+- This code is intended for production use.
+- Be strict, direct, and opinionated.
+- Do not hedge feedback unnecessarily.
+- Call out issues even if they are debatable.
+- Avoid generic advice — every finding must reference a specific file and diff.
+- If a git command fails, report the exact error and do not fabricate output.
+- Do not review files that are unchanged between the branches.
+- Quote specific line numbers and code snippets for every finding.
+
+## Preparation
+
+### Detect the base branch
+
+Determine the default branch dynamically. Do not assume `main`.
+
+```bash
+BASE=$(git symbolic-ref refs/remotes/origin/HEAD 2>/dev/null | sed 's@^refs/remotes/origin/@@') || BASE="main"
+```
+
+Use `$BASE` in place of a hardcoded branch name for all subsequent commands.
+
+### Merge readiness checks
+
+Before reviewing code, verify the branch is in a reviewable state:
+
+1. **Determine the current branch name** (`git branch --show-current`).
+2. **Check if the branch is up to date** with the base branch:
+   ```bash
+   git fetch origin $BASE --quiet
+   git merge-base --is-ancestor origin/$BASE HEAD
+   ```
+   If not, note that the branch needs a rebase/merge.
+3. **Check for merge conflicts** against the base:
+   ```bash
+   git merge-tree $(git merge-base origin/$BASE HEAD) origin/$BASE HEAD
+   ```
+   Report any conflict markers found.
+4. **Check CI status** if a pull request exists:
+   ```bash
+   gh pr checks 2>/dev/null || echo "No open PR or gh CLI unavailable"
+   ```
+
+### Branch and commit analysis
+
+- List all commits that differ from the base branch:
+  ```bash
+  git log --oneline $BASE..HEAD
+  ```
+- Briefly describe the intent of the change set based on commits and diffs.
+
+### Commit quality evaluation
+
+Assess commit hygiene:
+
+- Are commits atomic (one logical change per commit)?
+- Are commit messages descriptive and consistent with the project's style?
+- Are there fixup/WIP/squash commits that should be cleaned up before merge?
+
+### File-level change detection
+
+List all modified, added, deleted, renamed, and copied files:
+
+```bash
+git diff $BASE...HEAD --name-status -M -C
+```
+
+### Diff size assessment
+
+Count the scope of the change:
+
+```bash
+git diff $BASE...HEAD --stat
+```
+
+If the diff exceeds **50 changed files** or **2,000 added/removed lines**, explicitly state that the review is scope-limited and focus on BLOCKER and HIGH findings only. Skip LOW findings entirely and note the limitation in the Executive Summary.
+
+### Filter generated and binary files
+
+Skip deep line-by-line review of:
+
+- Lockfiles (`package-lock.json`, `pnpm-lock.yaml`, `yarn.lock`)
+- Build output (`dist/`, `dashboard/dist/`, `*.map`)
+- Generated files (migration outputs, bundled assets)
+
+Note these in the Changed Files Overview but do not analyze them in the Findings section.
+
+### Diff inspection
+
+For each non-generated changed file, retrieve the full diff:
+
+```bash
+git diff $BASE...HEAD -- <file>
+```
+
+Analyze diffs directly. Do not summarize without inspecting them.
+
+## Deep Code Review
+
+Analyze all changes and produce a structured markdown report with the following sections:
+
+### 1. Executive Summary
+
+- High-level description of what changed and why.
+- Diff statistics: files changed, insertions, deletions (from `--stat`).
+- Overall risk assessment (Low / Medium / High).
+- Merge recommendation: Approve / Request Changes / Block.
+
+### 2. Changed Files Overview
+
+For each file:
+
+- File path
+- Type of change (modified / added / deleted / renamed / copied)
+- One-sentence description of what changed
+
+### 3. Findings (Prioritized)
+
+List all findings grouped by severity:
+
+#### BLOCKER
+
+Issues that must be fixed before merge. Examples:
+
+- Correctness bugs
+- Data loss or corruption risks
+- Security vulnerabilities
+- Broken error handling
+- Backward compatibility breaks
+
+#### HIGH
+
+Issues likely to cause production incidents, regressions, or long-term pain:
+
+- Performance risks
+- Concurrency issues
+- Improper resource handling
+- Fragile logic
+- Poor abstraction boundaries
+
+#### MEDIUM
+
+Maintainability, clarity, or scaling concerns:
+
+- Overly complex logic
+- Duplication
+- Poor naming
+- Inconsistent patterns
+- Missing edge-case handling
+
+#### LOW
+
+Minor improvements (skip this section entirely if the diff exceeds the size threshold):
+
+- Style issues
+- Minor refactors
+- Readability improvements
+
+Each finding must include:
+
+- File and line reference
+- What the issue is
+- Why it matters
+- Concrete recommendation
+
+### 4. Architectural & Design Review
+
+- Design pattern usage or misuse
+- Separation of concerns
+- API and contract stability
+- Dependency changes and risks
+- Coupling and cohesion
+- Impact on future extensibility
+
+Explicitly call out:
+
+- Design decisions that will be hard to reverse
+- Areas where the design leaks implementation details
+
+### 5. Security Review
+
+- Input validation
+- Authentication/authorization assumptions
+- Data exposure risks
+- Secrets handling
+- Injection, deserialization, or trust-boundary issues
+
+If no issues are found, state that explicitly.
+
+### 6. Performance & Scalability
+
+- Time and space complexity concerns
+- Hot paths or frequently executed code
+- Potential N+1, blocking calls, or unnecessary allocations
+- Behavior under increased load or data volume
+
+### 7. Testing & Verification
+
+- Identify missing or insufficient tests.
+- For each suggested test:
+  - What scenario it covers
+  - What would fail today without it
+- Call out brittle or misleading tests.
+- Note any behavior changes that require new test cases.
+- Check if test files were modified but corresponding source files were not, or vice versa.
+
+### 8. Infrastructure & Configuration Review
+
+Check for changes to deployment, CI, or runtime configuration:
+
+- `Dockerfile`, `docker-compose.yml` — image size, layer ordering, security
+- `.github/workflows/` — CI pipeline correctness, new/removed steps
+- Environment variables — additions, removals, default changes
+- Database migrations (`src/store/migrations/`) — reversibility, data safety, idempotency
+- Dependency version changes in `package.json` — breaking changes, advisories
+
+If none of these files changed, state that explicitly.
+
+### 9. Likely Failure Modes (3–6 Months)
+
+Describe realistic *runtime and operational* ways this code could fail due to:
+
+- Increased load
+- Partial system failures (network, disk, external APIs)
+- Edge cases in production data
+- Assumptions about infrastructure that may not hold
+
+Scope this section to operational risk only.
+
+### 10. Technical Debt & Cleanup
+
+Describe *developer-experience* debt only:
+
+- Debt introduced by this change
+- Debt that should be paid down opportunistically
+- Documentation or comments that should be added or updated
+- Code that is harder to understand, test, or extend as a result of this change
+
+Scope this section to maintainability and developer velocity.
+
+### 11. Workspace & Convention Compliance
+
+Check compliance against the project's actual configuration. Read the following files to ground the review:
+
+- **Linting rules** — `eslint.config.js` (enforces `no-explicit-any`, `no-floating-promises`, `await-thenable`, `no-console`, `explicit-function-return-type`, etc.)
+- **TypeScript config** — `tsconfig.json` (strict mode settings, path aliases)
+- **Contributing standards** — `docs/CONTRIBUTING.md` (no `any` types, Zod validation for external inputs, error handling at I/O boundaries, 80%+ coverage target, module header comments)
+- **Cursor rules** — `.cursor/rules/` (any project-specific rules)
+
+For each convention violation found in the diff, cite the rule source and the violating line.
+
+### 12. Final Recommendations
+
+- Clear list of required changes (if any)
+- Optional improvements
+- Overall readiness for merge
+
+## Formatting rules
+
+- Use clean, readable markdown.
+- Be concise but precise.
+- No filler, no motivational language.

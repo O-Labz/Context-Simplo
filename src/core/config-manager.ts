@@ -26,16 +26,19 @@ import { EventEmitter } from 'events';
 import type { StorageProvider } from '../store/provider.js';
 import type { EmbeddingProvider } from '../llm/provider.js';
 import type { EmbeddingQueue } from './embedding-queue.js';
-import type { LLMProviderType } from './types.js';
+import type { LLMProviderType, AppConfig } from './types.js';
 import { loadConfig } from './config.js';
 import { createEmbeddingProvider } from '../llm/provider.js';
+import type { LanceDBVectorStore } from '../store/lance.js';
+import type { VectorSearch } from '../search/vector.js';
+import type { HybridSearch } from '../search/hybrid.js';
 
 export interface ConfigManagerOptions {
   storage: StorageProvider;
-  vectorStore?: any;
+  vectorStore?: LanceDBVectorStore;
   onEmbeddingProviderChange?: (provider: EmbeddingProvider | undefined) => Promise<void>;
   onEmbeddingQueueChange?: (queue: EmbeddingQueue | undefined) => Promise<void>;
-  onVectorSearchChange?: (vectorSearch: any, hybridSearch: any) => Promise<void>;
+  onVectorSearchChange?: (vectorSearch: VectorSearch | undefined, hybridSearch: HybridSearch | undefined) => Promise<void>;
 }
 
 export interface ReloadResult {
@@ -47,15 +50,15 @@ export interface ReloadResult {
 
 export class ConfigManager extends EventEmitter {
   private storage: StorageProvider;
-  private vectorStore?: any;
+  private vectorStore?: LanceDBVectorStore;
   private embeddingProvider?: EmbeddingProvider;
   private embeddingQueue?: EmbeddingQueue;
-  private vectorSearch?: any;
-  private hybridSearch?: any;
+  private vectorSearch?: VectorSearch;
+  private hybridSearch?: HybridSearch;
   private reloading = false;
   private onEmbeddingProviderChange?: (provider: EmbeddingProvider | undefined) => Promise<void>;
   private onEmbeddingQueueChange?: (queue: EmbeddingQueue | undefined) => Promise<void>;
-  private onVectorSearchChange?: (vectorSearch: any, hybridSearch: any) => Promise<void>;
+  private onVectorSearchChange?: (vectorSearch: VectorSearch | undefined, hybridSearch: HybridSearch | undefined) => Promise<void>;
 
   constructor(options: ConfigManagerOptions) {
     super();
@@ -87,11 +90,11 @@ export class ConfigManager extends EventEmitter {
     return this.embeddingQueue;
   }
 
-  getVectorSearch(): any {
+  getVectorSearch(): VectorSearch | undefined {
     return this.vectorSearch;
   }
 
-  getHybridSearch(): any {
+  getHybridSearch(): HybridSearch | undefined {
     return this.hybridSearch;
   }
 
@@ -112,7 +115,7 @@ export class ConfigManager extends EventEmitter {
 
     try {
       const dashboardConfig = this.storage.getConfig();
-      const newConfig = loadConfig(dashboardConfig as any);
+      const newConfig = loadConfig(dashboardConfig);
 
       const needsProviderReload = this.needsProviderReload(updates);
       const needsQueueUpdate = this.needsQueueUpdate(updates);
@@ -152,7 +155,7 @@ export class ConfigManager extends EventEmitter {
   }
 
   private async reloadEmbeddingProvider(
-    newConfig: any,
+    newConfig: AppConfig,
     changes: string[],
     warnings: string[]
   ): Promise<void> {
@@ -260,11 +263,11 @@ export class ConfigManager extends EventEmitter {
     }
   }
 
-  private async getVectorStore(): Promise<any> {
+  private async getVectorStore(): Promise<LanceDBVectorStore | undefined> {
     return this.vectorStore;
   }
 
-  private async updateQueueSettings(newConfig: any, changes: string[]): Promise<void> {
+  private async updateQueueSettings(newConfig: AppConfig, changes: string[]): Promise<void> {
     if (!this.embeddingQueue) {
       return;
     }

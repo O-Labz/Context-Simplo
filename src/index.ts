@@ -28,7 +28,7 @@ process.on('unhandledRejection', (reason, promise) => {
 
 process.on('uncaughtException', (error) => {
   console.error('Uncaught Exception:', error);
-  // Don't exit immediately - let shutdown manager handle it
+  // Log but don't crash - let the app continue for better UX
 });
 
 async function main() {
@@ -61,7 +61,7 @@ async function main() {
   
   for (const node of allNodes) {
     try {
-      graph.addNode(node);
+      await graph.addNode(node);
     } catch (error) {
       console.warn(`Failed to restore node ${node.id}:`, (error as Error).message);
     }
@@ -69,7 +69,7 @@ async function main() {
   
   for (const edge of allEdges) {
     try {
-      graph.addEdge(edge);
+      await graph.addEdge(edge);
     } catch (error) {
       console.warn(`Failed to restore edge ${edge.id}:`, (error as Error).message);
     }

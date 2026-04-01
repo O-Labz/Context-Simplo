@@ -143,7 +143,7 @@ export class Indexer extends EventEmitter {
         }
       }
 
-      const forwardEdges = this.resolveForwardEdges(repositoryId);
+      const forwardEdges = await this.resolveForwardEdges(repositoryId);
       if (forwardEdges > 0) {
         console.log(`Resolved ${forwardEdges} forward-reference edges`);
       }
@@ -212,44 +212,46 @@ export class Indexer extends EventEmitter {
     try {
       const parsed = await parseFile(relativePath, repositoryId, this.workspaceRoot);
 
-      this.storage.transaction(() => {
-        this.graph.removeNodesInFile(relativePath);
-        this.storage.deleteNodesInFile(relativePath);
-
-        for (const node of parsed.nodes) {
-          this.graph.addNode(node);
-        }
-
-      this.storage.upsertNodes(parsed.nodes);
+      // Update graph with mutex protection (outside transaction)
+      await this.graph.removeNodesInFile(relativePath);
+      
+      for (const node of parsed.nodes) {
+        await this.graph.addNode(node);
+      }
 
       const edges = this.resolveEdges(parsed, repositoryId);
       for (const edge of edges) {
         try {
-          this.graph.addEdge(edge);
+          await this.graph.addEdge(edge);
         } catch {
           // Edge target may not exist yet (forward reference), skip
         }
       }
-      this.storage.upsertEdges(edges);
 
-      this.pendingReferences.push({
-        calls: parsed.calls,
-        imports: parsed.imports,
-        inheritance: parsed.inheritance,
-        repositoryId,
-        filePath: parsed.filePath,
+      // Update database in transaction
+      this.storage.transaction(() => {
+        this.storage.deleteNodesInFile(relativePath);
+        this.storage.upsertNodes(parsed.nodes);
+        this.storage.upsertEdges(edges);
+
+        this.pendingReferences.push({
+          calls: parsed.calls,
+          imports: parsed.imports,
+          inheritance: parsed.inheritance,
+          repositoryId,
+          filePath: parsed.filePath,
+        });
+
+        fileMetadata.hash = parsed.hash;
+        fileMetadata.language = parsed.language;
+        fileMetadata.nodeCount = parsed.nodes.length;
+        fileMetadata.status = 'indexed';
+        fileMetadata.lastError = undefined;
+        fileMetadata.indexedAt = new Date();
+        fileMetadata.updatedAt = new Date();
+
+        this.storage.upsertFile(fileMetadata);
       });
-
-      fileMetadata.hash = parsed.hash;
-      fileMetadata.language = parsed.language;
-      fileMetadata.nodeCount = parsed.nodes.length;
-      fileMetadata.status = 'indexed';
-      fileMetadata.lastError = undefined;
-      fileMetadata.indexedAt = new Date();
-      fileMetadata.updatedAt = new Date();
-
-      this.storage.upsertFile(fileMetadata);
-    });
 
     if (this.embeddingQueue && this.vectorStore) {
       try {
@@ -301,7 +303,7 @@ export class Indexer extends EventEmitter {
     }
   }
 
-  private resolveForwardEdges(repositoryId: string): number {
+  private async resolveForwardEdges(repositoryId: string): Promise<number> {
     let created = 0;
     const now = new Date();
     const newEdges: GraphEdge[] = [];
@@ -326,7 +328,7 @@ export class Indexer extends EventEmitter {
           };
           try {
             if (!this.graph.getNode(call.callerNodeId)) continue;
-            this.graph.addEdge(edge);
+            await this.graph.addEdge(edge);
             newEdges.push(edge);
             created++;
           } catch {
@@ -352,7 +354,7 @@ export class Indexer extends EventEmitter {
           };
           try {
             if (!this.graph.getNode(inh.childNodeId)) continue;
-            this.graph.addEdge(edge);
+            await this.graph.addEdge(edge);
             newEdges.push(edge);
             created++;
           } catch {
@@ -398,7 +400,7 @@ export class Indexer extends EventEmitter {
               updatedAt: now,
             };
             try {
-              this.graph.addEdge(edge);
+              await this.graph.addEdge(edge);
               newEdges.push(edge);
               created++;
             } catch {

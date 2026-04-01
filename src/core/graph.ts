@@ -54,6 +54,7 @@ export class CodeGraph {
   private fileIndex: Map<string, Set<string>>;
   private centralityCache: Map<string, number> | null = null;
   private memoryLimitBytes: number;
+  private mutationLock: Promise<void> = Promise.resolve();
 
   constructor(memoryLimitMb: number = 512) {
     this.graph = new DirectedGraph();
@@ -61,6 +62,22 @@ export class CodeGraph {
     this.fileIndex = new Map();
     const capped = Math.min(memoryLimitMb, 4096);
     this.memoryLimitBytes = capped * 1024 * 1024;
+  }
+
+  /**
+   * Acquire mutation lock to serialize graph modifications.
+   * Returns a function that must be called to release the lock.
+   */
+  private async acquireMutationLock(): Promise<() => void> {
+    const previousLock = this.mutationLock;
+    let releaseFn: (() => void) | undefined;
+    
+    this.mutationLock = new Promise<void>((resolve) => {
+      releaseFn = resolve;
+    });
+    
+    await previousLock;
+    return releaseFn!;
   }
 
   private checkMemoryLimit(): void {
@@ -75,43 +92,53 @@ export class CodeGraph {
     }
   }
 
-  addNode(node: CodeNode): void {
-    const lean = { ...node, docstring: undefined, snippet: undefined };
-    if (this.graph.hasNode(node.id)) {
-      this.graph.updateNode(node.id, () => lean);
-    } else {
-      this.checkMemoryLimit();
-      this.graph.addNode(node.id, lean);
-    }
+  async addNode(node: CodeNode): Promise<void> {
+    const release = await this.acquireMutationLock();
+    try {
+      const lean = { ...node, docstring: undefined, snippet: undefined };
+      if (this.graph.hasNode(node.id)) {
+        this.graph.updateNode(node.id, () => lean);
+      } else {
+        this.checkMemoryLimit();
+        this.graph.addNode(node.id, lean);
+      }
 
-    if (!this.nameIndex.has(node.name)) {
-      this.nameIndex.set(node.name, new Set());
-    }
-    this.nameIndex.get(node.name)!.add(node.id);
+      if (!this.nameIndex.has(node.name)) {
+        this.nameIndex.set(node.name, new Set());
+      }
+      this.nameIndex.get(node.name)!.add(node.id);
 
-    if (!this.fileIndex.has(node.filePath)) {
-      this.fileIndex.set(node.filePath, new Set());
-    }
-    this.fileIndex.get(node.filePath)!.add(node.id);
+      if (!this.fileIndex.has(node.filePath)) {
+        this.fileIndex.set(node.filePath, new Set());
+      }
+      this.fileIndex.get(node.filePath)!.add(node.id);
 
-    this.centralityCache = null;
+      this.centralityCache = null;
+    } finally {
+      release();
+    }
   }
 
-  addEdge(edge: GraphEdge): void {
-    if (!this.graph.hasNode(edge.sourceId)) {
-      throw new GraphError('addEdge', `Source node ${edge.sourceId} does not exist`);
-    }
-    if (!this.graph.hasNode(edge.targetId)) {
-      throw new GraphError('addEdge', `Target node ${edge.targetId} does not exist`);
-    }
+  async addEdge(edge: GraphEdge): Promise<void> {
+    const release = await this.acquireMutationLock();
+    try {
+      if (!this.graph.hasNode(edge.sourceId)) {
+        throw new GraphError('addEdge', `Source node ${edge.sourceId} does not exist`);
+      }
+      if (!this.graph.hasNode(edge.targetId)) {
+        throw new GraphError('addEdge', `Target node ${edge.targetId} does not exist`);
+      }
 
-    if (this.graph.hasEdge(edge.id)) {
-      this.graph.replaceEdgeAttributes(edge.id, edge);
-    } else {
-      this.graph.addEdgeWithKey(edge.id, edge.sourceId, edge.targetId, edge);
-    }
+      if (this.graph.hasEdge(edge.id)) {
+        this.graph.replaceEdgeAttributes(edge.id, edge);
+      } else {
+        this.graph.addEdgeWithKey(edge.id, edge.sourceId, edge.targetId, edge);
+      }
 
-    this.centralityCache = null;
+      this.centralityCache = null;
+    } finally {
+      release();
+    }
   }
 
   getNode(nodeId: string): CodeNode | null {
@@ -139,7 +166,14 @@ export class CodeGraph {
   }
 
   findByPattern(pattern: string, filter?: NodeFilter): CodeNode[] {
-    const regex = new RegExp(pattern, 'i');
+    let regex: RegExp;
+    try {
+      regex = new RegExp(pattern, 'i');
+    } catch (error) {
+      console.warn(`Invalid regex pattern: ${pattern}`, error);
+      return [];
+    }
+    
     const results: CodeNode[] = [];
 
     for (const [name, nodeIds] of this.nameIndex.entries()) {
@@ -381,41 +415,46 @@ export class CodeGraph {
     return results;
   }
 
-  removeNode(nodeId: string): void {
-    if (!this.graph.hasNode(nodeId)) {
-      return;
-    }
-
-    const node = this.getNode(nodeId)!;
-
-    const nameSet = this.nameIndex.get(node.name);
-    if (nameSet) {
-      nameSet.delete(nodeId);
-      if (nameSet.size === 0) {
-        this.nameIndex.delete(node.name);
+  async removeNode(nodeId: string): Promise<void> {
+    const release = await this.acquireMutationLock();
+    try {
+      if (!this.graph.hasNode(nodeId)) {
+        return;
       }
-    }
 
-    const fileSet = this.fileIndex.get(node.filePath);
-    if (fileSet) {
-      fileSet.delete(nodeId);
-      if (fileSet.size === 0) {
-        this.fileIndex.delete(node.filePath);
+      const node = this.getNode(nodeId)!;
+
+      const nameSet = this.nameIndex.get(node.name);
+      if (nameSet) {
+        nameSet.delete(nodeId);
+        if (nameSet.size === 0) {
+          this.nameIndex.delete(node.name);
+        }
       }
-    }
 
-    this.graph.dropNode(nodeId);
-    this.centralityCache = null;
+      const fileSet = this.fileIndex.get(node.filePath);
+      if (fileSet) {
+        fileSet.delete(nodeId);
+        if (fileSet.size === 0) {
+          this.fileIndex.delete(node.filePath);
+        }
+      }
+
+      this.graph.dropNode(nodeId);
+      this.centralityCache = null;
+    } finally {
+      release();
+    }
   }
 
-  removeNodesInFile(filePath: string): void {
+  async removeNodesInFile(filePath: string): Promise<void> {
     const nodeIds = this.fileIndex.get(filePath);
     if (!nodeIds) {
       return;
     }
 
     for (const nodeId of Array.from(nodeIds)) {
-      this.removeNode(nodeId);
+      await this.removeNode(nodeId);
     }
   }
 
