@@ -1,0 +1,366 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# Context-Simplo CLI wrapper
+# Makes running Context-Simplo in Docker a single command
+
+VERSION="0.1.0"
+CONTAINER_NAME="context-simplo"
+IMAGE_NAME="ohopson/context-simplo:latest"
+PORT="${SIMPLO_PORT:-3001}"
+
+# Colors for output
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+BLUE='\033[0;34m'
+NC='\033[0m' # No Color
+
+print_usage() {
+  cat <<EOF
+Context-Simplo CLI v${VERSION}
+
+Usage: simplo <command> [options]
+
+Commands:
+  start [path]     Start Context-Simplo (mounts \$HOME, workspace defaults to current dir)
+  stop             Stop and remove the container
+  restart          Restart the container
+  status           Show container status and workspace info
+  logs             Tail container logs
+  update           Pull latest image and restart
+  config           Edit persistent LLM configuration
+  setup <ide>      Generate MCP config for your IDE (cursor, vscode, claude-desktop, claude-code)
+
+Options:
+  --root <path>    Mount root directory (default: \$HOME)
+  --port <port>    Dashboard port (default: 3001)
+  --help           Show this help message
+
+Examples:
+  simplo start                    # Start from current directory
+  simplo start ~/projects/my-app  # Start with specific workspace
+  simplo start --root /mnt/data   # Use custom mount root
+  simplo setup cursor             # Generate .cursor/mcp.json
+  simplo logs                     # View logs
+
+EOF
+}
+
+detect_platform() {
+  case "$(uname -s)" in
+    Linux*)  echo "linux" ;;
+    Darwin*) echo "macos" ;;
+    *)       echo "unknown" ;;
+  esac
+}
+
+get_container_status() {
+  docker ps -a --filter "name=^${CONTAINER_NAME}$" --format "{{.Status}}" 2>/dev/null || echo "not found"
+}
+
+get_workspace() {
+  docker inspect "${CONTAINER_NAME}" 2>/dev/null | \
+    jq -r '.[0].Config.Env[] | select(startswith("INITIAL_WORKSPACE=")) | sub("INITIAL_WORKSPACE="; "")' || echo "unknown"
+}
+
+cmd_start() {
+  local workspace_path="${1:-$(pwd)}"
+  local mount_root="${MOUNT_ROOT:-$HOME}"
+  
+  # Check if container already exists
+  if docker ps -a --filter "name=^${CONTAINER_NAME}$" --format "{{.Names}}" | grep -q "^${CONTAINER_NAME}$"; then
+    echo -e "${YELLOW}Container already exists. Use 'simplo restart' or 'simplo stop' first.${NC}"
+    exit 1
+  fi
+  
+  # Resolve absolute paths
+  workspace_path=$(cd "$workspace_path" && pwd)
+  mount_root=$(cd "$mount_root" && pwd)
+  
+  # Calculate relative path from mount root to workspace
+  local rel_workspace
+  if [[ "$workspace_path" == "$mount_root"* ]]; then
+    rel_workspace="${workspace_path#$mount_root}"
+    rel_workspace="${rel_workspace#/}"
+    rel_workspace="/host/${rel_workspace}"
+  else
+    echo -e "${RED}Error: Workspace must be within mount root${NC}"
+    echo "  Workspace: $workspace_path"
+    echo "  Mount root: $mount_root"
+    exit 1
+  fi
+  
+  # Load config if it exists
+  local config_file="${HOME}/.config/context-simplo/config"
+  local llm_provider="none"
+  local llm_base_url=""
+  local llm_model=""
+  local llm_api_key=""
+  
+  if [[ -f "$config_file" ]]; then
+    while IFS='=' read -r key value; do
+      key=$(echo "$key" | xargs)
+      [[ -z "$key" || "$key" == \#* ]] && continue
+      value=$(echo "$value" | xargs)
+      case "$key" in
+        LLM_PROVIDER)        LLM_PROVIDER="$value" ;;
+        LLM_BASE_URL)        LLM_BASE_URL="$value" ;;
+        LLM_EMBEDDING_MODEL) LLM_EMBEDDING_MODEL="$value" ;;
+        LLM_API_KEY)         LLM_API_KEY="$value" ;;
+      esac
+    done < "$config_file"
+  fi
+  
+  # Detect platform for host.docker.internal support
+  local platform=$(detect_platform)
+  local extra_args=""
+  if [[ "$platform" == "linux" ]]; then
+    extra_args="--add-host=host.docker.internal:host-gateway"
+  fi
+  
+  echo -e "${BLUE}Starting Context-Simplo...${NC}"
+  echo "  Mount root: $mount_root"
+  echo "  Workspace: $workspace_path"
+  echo "  Port: $PORT"
+  echo "  LLM: ${LLM_PROVIDER:-none}"
+  echo ""
+  
+  # Pull image if not present
+  if ! docker image inspect "$IMAGE_NAME" &>/dev/null; then
+    echo -e "${BLUE}Pulling image...${NC}"
+    docker pull "$IMAGE_NAME"
+  fi
+  
+  # Run container
+  docker run -d \
+    --name "$CONTAINER_NAME" \
+    -p "${PORT}:3001" \
+    -v "${mount_root}:/host:ro" \
+    -v context-simplo-data:/data \
+    -e MOUNT_ROOT=/host \
+    -e INITIAL_WORKSPACE="$rel_workspace" \
+    -e LLM_PROVIDER="${LLM_PROVIDER:-none}" \
+    -e LLM_BASE_URL="${LLM_BASE_URL:-}" \
+    -e LLM_EMBEDDING_MODEL="${LLM_EMBEDDING_MODEL:-}" \
+    -e LLM_API_KEY="${LLM_API_KEY:-}" \
+    -e CONTEXT_SIMPLO_AUTO_INDEX=true \
+    -e CONTEXT_SIMPLO_WATCH=true \
+    -e CONTEXT_SIMPLO_LOG_LEVEL=info \
+    $extra_args \
+    "$IMAGE_NAME" >/dev/null
+  
+  echo -e "${GREEN}✓ Context-Simplo started${NC}"
+  echo ""
+  echo "  Dashboard:  http://localhost:${PORT}"
+  echo "  MCP:        http://localhost:${PORT}/mcp"
+  echo ""
+  echo "Run 'simplo logs' to view output"
+  echo "Run 'simplo setup cursor' to configure your IDE"
+}
+
+cmd_stop() {
+  echo -e "${BLUE}Stopping Context-Simplo...${NC}"
+  docker stop "$CONTAINER_NAME" 2>/dev/null || true
+  docker rm "$CONTAINER_NAME" 2>/dev/null || true
+  echo -e "${GREEN}✓ Stopped${NC}"
+}
+
+cmd_restart() {
+  cmd_stop
+  sleep 1
+  cmd_start
+}
+
+cmd_status() {
+  local status=$(get_container_status)
+  local workspace=$(get_workspace)
+  
+  echo "Context-Simplo Status"
+  echo "===================="
+  echo ""
+  
+  if [[ "$status" == "not found" ]]; then
+    echo -e "Status:    ${RED}Not running${NC}"
+    echo ""
+    echo "Run 'simplo start' to begin"
+  elif [[ "$status" == Up* ]]; then
+    echo -e "Status:    ${GREEN}Running${NC}"
+    echo "Workspace: $workspace"
+    echo "Dashboard: http://localhost:${PORT}"
+    echo "MCP:       http://localhost:${PORT}/mcp"
+  else
+    echo -e "Status:    ${YELLOW}$status${NC}"
+  fi
+}
+
+cmd_logs() {
+  docker logs -f "$CONTAINER_NAME" 2>&1
+}
+
+cmd_update() {
+  echo -e "${BLUE}Updating Context-Simplo...${NC}"
+  docker pull "$IMAGE_NAME"
+  
+  if docker ps --filter "name=^${CONTAINER_NAME}$" --format "{{.Names}}" | grep -q "^${CONTAINER_NAME}$"; then
+    echo -e "${BLUE}Restarting container...${NC}"
+    cmd_restart
+  fi
+  
+  echo -e "${GREEN}✓ Updated${NC}"
+}
+
+cmd_config() {
+  local config_dir="${HOME}/.config/context-simplo"
+  local config_file="${config_dir}/config"
+  
+  mkdir -p "$config_dir"
+  
+  if [[ ! -f "$config_file" ]]; then
+    cat > "$config_file" <<'EOF'
+# Context-Simplo Configuration
+# Edit these values and restart the container
+
+# LLM provider: ollama, openai, or none
+LLM_PROVIDER=ollama
+
+# Base URL for LLM provider
+LLM_BASE_URL=http://host.docker.internal:11434
+
+# Embedding model
+LLM_EMBEDDING_MODEL=nomic-embed-text
+
+# API key (only for OpenAI)
+LLM_API_KEY=
+EOF
+    echo -e "${GREEN}✓ Created config file${NC}"
+  fi
+  
+  ${EDITOR:-nano} "$config_file"
+  
+  echo ""
+  echo "Config saved. Restart Context-Simplo to apply changes:"
+  echo "  simplo restart"
+}
+
+cmd_setup() {
+  local ide="${1:-}"
+  
+  if [[ -z "$ide" ]]; then
+    echo "Usage: simplo setup <ide>"
+    echo ""
+    echo "Available IDEs:"
+    echo "  cursor         - Cursor IDE"
+    echo "  vscode         - Visual Studio Code"
+    echo "  claude-desktop - Claude Desktop App"
+    echo "  claude-code    - Claude Code"
+    exit 1
+  fi
+  
+  local mcp_url="http://localhost:${PORT}/mcp"
+  
+  case "$ide" in
+    cursor)
+      mkdir -p .cursor
+      cat > .cursor/mcp.json <<EOF
+{
+  "mcpServers": {
+    "context-simplo": {
+      "url": "$mcp_url",
+      "description": "Context-Simplo code intelligence server"
+    }
+  }
+}
+EOF
+      echo -e "${GREEN}✓ Created .cursor/mcp.json${NC}"
+      echo "Restart Cursor to activate"
+      ;;
+    
+    vscode)
+      mkdir -p .vscode
+      cat > .vscode/mcp.json <<EOF
+{
+  "servers": {
+    "context-simplo": {
+      "url": "$mcp_url",
+      "description": "Context-Simplo code intelligence server"
+    }
+  }
+}
+EOF
+      echo -e "${GREEN}✓ Created .vscode/mcp.json${NC}"
+      echo "Restart VS Code to activate"
+      ;;
+    
+    claude-desktop)
+      local config_file="$HOME/Library/Application Support/Claude/claude_desktop_config.json"
+      echo "Add this to $config_file:"
+      echo ""
+      cat <<EOF
+{
+  "mcpServers": {
+    "context-simplo": {
+      "url": "$mcp_url"
+    }
+  }
+}
+EOF
+      ;;
+    
+    claude-code)
+      cat > .mcp.json <<EOF
+{
+  "mcpServers": {
+    "context-simplo": {
+      "url": "$mcp_url"
+    }
+  }
+}
+EOF
+      echo -e "${GREEN}✓ Created .mcp.json${NC}"
+      echo "Restart Claude Code to activate"
+      ;;
+    
+    *)
+      echo -e "${RED}Unknown IDE: $ide${NC}"
+      exit 1
+      ;;
+  esac
+}
+
+# Main command dispatcher
+case "${1:-}" in
+  start)
+    shift
+    cmd_start "$@"
+    ;;
+  stop)
+    cmd_stop
+    ;;
+  restart)
+    cmd_restart
+    ;;
+  status)
+    cmd_status
+    ;;
+  logs)
+    cmd_logs
+    ;;
+  update)
+    cmd_update
+    ;;
+  config)
+    cmd_config
+    ;;
+  setup)
+    shift
+    cmd_setup "$@"
+    ;;
+  --help|-h|help)
+    print_usage
+    ;;
+  *)
+    print_usage
+    exit 1
+    ;;
+esac

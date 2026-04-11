@@ -1,10 +1,10 @@
 /**
  * Directory Browser API Route
  *
- * GET /api/browse?path= - List subdirectories within the workspace
+ * GET /api/browse?path=&scope= - List subdirectories within the workspace or mount root
  *
  * Security:
- * - Only exposes directories within the workspace root
+ * - Only exposes directories within the workspace root or mount root
  * - Prevents path traversal via canonicalization
  * - Filters hidden/system directories
  */
@@ -12,28 +12,34 @@
 import type { FastifyInstance } from 'fastify';
 import { readdir, stat } from 'node:fs/promises';
 import path from 'node:path';
-import { isSubpath } from '../../core/path-utils.js';
+import { isSubpath, sanitizeErrorMessage } from '../../core/path-utils.js';
 
 export interface BrowseRouteOptions {
   workspaceRoot: string;
+  mountRoot?: string;
 }
 
 export async function registerBrowseRoutes(
   fastify: FastifyInstance,
   options: BrowseRouteOptions
 ): Promise<void> {
-  fastify.get<{ Querystring: { path?: string } }>(
+  fastify.get<{ Querystring: { path?: string; scope?: string } }>(
     '/api/browse',
     async (request, reply) => {
-      const relPath = (request.query.path || '/').replace(/^\/+/, '');
-      const absolutePath = relPath
-        ? path.resolve(options.workspaceRoot, relPath)
+      const scope = request.query.scope || 'workspace';
+      const browseRoot = scope === 'mount' && options.mountRoot 
+        ? options.mountRoot 
         : options.workspaceRoot;
 
-      if (!isSubpath(options.workspaceRoot, absolutePath)) {
+      const relPath = (request.query.path || '/').replace(/^\/+/, '');
+      const absolutePath = relPath
+        ? path.resolve(browseRoot, relPath)
+        : browseRoot;
+
+      if (!isSubpath(browseRoot, absolutePath)) {
         return reply.status(400).send({
           error: 'Path traversal detected',
-          message: 'Browse path must be within workspace root',
+          message: `Browse path must be within ${scope} root`,
         });
       }
 
@@ -56,7 +62,7 @@ export async function registerBrowseRoutes(
 
         const fileStat = await stat(absolutePath);
         const currentPath = relPath || '/';
-        const isRoot = absolutePath === options.workspaceRoot;
+        const isRoot = absolutePath === browseRoot;
         const parentDir = path.dirname(relPath).replace(/\\/g, '/');
 
         return {
@@ -64,7 +70,7 @@ export async function registerBrowseRoutes(
           parent: isRoot ? null : (parentDir === '.' ? '/' : parentDir),
           directories: dirs,
           isRoot,
-          rootName: path.basename(options.workspaceRoot),
+          rootName: path.basename(browseRoot),
           lastModified: fileStat.mtime.toISOString(),
         };
       } catch (error: any) {
@@ -76,7 +82,7 @@ export async function registerBrowseRoutes(
         }
         return reply.status(500).send({
           error: 'Failed to browse directory',
-          message: error.message,
+          message: sanitizeErrorMessage(error.message),
         });
       }
     }

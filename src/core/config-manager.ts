@@ -38,9 +38,11 @@ export interface ConfigManagerOptions {
   vectorStore?: LanceDBVectorStore;
   indexer?: any;
   workspaceRoot?: string;
+  watcher?: any;
   onEmbeddingProviderChange?: (provider: EmbeddingProvider | undefined) => Promise<void>;
   onEmbeddingQueueChange?: (queue: EmbeddingQueue | undefined) => Promise<void>;
   onVectorSearchChange?: (vectorSearch: VectorSearch | undefined, hybridSearch: HybridSearch | undefined) => Promise<void>;
+  onWorkspaceChange?: (newWorkspace: string) => Promise<void>;
 }
 
 export interface ReloadResult {
@@ -57,18 +59,24 @@ export class ConfigManager extends EventEmitter {
   private embeddingQueue?: EmbeddingQueue;
   private vectorSearch?: VectorSearch;
   private hybridSearch?: HybridSearch;
+  private indexer?: any;
+  private watcher?: any;
   private reloading = false;
   private onEmbeddingProviderChange?: (provider: EmbeddingProvider | undefined) => Promise<void>;
   private onEmbeddingQueueChange?: (queue: EmbeddingQueue | undefined) => Promise<void>;
   private onVectorSearchChange?: (vectorSearch: VectorSearch | undefined, hybridSearch: HybridSearch | undefined) => Promise<void>;
+  private onWorkspaceChange?: (newWorkspace: string) => Promise<void>;
 
   constructor(options: ConfigManagerOptions) {
     super();
     this.storage = options.storage;
     this.vectorStore = options.vectorStore;
+    this.indexer = options.indexer;
+    this.watcher = options.watcher;
     this.onEmbeddingProviderChange = options.onEmbeddingProviderChange;
     this.onEmbeddingQueueChange = options.onEmbeddingQueueChange;
     this.onVectorSearchChange = options.onVectorSearchChange;
+    this.onWorkspaceChange = options.onWorkspaceChange;
   }
 
   setEmbeddingProvider(provider: EmbeddingProvider | undefined): void {
@@ -298,6 +306,89 @@ export class ConfigManager extends EventEmitter {
 
     if (this.onEmbeddingQueueChange) {
       await this.onEmbeddingQueueChange(newQueue);
+    }
+  }
+
+  /**
+   * Reload workspace at runtime
+   * 
+   * Stops watcher on old workspace, updates workspace root,
+   * triggers re-indexing, and starts watcher on new workspace.
+   */
+  async reloadWorkspace(newWorkspacePath: string): Promise<ReloadResult> {
+    if (this.reloading) {
+      return {
+        success: false,
+        changes: [],
+        error: 'Configuration reload already in progress',
+      };
+    }
+
+    this.reloading = true;
+    this.emit('reloading', { workspace: newWorkspacePath });
+
+    const changes: string[] = [];
+
+    try {
+      if (!this.watcher || !this.indexer) {
+        throw new Error('Watcher or indexer not available');
+      }
+
+      const config = loadConfig(this.storage.getConfig());
+      const watchedPaths = this.watcher.getWatchedPaths();
+
+      // Stop all watchers
+      for (const watchedPath of watchedPaths) {
+        this.watcher.unwatch(watchedPath);
+        changes.push(`Stopped watching ${watchedPath}`);
+      }
+
+      // Trigger workspace change callback (updates indexer's workspace root)
+      if (this.onWorkspaceChange) {
+        await this.onWorkspaceChange(newWorkspacePath);
+      }
+
+      changes.push(`Workspace changed to ${newWorkspacePath}`);
+
+      // Re-index new workspace if auto-index is enabled
+      if (config.autoIndex.value) {
+        changes.push('Triggering auto-index for new workspace...');
+        setImmediate(async () => {
+          try {
+            const job = await this.indexer.indexRepository(newWorkspacePath, {
+              incremental: false,
+              respectIgnore: true,
+            });
+            this.emit('index-complete', {
+              filesProcessed: job.filesProcessed,
+              nodesCreated: job.nodesCreated,
+            });
+          } catch (error) {
+            console.error('Auto-indexing failed after workspace change:', error);
+          }
+        });
+      }
+
+      // Start watching new workspace if watch is enabled
+      if (config.watchEnabled.value) {
+        this.watcher.watch(newWorkspacePath, 'default-repo');
+        changes.push(`Started watching ${newWorkspacePath}`);
+      }
+
+      this.emit('reloaded', { changes, workspace: newWorkspacePath });
+      return { success: true, changes };
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+      if (this.listenerCount('error') > 0) {
+        this.emit('error', errorMessage);
+      }
+      return {
+        success: false,
+        changes,
+        error: errorMessage,
+      };
+    } finally {
+      this.reloading = false;
     }
   }
 }

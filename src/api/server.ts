@@ -8,6 +8,7 @@ import Fastify from 'fastify';
 import fastifyStatic from '@fastify/static';
 import fastifyWebsocket from '@fastify/websocket';
 import { basename } from 'path';
+import { sanitizeErrorMessage } from '../core/path-utils.js';
 import type { CodeGraph } from '../core/graph.js';
 import type { StorageProvider } from '../store/provider.js';
 import {
@@ -22,6 +23,7 @@ import {
   registerMetricsRoutes,
   registerMcpConfigRoutes,
   registerBrowseRoutes,
+  registerWorkspaceRoutes,
 } from './routes/index.js';
 
 export interface APIServerOptions {
@@ -29,6 +31,9 @@ export interface APIServerOptions {
   graph: CodeGraph;
   dashboardPath: string;
   workspaceRoot: string;
+  mountRoot?: string;
+  getWorkspaceRoot?: () => string;
+  setWorkspaceRoot?: (newPath: string) => Promise<void>;
   templatesPath: string;
   serverHost?: string;
   serverPort?: number;
@@ -75,12 +80,21 @@ export async function createAPIServer(
 
   // MCP HTTP endpoint (must be registered before SPA fallback)
   if (options.mcpServer) {
-    // Add CORS support for MCP endpoint
+    const ALLOWED_ORIGINS = new Set([
+      'http://localhost:3001',
+      'http://127.0.0.1:3001',
+      `http://localhost:${options.serverPort || 3001}`,
+      `http://127.0.0.1:${options.serverPort || 3001}`,
+    ]);
+
     fastify.addHook('onRequest', async (request, reply) => {
       if (request.url.startsWith('/mcp')) {
-        reply.header('Access-Control-Allow-Origin', '*');
+        const origin = request.headers.origin;
+        const allowedOrigin = origin && ALLOWED_ORIGINS.has(origin) ? origin : ALLOWED_ORIGINS.values().next().value;
+        reply.header('Access-Control-Allow-Origin', allowedOrigin);
         reply.header('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
         reply.header('Access-Control-Allow-Headers', 'Content-Type, Accept, Authorization');
+        reply.header('Vary', 'Origin');
         
         if (request.method === 'OPTIONS') {
           reply.code(200).send();
@@ -111,12 +125,11 @@ export async function createAPIServer(
         console.error('[MCP] POST completed');
       } catch (error) {
         console.error('[MCP] POST error:', error);
-        // After hijack, we must write to raw response
         if (!reply.raw.headersSent) {
           reply.raw.writeHead(500, { 'Content-Type': 'application/json' });
         }
         if (!reply.raw.writableEnded) {
-          reply.raw.end(JSON.stringify({ error: String(error) }));
+          reply.raw.end(JSON.stringify({ error: 'Internal server error' }));
         }
       }
     });
@@ -135,12 +148,11 @@ export async function createAPIServer(
         console.error('[MCP] GET completed');
       } catch (error) {
         console.error('[MCP] GET error:', error);
-        // After hijack, we must write to raw response
         if (!reply.raw.headersSent) {
           reply.raw.writeHead(500, { 'Content-Type': 'application/json' });
         }
         if (!reply.raw.writableEnded) {
-          reply.raw.end(JSON.stringify({ error: String(error) }));
+          reply.raw.end(JSON.stringify({ error: 'Internal server error' }));
         }
       }
     });
@@ -159,13 +171,14 @@ export async function createAPIServer(
 
   // Health check endpoint
   fastify.get('/api/health', async () => {
+    const currentWorkspace = options.getWorkspaceRoot ? options.getWorkspaceRoot() : options.workspaceRoot;
     return {
       status: 'healthy',
       timestamp: new Date().toISOString(),
       uptime: process.uptime() * 1000,
       websocketClients: broadcaster.getClientCount(),
-      workspaceRoot: options.workspaceRoot,
-      rootName: basename(options.workspaceRoot),
+      workspaceRoot: currentWorkspace,
+      rootName: basename(currentWorkspace),
     };
   });
 
@@ -218,7 +231,18 @@ export async function createAPIServer(
 
   await registerBrowseRoutes(fastify, {
     workspaceRoot: options.workspaceRoot,
+    mountRoot: options.mountRoot,
   });
+
+  // Register workspace routes if workspace switching is supported
+  if (options.getWorkspaceRoot && options.setWorkspaceRoot && options.mountRoot) {
+    await registerWorkspaceRoutes(fastify, {
+      mountRoot: options.mountRoot,
+      getWorkspaceRoot: options.getWorkspaceRoot,
+      setWorkspaceRoot: options.setWorkspaceRoot,
+      broadcaster,
+    });
+  }
 
   // Legacy stats endpoint (for backward compatibility)
   fastify.get('/api/stats', async () => {

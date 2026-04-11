@@ -27,6 +27,9 @@ export default function Repositories() {
   const [autoIndex, setAutoIndex] = useState(true);
   const [autoIndexLocked, setAutoIndexLocked] = useState(false);
   const [togglingAutoIndex, setTogglingAutoIndex] = useState(false);
+  const [showWorkspaceDialog, setShowWorkspaceDialog] = useState(false);
+  const [newWorkspacePath, setNewWorkspacePath] = useState('');
+  const [changingWorkspace, setChangingWorkspace] = useState(false);
   const { toasts, push: toast, dismiss: dismissToast } = useToast();
 
   useEffect(() => {
@@ -205,6 +208,35 @@ export default function Repositories() {
       toast('error', 'Network error — could not reach server.');
     } finally {
       setAdding(false);
+    }
+  };
+
+  const handleChangeWorkspace = async () => {
+    if (!newWorkspacePath.trim()) return;
+
+    setChangingWorkspace(true);
+    try {
+      const response = await fetch('/api/workspace', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ path: newWorkspacePath }),
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        setWorkspaceRoot(data.workspace);
+        setShowWorkspaceDialog(false);
+        setNewWorkspacePath('');
+        toast('success', `Workspace changed to ${data.name}. Re-indexing...`);
+        setTimeout(() => loadRepositories(), 2000);
+      } else {
+        const error = await response.json();
+        toast('error', `Failed to change workspace: ${error.message || error.error}`);
+      }
+    } catch (error) {
+      toast('error', 'Network error — could not reach server.');
+    } finally {
+      setChangingWorkspace(false);
     }
   };
 
@@ -550,12 +582,19 @@ export default function Repositories() {
           <span className="material-symbols-outlined text-tertiary">hard_drive</span>
           <div className="flex-1 min-w-0">
             <span className="text-[0.6875rem] font-semibold uppercase tracking-wider text-outline block mb-0.5">
-              {workspaceRoot.split('/').filter(Boolean).pop() || 'Workspace Root'}
+              Current Workspace
             </span>
             <code className="text-[0.875rem] font-mono text-on-surface block truncate">
               {workspaceRoot}
             </code>
           </div>
+          <button
+            onClick={() => setShowWorkspaceDialog(true)}
+            className="px-4 py-2 bg-tertiary/10 text-tertiary font-semibold text-[0.875rem] rounded-lg hover:bg-tertiary/20 active:scale-95 transition-all flex items-center gap-2 shrink-0"
+          >
+            <span className="material-symbols-outlined text-[18px]">swap_horiz</span>
+            Change
+          </button>
         </div>
       )}
 
@@ -710,6 +749,84 @@ export default function Repositories() {
                     <>
                       <span className="material-symbols-outlined text-[18px]">rocket_launch</span>
                       Index Repository
+                    </>
+                  )}
+                </button>
+              </div>
+            </div>
+          </div>
+        </>
+      )}
+
+      {/* Change Workspace Dialog */}
+      {showWorkspaceDialog && (
+        <>
+          <div
+            className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 animate-fade-in"
+            onClick={() => setShowWorkspaceDialog(false)}
+          />
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 pointer-events-none">
+            <div className="bg-white rounded-2xl w-full max-w-[560px] shadow-2xl pointer-events-auto animate-scale-in flex flex-col max-h-[90vh]">
+              {/* Header */}
+              <div className="px-6 pt-6 pb-4 border-b border-outline-variant/20">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 bg-tertiary/10 rounded-xl flex items-center justify-center">
+                      <span className="material-symbols-outlined text-tertiary text-[20px]">
+                        swap_horiz
+                      </span>
+                    </div>
+                    <div>
+                      <h2 className="text-lg font-bold text-on-surface">Change Workspace</h2>
+                      <p className="text-xs text-on-surface-variant">
+                        Select a new directory to index and watch
+                      </p>
+                    </div>
+                  </div>
+                  <button
+                    onClick={() => setShowWorkspaceDialog(false)}
+                    className="w-8 h-8 flex items-center justify-center rounded-lg hover:bg-surface-container-high text-outline transition-colors"
+                  >
+                    <span className="material-symbols-outlined text-[20px]">close</span>
+                  </button>
+                </div>
+              </div>
+
+              {/* Content */}
+              <div className="flex-1 overflow-hidden px-6 py-4">
+                <FolderBrowser
+                  selected={newWorkspacePath}
+                  onSelect={(path) => setNewWorkspacePath(path)}
+                  scope="mount"
+                />
+              </div>
+
+              {/* Footer */}
+              <div className="px-6 py-4 border-t border-outline-variant/20 flex items-center gap-3">
+                <button
+                  onClick={() => {
+                    setShowWorkspaceDialog(false);
+                    setNewWorkspacePath('');
+                  }}
+                  className="px-5 py-2.5 text-on-surface-variant font-semibold text-sm rounded-lg hover:bg-surface-container-high transition-colors"
+                >
+                  Cancel
+                </button>
+                <div className="flex-1" />
+                <button
+                  onClick={handleChangeWorkspace}
+                  disabled={changingWorkspace || !newWorkspacePath.trim()}
+                  className="px-6 py-2.5 bg-tertiary text-white font-semibold text-sm rounded-xl shadow-lg shadow-tertiary/20 active:scale-[0.97] transition-all disabled:opacity-40 disabled:cursor-not-allowed disabled:shadow-none flex items-center gap-2"
+                >
+                  {changingWorkspace ? (
+                    <>
+                      <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                      Switching...
+                    </>
+                  ) : (
+                    <>
+                      <span className="material-symbols-outlined text-[18px]">check</span>
+                      Switch Workspace
                     </>
                   )}
                 </button>

@@ -121,7 +121,7 @@ esac
 
 echo ""
 echo "MCP Server URL: $MCP_URL"
-echo "Dashboard: http://localhost:3000"
+echo "Dashboard: http://localhost:3001"
 echo ""
 echo "Make sure Context-Simplo is running:"
 echo "  docker-compose up -d"

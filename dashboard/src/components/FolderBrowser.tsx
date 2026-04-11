@@ -17,9 +17,10 @@ interface FolderBrowserProps {
   onSelect: (path: string) => void;
   selected: string;
   rootLabel?: string;
+  scope?: 'workspace' | 'mount';
 }
 
-export default function FolderBrowser({ onSelect, selected, rootLabel }: FolderBrowserProps) {
+export default function FolderBrowser({ onSelect, selected, rootLabel, scope = 'workspace' }: FolderBrowserProps) {
   const [browsePath, setBrowsePath] = useState('/');
   const [entries, setEntries] = useState<DirEntry[]>([]);
   const [parentPath, setParentPath] = useState<string | null>(null);
@@ -31,7 +32,8 @@ export default function FolderBrowser({ onSelect, selected, rootLabel }: FolderB
     setLoading(true);
     setError(null);
     try {
-      const res = await fetch(`/api/browse?path=${encodeURIComponent(dirPath)}`);
+      const scopeParam = scope === 'mount' ? '&scope=mount' : '';
+      const res = await fetch(`/api/browse?path=${encodeURIComponent(dirPath)}${scopeParam}`);
       if (!res.ok) {
         const err = await res.json();
         throw new Error(err.error || 'Failed to browse');
@@ -49,7 +51,7 @@ export default function FolderBrowser({ onSelect, selected, rootLabel }: FolderB
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [scope]);
 
   useEffect(() => {
     loadDirectory('/');

@@ -6,6 +6,7 @@
 
 import { resolve, dirname } from 'path';
 import { fileURLToPath } from 'url';
+import { existsSync } from 'fs';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -28,7 +29,9 @@ process.on('unhandledRejection', (reason, promise) => {
 
 process.on('uncaughtException', (error) => {
   console.error('Uncaught Exception:', error);
-  // Log but don't crash - let the app continue for better UX
+  // Give a brief window for logs to flush, then exit — continuing
+  // after an uncaught exception leaves the process in undefined state.
+  setTimeout(() => process.exit(1), 1000);
 });
 
 async function main() {
@@ -36,12 +39,35 @@ async function main() {
 
   const config = loadConfig();
   const dataDir = config.dataDir.value;
-  const workspaceRoot = process.env.WORKSPACE_ROOT || '/workspace';
+  
+  // Support for dynamic workspace switching with backward compatibility
+  // mountRoot is the broad directory mounted into the container (e.g., /host for $HOME)
+  // workspaceRoot is the active workspace within that mount (can be changed at runtime)
+  
+  // Backward compatibility: if /host doesn't exist, fall back to /workspace
+  let mountRoot: string;
+  let initialWorkspace: string;
+  
+  if (existsSync('/host')) {
+    // New mode: dynamic workspace switching
+    mountRoot = process.env.MOUNT_ROOT || '/host';
+    initialWorkspace = process.env.INITIAL_WORKSPACE || mountRoot;
+    console.log('Dynamic workspace mode enabled');
+  } else {
+    // Legacy mode: single workspace mount
+    mountRoot = process.env.WORKSPACE_ROOT || '/workspace';
+    initialWorkspace = mountRoot;
+    console.log('Legacy workspace mode (single mount)');
+  }
+  
+  let workspaceRoot = initialWorkspace;
+  
   const dbPath = resolve(dataDir, 'context-simplo.db');
   const lanceDbPath = resolve(dataDir, 'lancedb');
 
   console.log(`Data directory: ${dataDir}`);
-  console.log(`Workspace root: ${workspaceRoot}`);
+  console.log(`Mount root: ${mountRoot}`);
+  console.log(`Initial workspace: ${workspaceRoot}`);
   console.log(`Database: ${dbPath}`);
 
   const storage = new SqliteStorageProvider(dbPath);
@@ -140,6 +166,8 @@ async function main() {
   const configManager = new ConfigManager({
     storage,
     vectorStore,
+    indexer,
+    watcher,
     onEmbeddingProviderChange: async (provider) => {
       if (indexer) {
         (indexer as any).embeddingProvider = provider;
@@ -156,6 +184,15 @@ async function main() {
     onVectorSearchChange: async (newVectorSearch, newHybridSearch) => {
       vectorSearch = newVectorSearch;
       hybridSearch = newHybridSearch;
+    },
+    onWorkspaceChange: async (newWorkspace) => {
+      workspaceRoot = newWorkspace;
+      if (indexer) {
+        (indexer as any).workspaceRoot = newWorkspace;
+      }
+      if (mcpServer) {
+        (mcpServer as any).workspaceRoot = newWorkspace;
+      }
     },
   });
 
@@ -179,6 +216,11 @@ async function main() {
       graph,
       dashboardPath: resolve(__dirname, '../dashboard/dist'),
       workspaceRoot,
+      mountRoot,
+      getWorkspaceRoot: () => workspaceRoot,
+      setWorkspaceRoot: async (newPath: string) => {
+        await configManager.reloadWorkspace(newPath);
+      },
       templatesPath: resolve(__dirname, '../templates'),
       serverHost: 'localhost',
       serverPort: 3001,
@@ -195,7 +237,8 @@ async function main() {
     })
   );
 
-  await apiServer.listen({ port: 3001, host: '0.0.0.0' });
+  const listenHost = process.env.HOST || (existsSync('/.dockerenv') ? '0.0.0.0' : '127.0.0.1');
+  await apiServer.listen({ port: 3001, host: listenHost });
   console.log('API server started on port 3001');
   console.log(`WebSocket clients: ${broadcaster.getClientCount()}`);
 

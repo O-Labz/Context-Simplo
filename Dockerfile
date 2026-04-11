@@ -59,13 +59,14 @@ COPY .contextignore.default ./
 # Copy MCP template files
 COPY templates ./templates
 
-# Create data and workspace directories
-RUN mkdir -p /data /workspace
+# Create data, workspace, and host mount directories
+RUN mkdir -p /data /workspace /host
 
 # Set environment variables
 ENV NODE_ENV=production
 ENV DATA_DIR=/data
 ENV WORKSPACE_ROOT=/workspace
+ENV MOUNT_ROOT=/host
 ENV NODE_OPTIONS=--max-old-space-size=8192
 
 # Expose port
@@ -76,7 +77,7 @@ HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
   CMD curl -f http://localhost:3001/api/health || exit 1
 
 # Volume mounts
-VOLUME ["/workspace", "/data"]
+VOLUME ["/workspace", "/host", "/data"]
 
 # Run the application
 CMD ["node", "dist/index.js"]

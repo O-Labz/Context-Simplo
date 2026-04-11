@@ -6,7 +6,10 @@ services:
     ports:
       - "3001:3001"   # Web dashboard + API + MCP Streamable HTTP endpoint
     volumes:
+      # Legacy workspace mount (for backward compatibility)
       - ${WORKSPACE_PATH:-.}:/workspace:ro
+      # Host mount for dynamic workspace switching (mount user's home directory)
+      - ${HOST_MOUNT_PATH:-~}:/host:ro
       - simplo-data:/data
     environment:
       - LLM_PROVIDER=none
@@ -16,6 +19,10 @@ services:
       - CONTEXT_SIMPLO_WATCH=true
       - CONTEXT_SIMPLO_LOG_LEVEL=info
       - NODE_OPTIONS=--max-old-space-size=8192
+      # Mount root for browsing (defaults to /host for dynamic workspace switching)
+      - MOUNT_ROOT=${MOUNT_ROOT:-/host}
+      # Initial workspace within the mount (defaults to /workspace for backward compat)
+      - INITIAL_WORKSPACE=${INITIAL_WORKSPACE:-/workspace}
     extra_hosts:
       - "host.docker.internal:host-gateway"   # Required for Linux, harmless on macOS/Windows
     stdin_open: true
