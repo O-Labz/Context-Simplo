@@ -51,6 +51,16 @@ export async function indexRepository(
     respectIgnore: true,
   });
 
+  // Auto-start file watcher so changes are picked up immediately
+  let watching = false;
+  if (context.watcher && !context.watcher.isWatching(absolutePath)) {
+    context.watcher.watch(absolutePath, job.repositoryId);
+    context.storage.updateRepositoryWatchStatus(job.repositoryId, true);
+    watching = true;
+  } else if (context.watcher?.isWatching(absolutePath)) {
+    watching = true;
+  }
+
   return {
     jobId: job.id,
     repositoryId: job.repositoryId,
@@ -63,6 +73,10 @@ export async function indexRepository(
     duration: job.completedAt
       ? job.completedAt.getTime() - job.startedAt.getTime()
       : undefined,
+    watching,
+    message: job.status === 'completed'
+      ? `Indexed ${job.filesProcessed} files, ${job.nodesCreated} nodes. ${watching ? 'Auto-watch active — changes re-index immediately.' : 'Watcher unavailable.'}`
+      : `Indexing ${job.status}.`,
   };
 }
 
@@ -72,6 +86,12 @@ export async function watchDirectory(
 ): Promise<unknown> {
   const input = WatchDirectoryInputSchema.parse(args);
 
+  // Path traversal check always runs regardless of watcher availability
+  const absolutePath = path.resolve(context.workspaceRoot, input.path);
+  if (!isSubpath(context.workspaceRoot, absolutePath)) {
+    throw new Error('Path traversal detected: watch path must be within workspace root');
+  }
+
   if (!context.watcher) {
     return {
       success: false,
@@ -79,12 +99,6 @@ export async function watchDirectory(
       path: input.path,
       watching: false,
     };
-  }
-
-  // Validate path is within workspace
-  const absolutePath = path.resolve(context.workspaceRoot, input.path);
-  if (!isSubpath(context.workspaceRoot, absolutePath)) {
-    throw new Error('Path traversal detected: watch path must be within workspace root');
   }
 
   const repos = context.storage.listRepositories();
@@ -142,21 +156,35 @@ export async function listRepositories(
   context: HandlerContext
 ): Promise<unknown> {
   const repos = context.storage.listRepositories();
+  const watchedPaths = context.watcher?.getWatchedPaths() ?? [];
 
   return {
-    repositories: repos.map((repo) => ({
-      id: repo.id,
-      name: repo.name,
-      path: repo.path,
-      fileCount: repo.fileCount,
-      nodeCount: repo.nodeCount,
-      edgeCount: repo.edgeCount,
-      languages: repo.languages,
-      isWatched: repo.isWatched,
-      lastIndexedAt: repo.lastIndexedAt?.toISOString(),
-      createdAt: repo.createdAt.toISOString(),
-    })),
+    repositories: repos.map((repo) => {
+      const isActivelyWatched = watchedPaths.some(
+        (p) => p === repo.path || repo.path.startsWith(p)
+      );
+      return {
+        id: repo.id,
+        name: repo.name,
+        path: repo.path,
+        fileCount: repo.fileCount,
+        nodeCount: repo.nodeCount,
+        edgeCount: repo.edgeCount,
+        languages: repo.languages,
+        isWatched: isActivelyWatched,
+        lastIndexedAt: repo.lastIndexedAt?.toISOString(),
+        createdAt: repo.createdAt.toISOString(),
+        status: repo.nodeCount === 0
+          ? 'empty — run index_repository first'
+          : isActivelyWatched
+          ? 'indexed, watching for changes'
+          : 'indexed',
+      };
+    }),
     total: repos.length,
+    hint: repos.length === 0
+      ? 'No repositories indexed. Call index_repository with path="/workspace" to begin.'
+      : undefined,
   };
 }
 
@@ -214,12 +242,18 @@ export async function deleteRepository(
 export async function getStats(_args: Record<string, unknown>, context: HandlerContext): Promise<unknown> {
   const dbStats = context.storage.getStats();
   const graphStats = context.graph.getStats();
+  const watchedPaths = context.watcher?.getWatchedPaths() ?? [];
 
   return {
     repositories: dbStats.repositoryCount,
     files: dbStats.fileCount,
     nodes: dbStats.nodeCount,
     edges: dbStats.edgeCount,
+    filesIndexing: dbStats.filesIndexing ?? 0,
+    filesPending: dbStats.filesPending ?? 0,
+    filesError: dbStats.filesError ?? 0,
+    indexingActive: (dbStats.filesIndexing ?? 0) > 0 || (dbStats.filesPending ?? 0) > 0,
+    watchedPaths,
     languages: graphStats.languageBreakdown,
     storage: {
       databaseSize: dbStats.databaseSize,

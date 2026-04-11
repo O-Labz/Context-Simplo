@@ -51,7 +51,6 @@ export interface StorageProvider {
   deleteEdgesInRepository(repositoryId: string): void;
 
   search(query: string, limit: number, offset: number): SearchResult[];
-  indexNodeForSearch(node: CodeNode): void;
 
   getConfig(key?: string): Record<string, unknown>;
   updateConfig(updates: Record<string, unknown>): void;

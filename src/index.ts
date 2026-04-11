@@ -134,6 +134,7 @@ async function main() {
     vectorStore: config.llmProvider.value !== 'none' ? vectorStore : undefined,
     embeddingProvider: config.llmProvider.value !== 'none' ? embeddingProvider : undefined,
     watcher,
+    responseMode: config.responseMode.value,
   });
 
   const configManager = new ConfigManager({

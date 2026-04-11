@@ -43,7 +43,7 @@ describe('Config', () => {
       expect(config.llmProvider.isLocked).toBe(true);
 
       expect(config.llmApiKey.value).toBe('sk-test');
-      expect(config.llmApiKey.source).toBe('environment');
+      expect(config.llmApiKey.source).toBe('env');
       expect(config.llmApiKey.isLocked).toBe(true);
     });
 

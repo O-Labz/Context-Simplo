@@ -28,7 +28,9 @@ import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
 import { ListToolsRequestSchema, CallToolRequestSchema } from '@modelcontextprotocol/sdk/types.js';
 import type { IncomingMessage, ServerResponse } from 'node:http';
-import { TOOL_DEFINITIONS } from './tools.js';
+import { TOOL_DEFINITIONS, TOOL_DEFINITIONS_COMPACT } from './tools.js';
+import { formatMCPResponse } from './formatter.js';
+import type { ResponseMode } from '../core/types.js';
 import type { CodeGraph } from '../core/graph.js';
 import type { StorageProvider } from '../store/provider.js';
 import type { Indexer } from '../core/indexer.js';
@@ -49,6 +51,7 @@ export interface MCPServerOptions {
   vectorStore?: LanceDBVectorStore;
   embeddingProvider?: EmbeddingProvider;
   watcher?: FileWatcher;
+  responseMode?: ResponseMode;
 }
 
 export interface MCPMetrics {
@@ -71,6 +74,7 @@ export class MCPServer {
   private workspaceRoot: string;
   private watcher?: import('../core/watcher.js').FileWatcher;
   private vectorStore?: LanceDBVectorStore;
+  private responseMode: ResponseMode;
   private metrics: MCPMetrics = {
     totalRequests: 0,
     requestsPerMinute: 0,
@@ -85,6 +89,7 @@ export class MCPServer {
     this.graph = options.graph;
     this.indexer = options.indexer;
     this.workspaceRoot = options.workspaceRoot;
+    this.responseMode = options.responseMode ?? 'full';
     this.symbolicSearch = new SymbolicSearch(this.storage);
 
     this.watcher = options.watcher;
@@ -116,10 +121,12 @@ export class MCPServer {
    * Used for both the stdio server and per-request HTTP servers.
    */
   private registerTools(server: Server): void {
+    const toolDefs = this.responseMode === 'compact' ? TOOL_DEFINITIONS_COMPACT : TOOL_DEFINITIONS;
+
     server.setRequestHandler(
       ListToolsRequestSchema,
       async () => ({
-        tools: TOOL_DEFINITIONS,
+        tools: toolDefs,
       })
     );
 
@@ -138,7 +145,7 @@ export class MCPServer {
             content: [
               {
                 type: 'text',
-                text: JSON.stringify(result, null, 2),
+                text: formatMCPResponse(result, this.responseMode),
               },
             ],
           };

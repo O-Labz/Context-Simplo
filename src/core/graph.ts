@@ -517,25 +517,25 @@ export class CodeGraph {
     return JSON.stringify({ nodes, edges });
   }
 
-  deserialize(data: string): void {
+  async deserialize(data: string): Promise<void> {
     const { nodes, edges } = JSON.parse(data) as { nodes: CodeNode[]; edges: GraphEdge[] };
 
     for (const node of nodes) {
-      this.addNode(node);
+      await this.addNode(node);
     }
 
     for (const edge of edges) {
       try {
-        this.addEdge(edge);
+        await this.addEdge(edge);
       } catch (error) {
         console.warn(`Failed to restore edge ${edge.id}: ${(error as Error).message}`);
       }
     }
   }
 
-  static fromSerialized(data: string): CodeGraph {
+  static async fromSerialized(data: string): Promise<CodeGraph> {
     const graph = new CodeGraph();
-    graph.deserialize(data);
+    await graph.deserialize(data);
     return graph;
   }
 

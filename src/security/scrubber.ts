@@ -297,15 +297,29 @@ export function scrubSecrets(content: string): { scrubbed: string; detected: Det
   const detected: DetectedSecret[] = [];
   const lines = content.split('\n');
 
-  for (const pattern of SECRET_PATTERNS) {
-    if (pattern.confidence < 0.7) continue;
+  // Process highest-confidence patterns first so lower-confidence generic patterns
+  // don't fire on the same secret that a specific pattern already matched.
+  const sorted = [...SECRET_PATTERNS]
+    .filter((p) => p.confidence >= 0.7)
+    .sort((a, b) => b.confidence - a.confidence);
 
+  // Track matched ranges in the original content to skip overlapping hits.
+  const matchedRanges: Array<[number, number]> = [];
+  const overlaps = (start: number, end: number): boolean =>
+    matchedRanges.some(([s, e]) => start < e && end > s);
+
+  for (const pattern of sorted) {
     let match;
+    // Do NOT reset lastIndex inside the loop — resetting here creates an
+    // infinite loop because exec(content) would keep finding the same match.
     while ((match = pattern.pattern.exec(content)) !== null) {
-      const lineNumber = content.substring(0, match.index).split('\n').length;
+      const start = match.index;
+      const end = start + match[0].length;
+      const lineNumber = content.substring(0, start).split('\n').length;
       const line = lines[lineNumber - 1] || '';
 
-      if (shouldRedact(line, pattern)) {
+      if (!overlaps(start, end) && shouldRedact(line, pattern)) {
+        matchedRanges.push([start, end]);
         scrubbed = scrubbed.replaceAll(match[0], `[REDACTED:${pattern.category}]`);
         detected.push({
           category: pattern.category,
@@ -313,9 +327,10 @@ export function scrubSecrets(content: string): { scrubbed: string; detected: Det
           confidence: pattern.confidence,
         });
       }
-
-      pattern.pattern.lastIndex = 0;
     }
+
+    // Reset after the loop so the regex can be reused in subsequent calls.
+    pattern.pattern.lastIndex = 0;
   }
 
   return { scrubbed, detected };

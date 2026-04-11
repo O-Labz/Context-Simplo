@@ -484,3 +484,251 @@ export const TOOL_DEFINITIONS = [
     },
   },
 ] as const;
+
+/**
+ * Compact tool definitions for CONTEXT_SIMPLO_RESPONSE_MODE=compact.
+ *
+ * Differences from TOOL_DEFINITIONS:
+ * - Terse descriptions (drop filler, fragments OK, technical terms exact)
+ * - First tool carries the key legend + terse-response directive so any
+ *   MCP client (not just Cursor) gets the instruction automatically
+ */
+export const TOOL_DEFINITIONS_COMPACT = [
+  {
+    name: 'index_repository',
+    description:
+      'COMPACT MODE — response keys abbreviated: n=name, qn=qualifiedName, k=kind, fp=filePath, ls=lineStart, le=lineEnd, rid=repositoryId, lang=language, s=score, t=total, m=hasMore, r=results/callers/callees, sym=symbol, nid=nodeId, x=isExported, cx=complexity, st=searchType. Respond terse: drop articles/filler/pleasantries/hedging. Fragments OK. Short synonyms. Technical terms exact. Code blocks unchanged. Auto-clarity for security warnings or irreversible ops. | Index codebase. Parse files, build graph, persist. Auto-starts file watcher on completion.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        path: { type: 'string', description: 'Repo path (relative to /workspace)' },
+        incremental: { type: 'boolean', description: 'Re-index changed files only' },
+      },
+      required: ['path'],
+    },
+  },
+  {
+    name: 'watch_directory',
+    description: 'Watch dir for changes. Auto re-indexes on save.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        path: { type: 'string', description: 'Dir path to watch' },
+      },
+      required: ['path'],
+    },
+  },
+  {
+    name: 'unwatch_directory',
+    description: 'Stop watching dir.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        path: { type: 'string', description: 'Dir path to stop watching' },
+      },
+      required: ['path'],
+    },
+  },
+  {
+    name: 'list_repositories',
+    description: 'List indexed repos + stats. Check this first; if empty, call index_repository.',
+    inputSchema: { type: 'object', properties: {} },
+  },
+  {
+    name: 'delete_repository',
+    description: 'Delete repo + all data from index.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        repositoryId: { type: 'string', description: 'Repo ID to delete' },
+      },
+      required: ['repositoryId'],
+    },
+  },
+  {
+    name: 'get_stats',
+    description: 'Global index stats. Shows indexingActive flag.',
+    inputSchema: { type: 'object', properties: {} },
+  },
+  {
+    name: 'find_symbol',
+    description: 'Find symbols by name/pattern. Optional kind filter.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        name: { type: 'string', description: 'Symbol name or pattern' },
+        kind: {
+          type: 'string',
+          enum: ['function', 'method', 'class', 'interface', 'type', 'variable', 'constant'],
+          description: 'Filter by kind',
+        },
+        limit: { type: 'number', description: 'Max results (default 20)' },
+        offset: { type: 'number', description: 'Pagination offset' },
+      },
+      required: ['name'],
+    },
+  },
+  {
+    name: 'find_callers',
+    description: 'Find all callers of a symbol.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        symbolName: { type: 'string', description: 'Symbol to find callers for' },
+        limit: { type: 'number', description: 'Max results' },
+        offset: { type: 'number', description: 'Pagination offset' },
+      },
+      required: ['symbolName'],
+    },
+  },
+  {
+    name: 'find_callees',
+    description: 'Find all symbols called by a symbol.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        symbolName: { type: 'string', description: 'Symbol to find callees for' },
+        limit: { type: 'number', description: 'Max results' },
+        offset: { type: 'number', description: 'Pagination offset' },
+      },
+      required: ['symbolName'],
+    },
+  },
+  {
+    name: 'find_path',
+    description: 'Shortest dependency path between two symbols.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        fromSymbol: { type: 'string', description: 'Source symbol' },
+        toSymbol: { type: 'string', description: 'Target symbol' },
+      },
+      required: ['fromSymbol', 'toSymbol'],
+    },
+  },
+  {
+    name: 'get_impact_radius',
+    description: 'Blast radius of changing a symbol. Returns affected files + symbols.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        symbolName: { type: 'string', description: 'Symbol to analyze' },
+        maxDepth: { type: 'number', description: 'Max traversal depth (default 10)' },
+      },
+      required: ['symbolName'],
+    },
+  },
+  {
+    name: 'explain_architecture',
+    description: 'High-level repo summary: entry points, modules, key abstractions.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        repositoryId: { type: 'string', description: 'Repo ID to analyze' },
+        detailLevel: { type: 'number', description: '1=compact, 2=detailed, 3=comprehensive' },
+      },
+      required: ['repositoryId'],
+    },
+  },
+  {
+    name: 'semantic_search',
+    description: 'Vector search. Use for conceptual queries ("how does auth work?").',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        query: { type: 'string', description: 'Natural language query' },
+        repositoryId: { type: 'string', description: 'Filter by repo ID' },
+        limit: { type: 'number', description: 'Max results' },
+        offset: { type: 'number', description: 'Pagination offset' },
+      },
+      required: ['query'],
+    },
+  },
+  {
+    name: 'exact_search',
+    description: 'BM25 full-text search. Use for exact symbol/text matches.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        query: { type: 'string', description: 'Text or symbol to search' },
+        limit: { type: 'number', description: 'Max results' },
+        offset: { type: 'number', description: 'Pagination offset' },
+      },
+      required: ['query'],
+    },
+  },
+  {
+    name: 'hybrid_search',
+    description: 'BM25 + vector search with RRF fusion. Best default search.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        query: { type: 'string', description: 'Search query' },
+        repositoryId: { type: 'string', description: 'Filter by repo ID' },
+        limit: { type: 'number', description: 'Max results' },
+        offset: { type: 'number', description: 'Pagination offset' },
+      },
+      required: ['query'],
+    },
+  },
+  {
+    name: 'find_dead_code',
+    description: 'Find unreferenced symbols (zero incoming edges).',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        repositoryId: { type: 'string', description: 'Filter by repo ID' },
+        limit: { type: 'number', description: 'Max results' },
+        offset: { type: 'number', description: 'Pagination offset' },
+      },
+    },
+  },
+  {
+    name: 'calculate_complexity',
+    description: 'Cyclomatic complexity for a function.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        symbolName: { type: 'string', description: 'Symbol to measure' },
+      },
+      required: ['symbolName'],
+    },
+  },
+  {
+    name: 'find_complex_functions',
+    description: 'Most complex functions ranked by cyclomatic complexity.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        repositoryId: { type: 'string', description: 'Filter by repo ID' },
+        limit: { type: 'number', description: 'Max results' },
+        offset: { type: 'number', description: 'Pagination offset' },
+      },
+    },
+  },
+  {
+    name: 'lint_context',
+    description: 'Check proposed change against project patterns (naming, structure).',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        filePath: { type: 'string', description: 'File path to check' },
+        proposedChange: { type: 'string', description: 'Change description' },
+        repositoryId: { type: 'string', description: 'Repo ID' },
+      },
+      required: ['filePath', 'proposedChange'],
+    },
+  },
+  {
+    name: 'query_graph',
+    description: 'Cypher-like read-only graph query.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        query: { type: 'string', description: 'Cypher-like query string' },
+        parameters: { type: 'object', description: 'Query parameters' },
+      },
+      required: ['query'],
+    },
+  },
+] as const;

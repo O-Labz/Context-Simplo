@@ -20,7 +20,7 @@
  */
 
 import { ConfigError } from './errors.js';
-import type { AppConfig, ConfigValue, LLMProviderType } from './types.js';
+import type { AppConfig, ConfigValue, LLMProviderType, ResponseMode } from './types.js';
 
 const DEFAULT_CONFIG = {
   llmProvider: 'none' as LLMProviderType,
@@ -34,6 +34,7 @@ const DEFAULT_CONFIG = {
   embeddingConcurrency: 5,
   embeddingBatchSize: 20,
   graphMemoryLimitMb: 512,
+  responseMode: 'full' as ResponseMode,
 } as const;
 
 const ENV_VAR_MAP = {
@@ -48,6 +49,7 @@ const ENV_VAR_MAP = {
   embeddingConcurrency: 'EMBEDDING_CONCURRENCY',
   embeddingBatchSize: 'EMBEDDING_BATCH_SIZE',
   graphMemoryLimitMb: 'GRAPH_MEMORY_LIMIT_MB',
+  responseMode: 'CONTEXT_SIMPLO_RESPONSE_MODE',
 } as const;
 
 type ConfigKey = keyof typeof DEFAULT_CONFIG;
@@ -164,6 +166,15 @@ export function loadConfig(dashboardConfig?: DashboardConfig): AppConfig {
     process.env[ENV_VAR_MAP.graphMemoryLimitMb]
   ) as number | undefined;
 
+  const envResponseModeRaw = process.env[ENV_VAR_MAP.responseMode];
+  let envResponseMode: ResponseMode | undefined;
+  if (envResponseModeRaw !== undefined) {
+    if (envResponseModeRaw !== 'full' && envResponseModeRaw !== 'compact') {
+      throw new ConfigError('responseMode', `Invalid value: ${envResponseModeRaw}. Must be 'full' or 'compact'`);
+    }
+    envResponseMode = envResponseModeRaw as ResponseMode;
+  }
+
   validateUrl(envLlmBaseUrl, 'llmBaseUrl');
   validateUrl(dashboardConfig?.llmBaseUrl, 'llmBaseUrl');
 
@@ -244,6 +255,13 @@ export function loadConfig(dashboardConfig?: DashboardConfig): AppConfig {
     DEFAULT_CONFIG.graphMemoryLimitMb
   );
 
+  const responseMode = createConfigValue(
+    'responseMode',
+    envResponseMode,
+    undefined,
+    DEFAULT_CONFIG.responseMode
+  );
+
   if (llmProvider.value === 'openai' && !llmApiKey.value) {
     throw new ConfigError(
       'llmApiKey',
@@ -270,6 +288,7 @@ export function loadConfig(dashboardConfig?: DashboardConfig): AppConfig {
     embeddingConcurrency,
     embeddingBatchSize,
     graphMemoryLimitMb,
+    responseMode,
   };
 }
 

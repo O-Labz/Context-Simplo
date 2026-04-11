@@ -52,9 +52,9 @@ export async function semanticSearch(
 
   if (!context.vectorSearch) {
     return {
-      error: 'Vector search unavailable',
+      error: 'Semantic search not available: LLM provider not configured.',
       message:
-        'Semantic search requires LLM configuration. Configure an LLM provider via the dashboard at http://localhost:3001/setup or set LLM_PROVIDER environment variable.',
+        'Vector search not available. Configure an LLM provider via the dashboard at http://localhost:3001/setup or set LLM_PROVIDER environment variable.',
       searchType: 'semantic',
       results: [],
       total: 0,
@@ -106,6 +106,8 @@ export async function hybridSearch(
     );
 
     return {
+      error: 'Full hybrid search not available: LLM provider not configured.',
+      message: 'True hybrid search not available — falling back to BM25 only. Configure LLM for vector+BM25 fusion.',
       results: exactResult.results.map((r) => ({
         nodeId: r.nodeId,
         name: r.name,
@@ -123,7 +125,6 @@ export async function hybridSearch(
       offset: exactResult.offset,
       hasMore: exactResult.hasMore,
       searchType: 'hybrid',
-      note: 'Using BM25 only (LLM not configured). Configure LLM for true hybrid search.',
     };
   }
 
