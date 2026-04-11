@@ -20,7 +20,8 @@
     "typecheck": "tsc --noEmit",
     "docker:build": "docker build -t context-simplo:latest .",
     "docker:run": "docker-compose up",
-    "prepare": "husky install"
+    "prepare": "node -e \"try{require('husky').install()}catch(e){}\"",
+    "prepublishOnly": "npm run build && npm run typecheck"
   },
   "keywords": [
     "mcp",
@@ -33,6 +34,13 @@
   ],
   "author": "Context-Simplo Contributors",
   "license": "MIT",
+  "files": [
+    "dist/",
+    "templates/",
+    ".contextignore.default",
+    "LICENSE",
+    "README.md"
+  ],
   "engines": {
     "node": ">=22.0.0"
   },

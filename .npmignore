@@ -1,0 +1,41 @@
+# Defense-in-depth: package.json "files" is the primary whitelist.
+# This file exists as a safety net to ensure nothing sensitive ships.
+
+# Source code (only dist/ ships)
+src/
+dashboard/
+docs/
+
+# Docker / CI
+Dockerfile
+docker-compose.yml
+.dockerignore
+
+# Environment / secrets
+.env
+.env.*
+!.env.example
+
+# Tests
+test-*.sh
+vitest.config.*
+coverage/
+__tests__/
+
+# Tooling
+.cursor/
+.vscode/
+.husky/
+.git/
+.gitignore
+tsconfig*.json
+eslint*
+prettier*
+
+# Implementation docs
+*.IMPLEMENTATION*.md
+WORKSPACE_SWITCHER*.md
+
+# Shell scripts
+bin/
+setup-mcp.sh
