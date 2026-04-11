@@ -1,6 +1,6 @@
 -- Initial schema for Context-Simplo
 -- Version: 1
--- Description: Create core tables for repositories, files, nodes, edges, and config
+-- Description: Complete schema with FTS5, triggers, and all required columns
 
 -- Schema version tracking
 CREATE TABLE IF NOT EXISTS schema_version (
@@ -76,7 +76,7 @@ CREATE INDEX IF NOT EXISTS idx_nodes_file_path ON nodes(file_path);
 CREATE INDEX IF NOT EXISTS idx_nodes_repository ON nodes(repository_id);
 CREATE INDEX IF NOT EXISTS idx_nodes_language ON nodes(language);
 
--- Edges table
+-- Edges table with repository_id column
 CREATE TABLE IF NOT EXISTS edges (
   id TEXT PRIMARY KEY,
   source_id TEXT NOT NULL,
@@ -84,7 +84,9 @@ CREATE TABLE IF NOT EXISTS edges (
   kind TEXT NOT NULL,
   confidence REAL NOT NULL DEFAULT 1.0,
   metadata TEXT,
+  repository_id TEXT,
   created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  updated_at TEXT NOT NULL DEFAULT (datetime('now')),
   FOREIGN KEY (source_id) REFERENCES nodes(id) ON DELETE CASCADE,
   FOREIGN KEY (target_id) REFERENCES nodes(id) ON DELETE CASCADE
 );
@@ -92,17 +94,37 @@ CREATE TABLE IF NOT EXISTS edges (
 CREATE INDEX IF NOT EXISTS idx_edges_source ON edges(source_id);
 CREATE INDEX IF NOT EXISTS idx_edges_target ON edges(target_id);
 CREATE INDEX IF NOT EXISTS idx_edges_kind ON edges(kind);
+CREATE INDEX IF NOT EXISTS idx_edges_repository ON edges(repository_id);
 
--- FTS5 virtual table for BM25 symbolic search
+-- Content-synced FTS5 table for BM25 search
+-- SQLite reads column values from nodes.rowid automatically
 CREATE VIRTUAL TABLE IF NOT EXISTS nodes_fts USING fts5(
-  node_id UNINDEXED,
   name,
   qualified_name,
   file_path,
   docstring,
-  content='',
+  content='nodes',
+  content_rowid='rowid',
   tokenize='porter unicode61'
 );
+
+-- Triggers to keep FTS5 in sync with nodes table
+CREATE TRIGGER IF NOT EXISTS nodes_ai AFTER INSERT ON nodes BEGIN
+  INSERT INTO nodes_fts(rowid, name, qualified_name, file_path, docstring)
+  VALUES (new.rowid, new.name, new.qualified_name, new.file_path, new.docstring);
+END;
+
+CREATE TRIGGER IF NOT EXISTS nodes_ad AFTER DELETE ON nodes BEGIN
+  INSERT INTO nodes_fts(nodes_fts, rowid, name, qualified_name, file_path, docstring)
+  VALUES ('delete', old.rowid, old.name, old.qualified_name, old.file_path, old.docstring);
+END;
+
+CREATE TRIGGER IF NOT EXISTS nodes_au AFTER UPDATE ON nodes BEGIN
+  INSERT INTO nodes_fts(nodes_fts, rowid, name, qualified_name, file_path, docstring)
+  VALUES ('delete', old.rowid, old.name, old.qualified_name, old.file_path, old.docstring);
+  INSERT INTO nodes_fts(rowid, name, qualified_name, file_path, docstring)
+  VALUES (new.rowid, new.name, new.qualified_name, new.file_path, new.docstring);
+END;
 
 -- Config table for dashboard settings
 CREATE TABLE IF NOT EXISTS config (
@@ -112,4 +134,4 @@ CREATE TABLE IF NOT EXISTS config (
 );
 
 -- Insert initial schema version
-INSERT INTO schema_version (version, description) VALUES (1, 'Initial schema');
+INSERT INTO schema_version (version, description) VALUES (1, 'Complete initial schema with FTS5 and triggers');

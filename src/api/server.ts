@@ -193,6 +193,7 @@ export async function createAPIServer(
     vectorSearch: options.vectorSearch,
     hybridSearch: options.hybridSearch,
     configManager: options.configManager,
+    workspaceRoot: options.workspaceRoot,
   });
 
   await registerGraphRoutes(fastify, {

@@ -23,8 +23,33 @@ export async function exactSearch(
     input.offset || 0
   );
 
+  // Add code snippets
+  let resultsWithSnippets = result.results;
+  if (context.workspaceRoot && result.results.length > 0) {
+    try {
+      const { extractSnippetsBatch } = await import('../../search/snippet.js');
+      const snippets = await extractSnippetsBatch(
+        context.workspaceRoot,
+        result.results.map(r => ({
+          filePath: r.filePath,
+          lineStart: r.lineStart,
+          lineEnd: r.lineEnd,
+        })),
+        { maxLines: 10, maxChars: 500 }
+      );
+      
+      resultsWithSnippets = result.results.map(r => {
+        const key = `${r.filePath}:${r.lineStart}:${r.lineEnd}`;
+        const snippet = snippets.get(key);
+        return snippet ? { ...r, snippet } : r;
+      });
+    } catch (error) {
+      // Continue without snippets if extraction fails
+    }
+  }
+
   return {
-    results: result.results.map((r) => ({
+    results: resultsWithSnippets.map((r) => ({
       nodeId: r.nodeId,
       name: r.name,
       qualifiedName: r.qualifiedName,
@@ -35,6 +60,12 @@ export async function exactSearch(
       score: r.score,
       language: r.language,
       repositoryId: r.repositoryId,
+      docstring: r.docstring,
+      complexity: r.complexity,
+      visibility: r.visibility,
+      isExported: r.isExported,
+      parentSymbol: r.parentSymbol,
+      snippet: r.snippet,
     })),
     total: result.total,
     limit: result.limit,
@@ -64,15 +95,59 @@ export async function semanticSearch(
     };
   }
 
+  // Get repository ID - use provided one or first available
+  let repoId = input.repositoryId;
+  if (!repoId) {
+    const repos = context.storage.listRepositories();
+    if (repos.length === 0) {
+      return {
+        error: 'No repositories indexed',
+        message: 'Please index a repository first',
+        searchType: 'semantic',
+        results: [],
+        total: 0,
+        limit: input.limit || 20,
+        offset: input.offset || 0,
+        hasMore: false,
+      };
+    }
+    repoId = repos[0]!.id;
+  }
+
   const result = await context.vectorSearch.search(
     input.query,
-    input.repositoryId || 'default-repo',
+    repoId,
     input.limit || 20,
     input.offset || 0
   );
 
+  // Add code snippets
+  let resultsWithSnippets = result.results;
+  if (context.workspaceRoot && result.results.length > 0) {
+    try {
+      const { extractSnippetsBatch } = await import('../../search/snippet.js');
+      const snippets = await extractSnippetsBatch(
+        context.workspaceRoot,
+        result.results.map(r => ({
+          filePath: r.filePath,
+          lineStart: r.lineStart,
+          lineEnd: r.lineEnd,
+        })),
+        { maxLines: 10, maxChars: 500 }
+      );
+      
+      resultsWithSnippets = result.results.map(r => {
+        const key = `${r.filePath}:${r.lineStart}:${r.lineEnd}`;
+        const snippet = snippets.get(key);
+        return snippet ? { ...r, snippet } : r;
+      });
+    } catch (error) {
+      // Continue without snippets if extraction fails
+    }
+  }
+
   return {
-    results: result.results.map((r) => ({
+    results: resultsWithSnippets.map((r) => ({
       nodeId: r.nodeId,
       name: r.name,
       qualifiedName: r.qualifiedName,
@@ -83,6 +158,12 @@ export async function semanticSearch(
       score: r.score,
       language: r.language,
       repositoryId: r.repositoryId,
+      docstring: r.docstring,
+      complexity: r.complexity,
+      visibility: r.visibility,
+      isExported: r.isExported,
+      parentSymbol: r.parentSymbol,
+      snippet: r.snippet,
     })),
     total: result.total,
     limit: result.limit,
@@ -119,6 +200,12 @@ export async function hybridSearch(
         score: r.score,
         language: r.language,
         repositoryId: r.repositoryId,
+        docstring: r.docstring,
+        complexity: r.complexity,
+        visibility: r.visibility,
+        isExported: r.isExported,
+        parentSymbol: r.parentSymbol,
+        snippet: r.snippet,
       })),
       total: exactResult.total,
       limit: exactResult.limit,
@@ -128,15 +215,59 @@ export async function hybridSearch(
     };
   }
 
+  // Get repository ID - use provided one or first available
+  let repoId = input.repositoryId;
+  if (!repoId) {
+    const repos = context.storage.listRepositories();
+    if (repos.length === 0) {
+      return {
+        error: 'No repositories indexed',
+        message: 'Please index a repository first',
+        searchType: 'hybrid',
+        results: [],
+        total: 0,
+        limit: input.limit || 20,
+        offset: input.offset || 0,
+        hasMore: false,
+      };
+    }
+    repoId = repos[0]!.id;
+  }
+
   const result = await context.hybridSearch.search(
     input.query,
-    input.repositoryId || 'default-repo',
+    repoId,
     input.limit || 20,
     input.offset || 0
   );
 
+  // Add code snippets
+  let resultsWithSnippets = result.results;
+  if (context.workspaceRoot && result.results.length > 0) {
+    try {
+      const { extractSnippetsBatch } = await import('../../search/snippet.js');
+      const snippets = await extractSnippetsBatch(
+        context.workspaceRoot,
+        result.results.map(r => ({
+          filePath: r.filePath,
+          lineStart: r.lineStart,
+          lineEnd: r.lineEnd,
+        })),
+        { maxLines: 10, maxChars: 500 }
+      );
+      
+      resultsWithSnippets = result.results.map(r => {
+        const key = `${r.filePath}:${r.lineStart}:${r.lineEnd}`;
+        const snippet = snippets.get(key);
+        return snippet ? { ...r, snippet } : r;
+      });
+    } catch (error) {
+      // Continue without snippets if extraction fails
+    }
+  }
+
   return {
-    results: result.results.map((r) => ({
+    results: resultsWithSnippets.map((r) => ({
       nodeId: r.nodeId,
       name: r.name,
       qualifiedName: r.qualifiedName,
@@ -147,6 +278,12 @@ export async function hybridSearch(
       score: r.score,
       language: r.language,
       repositoryId: r.repositoryId,
+      docstring: r.docstring,
+      complexity: r.complexity,
+      visibility: r.visibility,
+      isExported: r.isExported,
+      parentSymbol: r.parentSymbol,
+      snippet: r.snippet,
     })),
     total: result.total,
     limit: result.limit,

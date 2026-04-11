@@ -73,8 +73,7 @@ export class SqliteStorageProvider implements StorageProvider {
     const migrationsDir = resolve(__dirname, 'migrations');
 
     const migrationFiles = [
-      { version: 1, file: '001_initial.sql', description: 'Initial schema' },
-      { version: 2, file: '002_fix_fts.sql', description: 'Fix FTS5 search: content-synced table with triggers' },
+      { version: 1, file: '001_initial.sql', description: 'Complete initial schema with FTS5 and triggers' },
     ];
 
     for (const migration of migrationFiles) {
@@ -481,7 +480,8 @@ export class SqliteStorageProvider implements StorageProvider {
     const rows = this.db
       .prepare(
         `SELECT n.id, n.name, n.qualified_name, n.kind, n.file_path, n.line_start, n.line_end,
-         n.language, n.repository_id, fts.rank
+         n.language, n.repository_id, n.docstring, n.complexity, n.visibility, n.is_exported,
+         fts.rank
          FROM nodes_fts fts
          JOIN nodes n ON n.rowid = fts.rowid
          WHERE nodes_fts MATCH ?
@@ -490,18 +490,29 @@ export class SqliteStorageProvider implements StorageProvider {
       )
       .all(escapedQuery, limit, offset) as any[];
 
-    return rows.map((row) => ({
-      nodeId: row.id,
-      name: row.name,
-      qualifiedName: row.qualified_name,
-      kind: row.kind,
-      filePath: row.file_path,
-      lineStart: row.line_start,
-      lineEnd: row.line_end,
-      score: 1.0 / (1.0 + Math.abs(row.rank)),
-      language: row.language,
-      repositoryId: row.repository_id,
-    }));
+    return rows.map((row) => {
+      // Extract parent symbol from qualified name (e.g., "AuthService.login" -> "AuthService")
+      const parts = row.qualified_name.split('.');
+      const parentSymbol = parts.length > 1 ? parts.slice(0, -1).join('.') : undefined;
+
+      return {
+        nodeId: row.id,
+        name: row.name,
+        qualifiedName: row.qualified_name,
+        kind: row.kind,
+        filePath: row.file_path,
+        lineStart: row.line_start,
+        lineEnd: row.line_end,
+        score: 1.0 / (1.0 + Math.abs(row.rank)),
+        language: row.language,
+        repositoryId: row.repository_id,
+        docstring: row.docstring || undefined,
+        complexity: row.complexity || undefined,
+        visibility: row.visibility || undefined,
+        isExported: row.is_exported === 1,
+        parentSymbol,
+      };
+    });
   }
 
   getConfig(key?: string): Record<string, unknown> {

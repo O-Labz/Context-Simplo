@@ -68,6 +68,7 @@ export interface SearchRouteOptions {
   vectorSearch?: any;
   hybridSearch?: any;
   configManager?: any;
+  workspaceRoot?: string;
 }
 
 export async function registerSearchRoutes(
@@ -106,7 +107,7 @@ export async function registerSearchRoutes(
       let semanticTime = 0;
       let fusionTime = 0;
 
-      let results: unknown[] = [];
+      let results: any[] = [];
       let total = 0;
       let hasMore = false;
 
@@ -130,10 +131,23 @@ export async function registerSearchRoutes(
           });
         }
 
+        // Get repository ID - use provided one or first available
+        let repoId = input.repositoryId;
+        if (!repoId) {
+          const repos = options.storage.listRepositories();
+          if (repos.length === 0) {
+            return reply.status(400).send({
+              error: 'No repositories indexed',
+              message: 'Please index a repository first',
+            });
+          }
+          repoId = repos[0]!.id;
+        }
+
         const semanticStart = Date.now();
         const response = await vectorSearch.search(
           input.query,
-          input.repositoryId || 'default-repo',
+          repoId,
           input.limit,
           input.offset
         );
@@ -151,10 +165,23 @@ export async function registerSearchRoutes(
           });
         }
 
+        // Get repository ID - use provided one or first available
+        let repoId = input.repositoryId;
+        if (!repoId) {
+          const repos = options.storage.listRepositories();
+          if (repos.length === 0) {
+            return reply.status(400).send({
+              error: 'No repositories indexed',
+              message: 'Please index a repository first',
+            });
+          }
+          repoId = repos[0]!.id;
+        }
+
         const hybridStart = Date.now();
         const response = await hybridSearch.search(
           input.query,
-          input.repositoryId || 'default-repo',
+          repoId,
           input.limit,
           input.offset
         );
@@ -163,6 +190,32 @@ export async function registerSearchRoutes(
         results = response.results;
         total = response.total;
         hasMore = response.hasMore;
+      }
+
+      // Add code snippets if workspace root is available
+      if (options.workspaceRoot && results.length > 0) {
+        try {
+          const { extractSnippetsBatch } = await import('../../search/snippet.js');
+          const snippets = await extractSnippetsBatch(
+            options.workspaceRoot,
+            results.map(r => ({
+              filePath: r.filePath,
+              lineStart: r.lineStart,
+              lineEnd: r.lineEnd,
+            })),
+            { maxLines: 10, maxChars: 500 }
+          );
+          
+          // Attach snippets to results
+          results = results.map(r => {
+            const key = `${r.filePath}:${r.lineStart}:${r.lineEnd}`;
+            const snippet = snippets.get(key);
+            return snippet ? { ...r, snippet } : r;
+          });
+        } catch (error) {
+          // Snippet extraction failed, continue without snippets
+          console.warn('Failed to extract snippets:', error);
+        }
       }
 
       const totalTime = Date.now() - startTime;
