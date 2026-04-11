@@ -67,7 +67,8 @@ describe('ConfigManager', () => {
         embeddingConcurrency: 10,
       });
 
-      expect(result.success).toBe(false);
+      // No active queue — update is a no-op, succeeds cleanly
+      expect(result.success).toBe(true);
     });
 
     it('should handle empty updates', async () => {

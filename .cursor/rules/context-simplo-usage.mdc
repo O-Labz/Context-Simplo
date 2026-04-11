@@ -29,3 +29,38 @@ MCP server: `user-context-simplo`. Use it **instead of** grep/ripgrep/Glob/Seman
 - Pass `repositoryId` to scope queries and avoid full-index scans
 - Use `incremental: true` when re-indexing after changes
 - Skip Context-Simplo for single-file edits where the file is already open/known
+
+## Compact mode (token savings)
+
+Set `CONTEXT_SIMPLO_RESPONSE_MODE=compact` in the server environment to enable ~60% input token savings.
+
+In compact mode, response keys are abbreviated:
+
+| Full key | Compact | Full key | Compact |
+|----------|---------|----------|---------|
+| `results` / `callers` / `callees` | `r` | `repositoryId` | `rid` |
+| `name` | `n` | `language` | `lang` |
+| `qualifiedName` | `qn` | `nodeId` | `nid` |
+| `kind` | `k` | `score` | `s` |
+| `filePath` | `fp` | `isExported` | `x` |
+| `lineStart` | `ls` | `complexity` | `cx` |
+| `lineEnd` | `le` | `total` | `t` |
+| `symbol` | `sym` | `hasMore` | `m` |
+| `affectedNodes` | `nodes` | `searchType` | `st` |
+| `affectedFiles` | `files` | `entryPoints` | `entry` |
+| `modules` | `mods` | `keyAbstractions` | `abs` |
+
+Compact mode also removes `null` values, `id` hash fields, `visibility`, `limit`, and `offset` from responses, and minifies JSON (no indentation). `repositoryId` and `language` are hoisted to the envelope when all results share the same value.
+
+## Response style
+
+Be direct and concise in all responses. Drop articles (a/an/the), filler (just/really/basically/simply), pleasantries (sure/certainly/of course), and hedging. Fragments OK. Use short synonyms: "fix" not "implement a solution for", "use" not "utilize". Technical terms, code blocks, and error messages stay exact.
+
+Pattern: `[thing] [action] [reason]. [next step].`
+
+Example — not: "Sure! I'd be happy to help. The issue you're experiencing is likely caused by..."
+Example — yes: "Bug in auth middleware. Token expiry uses `<` not `<=`. Fix:"
+
+Exception: use full sentences for security warnings, irreversible operations, and multi-step sequences where brevity risks misreading.
+
+Never create or edit `.md` files unless explicitly asked.

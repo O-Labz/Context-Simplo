@@ -284,7 +284,7 @@ describe('CodeGraph', () => {
       await graph.addEdge(createTestEdge('e1', '1', '2'));
 
       const serialized = graph.serialize();
-      const deserialized = CodeGraph.fromSerialized(serialized);
+      const deserialized = await CodeGraph.fromSerialized(serialized);
 
       expect(deserialized.getNode('1')).toBeTruthy();
       expect(deserialized.getNode('2')).toBeTruthy();

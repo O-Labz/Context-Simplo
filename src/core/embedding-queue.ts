@@ -88,7 +88,7 @@ export class EmbeddingQueue extends EventEmitter {
   }
 
   private async processQueue(): Promise<void> {
-    while (this.inFlight < this.concurrency && this.queue.length > 0 && !this.draining) {
+    while (this.inFlight < this.concurrency && this.queue.length > 0) {
       const job = this.queue.shift();
       if (!job) break;
 

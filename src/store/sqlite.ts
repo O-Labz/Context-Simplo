@@ -74,6 +74,7 @@ export class SqliteStorageProvider implements StorageProvider {
 
     const migrationFiles = [
       { version: 1, file: '001_initial.sql', description: 'Initial schema' },
+      { version: 2, file: '002_fix_fts.sql', description: 'Fix FTS5 search: content-synced table with triggers' },
     ];
 
     for (const migration of migrationFiles) {
@@ -381,37 +382,19 @@ export class SqliteStorageProvider implements StorageProvider {
         node.updatedAt.toISOString()
       );
 
-      this.indexNodeForSearch(node);
     }
   }
 
   deleteNode(id: string): void {
     this.db.prepare('DELETE FROM nodes WHERE id = ?').run(id);
-    this.db.prepare('DELETE FROM nodes_fts WHERE node_id = ?').run(id);
   }
 
   deleteNodesInFile(filePath: string): void {
-    const nodeIds = this.db
-      .prepare('SELECT id FROM nodes WHERE file_path = ?')
-      .all(filePath) as Array<{ id: string }>;
-
     this.db.prepare('DELETE FROM nodes WHERE file_path = ?').run(filePath);
-
-    for (const { id } of nodeIds) {
-      this.db.prepare('DELETE FROM nodes_fts WHERE node_id = ?').run(id);
-    }
   }
 
   deleteNodesInRepository(repositoryId: string): void {
-    const nodeIds = this.db
-      .prepare('SELECT id FROM nodes WHERE repository_id = ?')
-      .all(repositoryId) as Array<{ id: string }>;
-
     this.db.prepare('DELETE FROM nodes WHERE repository_id = ?').run(repositoryId);
-
-    for (const { id } of nodeIds) {
-      this.db.prepare('DELETE FROM nodes_fts WHERE node_id = ?').run(id);
-    }
   }
 
   getEdge(id: string): GraphEdge | null {
@@ -497,12 +480,12 @@ export class SqliteStorageProvider implements StorageProvider {
     
     const rows = this.db
       .prepare(
-        `SELECT n.id, n.name, n.qualified_name, n.kind, n.file_path, n.line_start, n.line_end, 
-         n.language, n.repository_id, rank
+        `SELECT n.id, n.name, n.qualified_name, n.kind, n.file_path, n.line_start, n.line_end,
+         n.language, n.repository_id, fts.rank
          FROM nodes_fts fts
-         JOIN nodes n ON fts.node_id = n.id
+         JOIN nodes n ON n.rowid = fts.rowid
          WHERE nodes_fts MATCH ?
-         ORDER BY rank
+         ORDER BY fts.rank
          LIMIT ? OFFSET ?`
       )
       .all(escapedQuery, limit, offset) as any[];
@@ -519,20 +502,6 @@ export class SqliteStorageProvider implements StorageProvider {
       language: row.language,
       repositoryId: row.repository_id,
     }));
-  }
-
-  indexNodeForSearch(node: CodeNode): void {
-    this.db
-      .prepare(
-        `INSERT INTO nodes_fts (node_id, name, qualified_name, file_path, docstring)
-         VALUES (?, ?, ?, ?, ?)
-         ON CONFLICT(node_id) DO UPDATE SET
-         name = excluded.name,
-         qualified_name = excluded.qualified_name,
-         file_path = excluded.file_path,
-         docstring = excluded.docstring`
-      )
-      .run(node.id, node.name, node.qualifiedName, node.filePath, node.docstring || '');
   }
 
   getConfig(key?: string): Record<string, unknown> {

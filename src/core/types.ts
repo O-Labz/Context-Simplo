@@ -201,6 +201,10 @@ export const LLMProviderTypeSchema = z.enum(['openai', 'ollama', 'azure', 'none'
 
 export type LLMProviderType = z.infer<typeof LLMProviderTypeSchema>;
 
+export const ResponseModeSchema = z.enum(['full', 'compact']);
+
+export type ResponseMode = z.infer<typeof ResponseModeSchema>;
+
 export const ConfigValueSchema = z.object({
   value: z.unknown(),
   source: ConfigSourceSchema,
@@ -266,6 +270,11 @@ export const AppConfigSchema = z.object({
   }),
   graphMemoryLimitMb: z.object({
     value: z.number().int().positive(),
+    source: ConfigSourceSchema,
+    isLocked: z.boolean(),
+  }),
+  responseMode: z.object({
+    value: ResponseModeSchema,
     source: ConfigSourceSchema,
     isLocked: z.boolean(),
   }),

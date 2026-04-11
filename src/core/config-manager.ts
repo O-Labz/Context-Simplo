@@ -130,7 +130,9 @@ export class ConfigManager extends EventEmitter {
       return { success: true, changes, warnings };
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-      this.emit('error', errorMessage);
+      if (this.listenerCount('error') > 0) {
+        this.emit('error', errorMessage);
+      }
       return {
         success: false,
         changes,

@@ -114,6 +114,10 @@ export function isRetryableError(error: Error): boolean {
   if (error instanceof LLMError) {
     return error.isRetryable;
   }
+  // Support plain errors with a retryable property (e.g. from tests or external libs)
+  if ('retryable' in error && typeof (error as any).retryable === 'boolean') {
+    return (error as any).retryable;
+  }
   return false;
 }
 
