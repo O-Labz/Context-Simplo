@@ -24,6 +24,9 @@ export default function Repositories() {
   const [addMode, setAddMode] = useState<'browse' | 'manual'>('browse');
   const [busyAction, setBusyAction] = useState<string | null>(null);
   const [workspaceRoot, setWorkspaceRoot] = useState('');
+  const [autoIndex, setAutoIndex] = useState(true);
+  const [autoIndexLocked, setAutoIndexLocked] = useState(false);
+  const [togglingAutoIndex, setTogglingAutoIndex] = useState(false);
   const { toasts, push: toast, dismiss: dismissToast } = useToast();
 
   useEffect(() => {
@@ -32,7 +35,19 @@ export default function Repositories() {
       .then((r) => r.json())
       .then((d) => setWorkspaceRoot(d.workspaceRoot || ''))
       .catch((err) => console.warn('Failed to load workspace info:', err));
+    loadConfig();
   }, []);
+
+  const loadConfig = async () => {
+    try {
+      const response = await fetch('/api/config');
+      const data = await response.json();
+      setAutoIndex(data.config.autoIndex || false);
+      setAutoIndexLocked(data.envLocked.autoIndex || false);
+    } catch (error) {
+      console.error('Failed to load config:', error);
+    }
+  };
 
   const loadRepositories = async () => {
     try {
@@ -103,6 +118,63 @@ export default function Repositories() {
       loadRepositories();
     } catch (error) {
       toast('error', 'Failed to toggle file watching.');
+    } finally {
+      setBusyAction(null);
+    }
+  };
+
+  const handleToggleAutoIndex = async () => {
+    if (autoIndexLocked) {
+      toast('info', 'Auto-index is locked by environment variable. Cannot change via UI.');
+      return;
+    }
+
+    setTogglingAutoIndex(true);
+    try {
+      const response = await fetch('/api/config', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ autoIndex: !autoIndex }),
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        if (data.success) {
+          setAutoIndex(!autoIndex);
+          toast('success', !autoIndex 
+            ? 'Auto-indexing enabled. New repositories will index automatically.' 
+            : 'Auto-indexing disabled. Use manual indexing for new repositories.');
+        } else {
+          toast('error', 'Failed to update config.');
+        }
+      } else {
+        toast('error', 'Failed to update auto-index setting.');
+      }
+    } catch (error) {
+      toast('error', 'Network error — could not reach server.');
+    } finally {
+      setTogglingAutoIndex(false);
+    }
+  };
+
+  const handleQuickIndexWorkspace = async () => {
+    setBusyAction('quick-index');
+    try {
+      const response = await fetch('/api/repositories', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ path: '/workspace', incremental: false }),
+      });
+
+      if (response.ok) {
+        toast('success', 'Workspace indexing started. This may take a few minutes for large projects.');
+        setTimeout(() => loadRepositories(), 2000);
+      } else {
+        const error = await response.text();
+        toast('error', `Failed to index workspace: ${error}`);
+      }
+    } catch (error) {
+      toast('error', 'Network error — could not reach server.');
     } finally {
       setBusyAction(null);
     }
@@ -181,6 +253,22 @@ export default function Repositories() {
           </p>
         </div>
         <div className="flex gap-3">
+          <button
+            onClick={handleToggleAutoIndex}
+            disabled={togglingAutoIndex || autoIndexLocked}
+            className={`px-6 py-3 font-semibold text-[0.875rem] rounded-xl transition-all flex items-center gap-2 ${
+              autoIndex 
+                ? 'bg-green-500/10 text-green-600 hover:bg-green-500/20 border border-green-500/30'
+                : 'bg-surface-container-highest text-on-surface hover:bg-surface-dim'
+            } disabled:opacity-50 disabled:cursor-not-allowed`}
+            title={autoIndexLocked ? 'Locked by environment variable' : 'Toggle auto-indexing'}
+          >
+            <span className={`material-symbols-outlined text-[18px] ${togglingAutoIndex ? 'animate-spin' : ''}`}>
+              {autoIndex ? 'toggle_on' : 'toggle_off'}
+            </span>
+            Auto-Index: {autoIndex ? 'ON' : 'OFF'}
+            {autoIndexLocked && <span className="material-symbols-outlined text-[14px]">lock</span>}
+          </button>
           {repos.length > 0 && (
             <button
               onClick={() => {
@@ -222,15 +310,27 @@ export default function Repositories() {
           </span>
           <h2 className="text-2xl font-bold mb-2">No Repositories Indexed</h2>
           <p className="text-on-surface-variant mb-6">
-            Get started by adding a repository to index for code intelligence.
+            Get started by indexing your workspace or adding a specific repository.
           </p>
-          <button
-            onClick={() => setShowAddDialog(true)}
-            className="px-6 py-3 primary-gradient text-white font-semibold text-[0.875rem] rounded-xl shadow-lg shadow-tertiary/10 active:scale-95 transition-all inline-flex items-center gap-2"
-          >
-            <span className="material-symbols-outlined text-[18px]">add</span>
-            Add Repository
-          </button>
+          <div className="flex gap-3 justify-center">
+            <button
+              onClick={handleQuickIndexWorkspace}
+              disabled={busyAction === 'quick-index'}
+              className="px-6 py-3 bg-tertiary/10 text-tertiary font-semibold text-[0.875rem] rounded-xl hover:bg-tertiary/20 active:scale-95 transition-all inline-flex items-center gap-2 disabled:opacity-50"
+            >
+              <span className={`material-symbols-outlined text-[18px] ${busyAction === 'quick-index' ? 'animate-spin' : ''}`}>
+                {busyAction === 'quick-index' ? 'refresh' : 'bolt'}
+              </span>
+              {busyAction === 'quick-index' ? 'Indexing...' : 'Quick Index Workspace'}
+            </button>
+            <button
+              onClick={() => setShowAddDialog(true)}
+              className="px-6 py-3 primary-gradient text-white font-semibold text-[0.875rem] rounded-xl shadow-lg shadow-tertiary/10 active:scale-95 transition-all inline-flex items-center gap-2"
+            >
+              <span className="material-symbols-outlined text-[18px]">add</span>
+              Add Specific Path
+            </button>
+          </div>
         </div>
       )}
 

@@ -145,6 +145,12 @@ export const SearchResultSchema = z.object({
   snippet: z.string().optional(),
   language: z.string(),
   repositoryId: z.string(),
+  // Enhanced metadata
+  docstring: z.string().optional(),
+  complexity: z.number().int().nonnegative().optional(),
+  visibility: VisibilitySchema.optional(),
+  isExported: z.boolean().optional(),
+  parentSymbol: z.string().optional(),
 });
 
 export type SearchResult = z.infer<typeof SearchResultSchema>;

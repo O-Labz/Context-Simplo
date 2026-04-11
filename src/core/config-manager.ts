@@ -36,6 +36,8 @@ import type { HybridSearch } from '../search/hybrid.js';
 export interface ConfigManagerOptions {
   storage: StorageProvider;
   vectorStore?: LanceDBVectorStore;
+  indexer?: any;
+  workspaceRoot?: string;
   onEmbeddingProviderChange?: (provider: EmbeddingProvider | undefined) => Promise<void>;
   onEmbeddingQueueChange?: (queue: EmbeddingQueue | undefined) => Promise<void>;
   onVectorSearchChange?: (vectorSearch: VectorSearch | undefined, hybridSearch: HybridSearch | undefined) => Promise<void>;
@@ -119,11 +121,17 @@ export class ConfigManager extends EventEmitter {
 
       const needsProviderReload = this.needsProviderReload(updates);
       const needsQueueUpdate = this.needsQueueUpdate(updates);
+      const needsAutoIndex = this.needsAutoIndexTrigger(updates);
 
       if (needsProviderReload) {
         await this.reloadEmbeddingProvider(newConfig, changes, warnings);
       } else if (needsQueueUpdate) {
         await this.updateQueueSettings(newConfig, changes);
+      }
+
+      if (needsAutoIndex) {
+        changes.push('Auto-indexing enabled - will trigger on next config reload or manually via API');
+        warnings.push('Auto-indexing is now enabled. Use POST /api/repositories to trigger indexing.');
       }
 
       this.emit('reloaded', { changes, warnings });
@@ -154,6 +162,10 @@ export class ConfigManager extends EventEmitter {
 
   private needsQueueUpdate(updates: Record<string, unknown>): boolean {
     return !!(updates.embeddingConcurrency || updates.embeddingBatchSize);
+  }
+
+  private needsAutoIndexTrigger(updates: Record<string, unknown>): boolean {
+    return updates.autoIndex === true;
   }
 
   private async reloadEmbeddingProvider(

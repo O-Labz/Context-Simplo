@@ -150,18 +150,29 @@ export class LanceDBVectorStore {
 
       const paginatedResults = results.slice(offset, offset + limit);
 
-      return paginatedResults.map((row: any) => ({
-        nodeId: row.nodeId || row.id,
-        name: row.symbolContext?.split(':').pop() || '',
-        qualifiedName: row.symbolContext || '',
-        kind: 'function' as const,
-        filePath: row.filePath,
-        lineStart: row.startLine,
-        lineEnd: row.endLine,
-        score: 1 - (row._distance || 0),
-        language: row.language,
-        repositoryId,
-      }));
+      return paginatedResults.map((row: any) => {
+        // symbolContext format: "filePath:qualifiedName"
+        const parts = (row.symbolContext || '').split(':');
+        const qualifiedName = parts.length > 1 ? parts.slice(1).join(':') : parts[0] || '';
+        const nameParts = qualifiedName.split('.');
+        const name = nameParts[nameParts.length - 1] || '';
+        const parentSymbol = nameParts.length > 1 ? nameParts.slice(0, -1).join('.') : undefined;
+        
+        return {
+          nodeId: row.nodeId || row.id,
+          name: name,
+          qualifiedName: qualifiedName,
+          kind: 'function' as const,
+          filePath: row.filePath,
+          lineStart: row.startLine,
+          lineEnd: row.endLine,
+          score: Math.max(0, Math.min(1, 1 / (1 + (row._distance || 0)))),
+          snippet: row.content ? row.content.substring(0, 200) : undefined,
+          language: row.language,
+          repositoryId,
+          parentSymbol,
+        };
+      });
     } catch (error) {
       throw new StoreError('search', 'Vector search failed', error as Error);
     }
