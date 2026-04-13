@@ -8,7 +8,6 @@ import Fastify from 'fastify';
 import fastifyStatic from '@fastify/static';
 import fastifyWebsocket from '@fastify/websocket';
 import { basename } from 'path';
-import { sanitizeErrorMessage } from '../core/path-utils.js';
 import type { CodeGraph } from '../core/graph.js';
 import type { StorageProvider } from '../store/provider.js';
 import {
