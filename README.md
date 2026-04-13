@@ -35,44 +35,7 @@ Context-Simplo is a production-ready **context database** and **MCP (Model Conte
 
 ## Quickstart
 
-Context-Simplo runs in Docker. Choose your preferred method below.
-
-### Option A: simplo CLI (Recommended)
-
-The `simplo` CLI wraps Docker and handles mounting, LLM config, and IDE setup in a single command.
-
-**Step 1: Install the CLI**
-```bash
-curl -fsSL https://raw.githubusercontent.com/ohopson/context-simplo/main/bin/simplo \
-  -o /usr/local/bin/simplo && chmod +x /usr/local/bin/simplo
-```
-
-**Step 2: (Optional) Configure an embedding provider**
-```bash
-simplo config
-# Edit the file to set LLM_PROVIDER, LLM_BASE_URL, etc.
-# Default is LLM_PROVIDER=ollama — make sure Ollama is running.
-# Set LLM_PROVIDER=none to skip embeddings (structural tools still work).
-```
-
-**Step 3: Start from any project directory**
-```bash
-cd ~/projects/my-app
-simplo start
-```
-
-**Step 4: Open the dashboard and configure your IDE**
-```bash
-open http://localhost:3001          # Dashboard
-simplo setup cursor                 # Generate .cursor/mcp.json
-# Also supports: vscode, claude-desktop, claude-code
-```
-
-The CLI mounts your home directory read-only and calculates the workspace path automatically. Switch projects at any time from the dashboard — no container restart required.
-
-### Option B: Docker CLI
-
-If you prefer raw Docker commands, choose an embedding provider below.
+Context-Simplo runs in Docker. Choose an embedding provider below.
 
 > **Important**: Context-Simplo does NOT bundle AI models. Provide an external embedding service for semantic search, or run with `LLM_PROVIDER=none` for structural tools only.
 
@@ -262,12 +225,6 @@ Context-Simplo supports two workspace modes:
 
 Mount your home directory at `/host`. The container can browse any subdirectory, and you can switch projects at runtime from the dashboard without restarting.
 
-```bash
-# simplo CLI does this automatically:
-simplo start              # indexes current directory
-simplo start ~/other-app  # indexes a specific directory
-```
-
 To switch workspaces at runtime, open the dashboard Repositories page and click **Change** in the workspace bar. Browse to a new directory and click **Switch Workspace**. Re-indexing happens automatically in the background.
 
 ### Legacy mode
@@ -291,23 +248,6 @@ When adding repositories via the dashboard or MCP tools, use **container paths**
 | `~/projects/my-app/src` | `/host/projects/my-app/src` | `src` |
 
 The dashboard **Browse** tab shows the container filesystem — click to select.
-
-## CLI Reference
-
-The `simplo` CLI manages the Docker container lifecycle. Config is stored in `~/.config/context-simplo/config`.
-
-| Command | Description |
-|---------|-------------|
-| `simplo start [path]` | Start container (workspace defaults to current dir) |
-| `simplo stop` | Stop and remove container |
-| `simplo restart` | Restart container |
-| `simplo status` | Show container status and current workspace |
-| `simplo logs` | Tail container logs |
-| `simplo update` | Pull latest image and restart |
-| `simplo config` | Edit persistent LLM configuration |
-| `simplo setup <ide>` | Generate MCP config (`cursor`, `vscode`, `claude-desktop`, `claude-code`) |
-
-Options: `--root <path>` (mount root, default `$HOME`), `--port <port>` (default `3001`).
 
 ## Automatic AI Agent Usage (Cursor Rules)
 
@@ -416,7 +356,6 @@ Context-Simplo runs on all major platforms via Docker:
 - **Web Dashboard** -- Setup wizard, graph explorer, real-time metrics, workspace switcher, MCP config generator
 - **Real-Time Updates** -- WebSocket broadcasting for live indexing progress and metrics
 - **REST API** -- Full-featured API for external integrations and automation
-- **`simplo` CLI** -- One-command Docker management with persistent config and IDE setup
 - **Local or Remote LLMs** -- OpenAI, Azure, Ollama, or run without LLM (structural tools still work)
 - **Production-Ready** -- Graceful shutdown, crash recovery, secret scrubbing, pagination
 - **Portable** -- Single Docker container, ~150-200MB image, SQLite + LanceDB embedded storage
@@ -437,11 +376,6 @@ Context-Simplo combines the speed of Arbor's Rust architecture with the rich too
 Full documentation available in the [`docs/`](docs/) directory:
 
 - [Installation Guide](docs/installation.md)
-- [MCP IDE Setup](docs/mcp-setup.md)
-- [Configuration Reference](docs/configuration.md)
-- [MCP Tools Reference](docs/mcp-tools.md)
-- [Architecture Overview](docs/architecture.md)
-- [Development Guide](docs/CONTRIBUTING.md)
 
 ## License
 
