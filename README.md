@@ -9,7 +9,29 @@
 
 ## What is this?
 
-Context-Simplo is a production-ready MCP (Model Context Protocol) server that automatically indexes your codebase into a graph+vector database. It provides AI assistants with deep code intelligence: call hierarchies, impact analysis, semantic search, dead code detection, and more. Runs entirely in Docker with support for local (Ollama) or remote (OpenAI) LLMs, and lets you switch between projects at runtime without restarting the container.
+Context-Simplo is a production-ready **context database** and **MCP (Model Context Protocol) server** that automatically indexes your codebase into a graph+vector database. This context tool provides AI assistants like Cursor, VS Code, and Claude Desktop with deep code intelligence: call hierarchies, impact analysis, semantic search, dead code detection, and more.
+
+**Perfect for:**
+- 🤖 Enhancing AI assistants (Cursor, VS Code, Claude) with deep codebase understanding
+- 🔍 Semantic code search across 248 programming languages
+- 📊 Impact analysis before refactoring
+- 🗺️ Visualizing call graphs and code dependencies
+- 🧹 Finding dead code and complexity hotspots
+- 🔄 Switching between multiple projects without container restarts
+
+**Key Features:**
+- **Context Database** - Graph+vector storage for code intelligence
+- **Hybrid Search** - Combines vector (semantic) + BM25 (keyword) search
+- **248 Languages** - Native tree-sitter parsing
+- **MCP Server** - Integrates with Cursor, VS Code, Claude Desktop, Claude Code
+- **Auto-Indexing** - File watcher with incremental updates (<500ms per change)
+- **Web Dashboard** - Visual graph explorer, metrics, and configuration
+- **Docker-First** - Single container, no complex setup
+- **Local or Cloud LLMs** - Works with Ollama, OpenAI, Azure, or no LLM
+
+### Demo
+
+![Context-Simplo Demo](docs/images/demo.gif)
 
 ## Quickstart
 
