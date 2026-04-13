@@ -1,6 +1,6 @@
 # Context-Simplo
 
-> Portable code intelligence MCP server with hybrid vector+BM25 search, auto-indexing, and web dashboard
+> Production-ready code intelligence MCP server with hybrid vector+BM25 search, auto-indexing, and web dashboard
 
 [![Docker](https://img.shields.io/badge/docker-ready-blue.svg)](https://hub.docker.com/r/ohopson/context-simplo)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
@@ -9,15 +9,18 @@
 
 ## What is this?
 
-Context-Simplo is a production-ready MCP (Model Context Protocol) server that automatically indexes your codebase into a graph+vector database. It provides AI assistants with deep code intelligence: call hierarchies, impact analysis, semantic search, dead code detection, and more. It runs entirely in Docker with support for local (Ollama) or remote (OpenAI) LLMs, and lets you switch between projects at runtime without restarting the container.
+Context-Simplo is a production-ready MCP (Model Context Protocol) server that automatically indexes your codebase into a graph+vector database. It provides AI assistants with deep code intelligence: call hierarchies, impact analysis, semantic search, dead code detection, and more. Runs entirely in Docker with support for local (Ollama) or remote (OpenAI) LLMs, and lets you switch between projects at runtime without restarting the container.
 
-## Quickstart (simplo CLI) — Recommended
+## Quickstart
+
+Context-Simplo runs in Docker. Choose your preferred method below.
+
+### Option A: simplo CLI (Recommended)
 
 The `simplo` CLI wraps Docker and handles mounting, LLM config, and IDE setup in a single command.
 
 **Step 1: Install the CLI**
 ```bash
-# Copy the script into your PATH
 curl -fsSL https://raw.githubusercontent.com/ohopson/context-simplo/main/bin/simplo \
   -o /usr/local/bin/simplo && chmod +x /usr/local/bin/simplo
 ```
@@ -27,7 +30,7 @@ curl -fsSL https://raw.githubusercontent.com/ohopson/context-simplo/main/bin/sim
 simplo config
 # Edit the file to set LLM_PROVIDER, LLM_BASE_URL, etc.
 # Default is LLM_PROVIDER=ollama — make sure Ollama is running.
-# Set LLM_PROVIDER=none to skip embeddings entirely (structural tools still work).
+# Set LLM_PROVIDER=none to skip embeddings (structural tools still work).
 ```
 
 **Step 3: Start from any project directory**
@@ -43,15 +46,15 @@ simplo setup cursor                 # Generate .cursor/mcp.json
 # Also supports: vscode, claude-desktop, claude-code
 ```
 
-That's it. The CLI mounts your home directory read-only and calculates the workspace path automatically. You can switch projects at any time from the dashboard — no container restart required.
+The CLI mounts your home directory read-only and calculates the workspace path automatically. Switch projects at any time from the dashboard — no container restart required.
 
-## Quickstart (Docker)
+### Option B: Docker CLI
 
-If you prefer raw Docker commands, choose an embedding provider option below.
+If you prefer raw Docker commands, choose an embedding provider below.
 
 > **Important**: Context-Simplo does NOT bundle AI models. Provide an external embedding service for semantic search, or run with `LLM_PROVIDER=none` for structural tools only.
 
-### Option 1: Local AI (Ollama) — Recommended for Privacy
+#### 1. Local AI (Ollama) — Recommended for Privacy
 
 ```bash
 # 1. Install Ollama and pull the model
@@ -138,7 +141,7 @@ docker run -d `
 
 </details>
 
-### Option 2: Cloud AI (OpenAI)
+#### 2. Cloud AI (OpenAI)
 
 ```bash
 docker pull ohopson/context-simplo:latest
@@ -204,7 +207,7 @@ docker run -d `
 
 </details>
 
-### Option 3: No AI (Structural Tools Only)
+#### 3. No AI (Structural Tools Only)
 
 ```bash
 docker run -d \
@@ -220,18 +223,16 @@ docker run -d \
 
 Semantic search is unavailable without embeddings, but all structural tools (call hierarchies, impact analysis, dead code detection, etc.) still work.
 
-### After starting (all options)
+#### After starting
 
 ```bash
 open http://localhost:3001        # Dashboard
 # Configure your IDE to use http://localhost:3001/mcp
 ```
 
-### Legacy mode
+**Legacy mode:** The old `-v $(pwd):/workspace:ro` mount style still works. If `/host` is not detected, the server falls back to `/workspace` automatically.
 
-The old `-v $(pwd):/workspace:ro` mount style still works. If `/host` is not detected, the server falls back to `/workspace` automatically.
-
-## Workspace Configuration
+## Workspace Modes
 
 Context-Simplo supports two workspace modes:
 
@@ -243,19 +244,13 @@ Mount your home directory at `/host`. The container can browse any subdirectory,
 # simplo CLI does this automatically:
 simplo start              # indexes current directory
 simplo start ~/other-app  # indexes a specific directory
-
-# Or with docker-compose (uses $HOME by default):
-docker-compose up -d
-
-# Override the initial workspace:
-INITIAL_WORKSPACE=/host/projects/my-app docker-compose up -d
 ```
 
 To switch workspaces at runtime, open the dashboard Repositories page and click **Change** in the workspace bar. Browse to a new directory and click **Switch Workspace**. Re-indexing happens automatically in the background.
 
 ### Legacy mode
 
-Mount a single project at `/workspace`. No runtime switching — you must restart the container to change projects.
+Mount a single project at `/workspace`. No runtime switching — restart required to change projects.
 
 ```bash
 docker run -d \
@@ -264,29 +259,7 @@ docker run -d \
   ohopson/context-simplo:latest
 ```
 
-### docker-compose
-
-`docker-compose.yml` supports both modes via environment variables:
-
-| Variable | Default | Purpose |
-|----------|---------|---------|
-| `HOST_MOUNT_PATH` | `~` | Host directory mounted at `/host` |
-| `MOUNT_ROOT` | `/host` | Mount root inside the container |
-| `INITIAL_WORKSPACE` | `/workspace` | Starting workspace path |
-| `WORKSPACE_PATH` | `.` | Legacy `/workspace` mount path |
-
-```bash
-# Dynamic mode (default) — mounts $HOME, starts at /workspace
-docker-compose up -d
-
-# Start in a specific project
-INITIAL_WORKSPACE=/host/projects/my-app docker-compose up -d
-
-# Custom mount root (e.g., external drive)
-HOST_MOUNT_PATH=/mnt/data docker-compose up -d
-```
-
-### Paths inside the container
+### Container paths
 
 When adding repositories via the dashboard or MCP tools, use **container paths**:
 
@@ -316,7 +289,7 @@ Options: `--root <path>` (mount root, default `$HOME`), `--port <port>` (default
 
 ## Automatic AI Agent Usage (Cursor Rules)
 
-Context-Simplo tools are most effective when your AI agent uses them automatically instead of falling back to file-by-file search. You can add a Cursor rule that instructs the agent to prefer Context-Simplo for code intelligence tasks — reducing tool call chains and lowering token costs.
+Context-Simplo tools are most effective when your AI agent uses them automatically instead of falling back to file-by-file search. Add a Cursor rule that instructs the agent to prefer Context-Simplo for code intelligence tasks — reducing tool call chains and lowering token costs.
 
 **Create `.cursor/rules/context-simplo-usage.mdc` in your project:**
 
@@ -352,24 +325,46 @@ MCP server: `user-context-simplo`. Use it **instead of** grep/ripgrep/Glob/Seman
 - Pass `repositoryId` to scope queries and avoid full-index scans
 - Use `incremental: true` when re-indexing after changes
 - Skip Context-Simplo for single-file edits where the file is already open/known
+
+## Compact mode (token savings)
+
+Set `CONTEXT_SIMPLO_RESPONSE_MODE=compact` in the server environment to enable ~60% input token savings.
+
+In compact mode, response keys are abbreviated:
+
+| Full key | Compact | Full key | Compact |
+|----------|---------|----------|---------|
+| `results` / `callers` / `callees` | `r` | `repositoryId` | `rid` |
+| `name` | `n` | `language` | `lang` |
+| `qualifiedName` | `qn` | `nodeId` | `nid` |
+| `kind` | `k` | `score` | `s` |
+| `filePath` | `fp` | `isExported` | `x` |
+| `lineStart` | `ls` | `complexity` | `cx` |
+| `lineEnd` | `le` | `total` | `t` |
+| `symbol` | `sym` | `hasMore` | `m` |
+| `affectedNodes` | `nodes` | `searchType` | `st` |
+| `affectedFiles` | `files` | `entryPoints` | `entry` |
+| `modules` | `mods` | `keyAbstractions` | `abs` |
+
+Compact mode also removes `null` values, `id` hash fields, `visibility`, `limit`, and `offset` from responses, and minifies JSON (no indentation). `repositoryId` and `language` are hoisted to the envelope when all results share the same value.
+
+## Response style
+
+Be direct and concise in all responses. Drop articles (a/an/the), filler (just/really/basically/simply), pleasantries (sure/certainly/of course), and hedging. Fragments OK. Use short synonyms: "fix" not "implement a solution for", "use" not "utilize". Technical terms, code blocks, and error messages stay exact.
+
+Pattern: `[thing] [action] [reason]. [next step].`
+
+Example — not: "Sure! I'd be happy to help. The issue you're experiencing is likely caused by..."
+Example — yes: "Bug in auth middleware. Token expiry uses `<` not `<=`. Fix:"
+
+Exception: use full sentences for security warnings, irreversible operations, and multi-step sequences where brevity risks misreading.
+
+Never create or edit `.md` files unless explicitly asked.
 ```
 
 **Why this reduces cost:** Without the rule, AI agents explore codebases by chaining multiple Grep → Read → Grep → Read calls, each consuming tokens. A single Context-Simplo MCP call (e.g., `find_callers` or `get_impact_radius`) replaces entire chains of exploration, returning structured results in one round-trip.
 
 This also works with other MCP-compatible clients (VS Code, Claude Desktop, Claude Code) — adapt the rule format to your IDE's conventions.
-
-## Quickstart (npm — no Docker)
-
-For environments without Docker, install the server directly:
-
-```bash
-npm install -g context-simplo
-
-context-simplo serve             # Start the server
-context-simplo index /path/to/repo
-context-simplo search "authentication"
-context-simplo status
-```
 
 ## Platform Support
 
@@ -400,7 +395,6 @@ Context-Simplo runs on all major platforms via Docker:
 - **Real-Time Updates** -- WebSocket broadcasting for live indexing progress and metrics
 - **REST API** -- Full-featured API for external integrations and automation
 - **`simplo` CLI** -- One-command Docker management with persistent config and IDE setup
-- **CLI Interface** -- Standalone CLI (`context-simplo`) for scripting and non-Docker workflows
 - **Local or Remote LLMs** -- OpenAI, Azure, Ollama, or run without LLM (structural tools still work)
 - **Production-Ready** -- Graceful shutdown, crash recovery, secret scrubbing, pagination
 - **Portable** -- Single Docker container, ~150-200MB image, SQLite + LanceDB embedded storage
@@ -417,6 +411,8 @@ Context-Simplo combines the speed of Arbor's Rust architecture with the rich too
 - Dashboard: React + Vite + Tailwind + Sigma.js
 
 ## Documentation
+
+Full documentation available in the [`docs/`](docs/) directory:
 
 - [Installation Guide](docs/installation.md)
 - [MCP IDE Setup](docs/mcp-setup.md)
