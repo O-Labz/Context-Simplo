@@ -69,6 +69,7 @@ async function main() {
   console.log(`Mount root: ${mountRoot}`);
   console.log(`Initial workspace: ${workspaceRoot}`);
   console.log(`Database: ${dbPath}`);
+  console.log(`Response mode: ${config.responseMode.value}`);
 
   const storage = new SqliteStorageProvider(dbPath);
   await storage.initialize();
