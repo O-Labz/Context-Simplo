@@ -1,6 +1,6 @@
 {
   "name": "context-simplo",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Production-ready context database and MCP server for AI assistants. Provides code intelligence with hybrid search, call graphs, impact analysis, and semantic search for Cursor, VS Code, and Claude Desktop.",
   "type": "module",
   "main": "dist/index.js",

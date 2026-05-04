@@ -18,6 +18,7 @@ services:
       - CONTEXT_SIMPLO_AUTO_INDEX=true
       - CONTEXT_SIMPLO_WATCH=true
       - CONTEXT_SIMPLO_LOG_LEVEL=info
+      - CONTEXT_SIMPLO_RESPONSE_MODE=${CONTEXT_SIMPLO_RESPONSE_MODE:-compact}
       - NODE_OPTIONS=--max-old-space-size=8192
       # Mount root for browsing (defaults to /host for dynamic workspace switching)
       - MOUNT_ROOT=${MOUNT_ROOT:-/host}

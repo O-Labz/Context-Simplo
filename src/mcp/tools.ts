@@ -30,19 +30,19 @@ export const FindSymbolInputSchema = z.object({
     .enum(['function', 'method', 'class', 'interface', 'type', 'variable', 'constant'])
     .optional()
     .describe('Filter by node kind'),
-  limit: z.number().int().min(1).max(100).optional().default(20).describe('Maximum results'),
+  limit: z.number().int().min(1).max(100).optional().default(10).describe('Maximum results'),
   offset: z.number().int().min(0).optional().default(0).describe('Pagination offset'),
 });
 
 export const FindCallersInputSchema = z.object({
   symbolName: z.string().describe('Symbol name to find callers for'),
-  limit: z.number().int().min(1).max(100).optional().default(20),
+  limit: z.number().int().min(1).max(100).optional().default(10),
   offset: z.number().int().min(0).optional().default(0),
 });
 
 export const FindCalleesInputSchema = z.object({
   symbolName: z.string().describe('Symbol name to find callees for'),
-  limit: z.number().int().min(1).max(100).optional().default(20),
+  limit: z.number().int().min(1).max(100).optional().default(10),
   offset: z.number().int().min(0).optional().default(0),
 });
 
@@ -71,26 +71,29 @@ export const ExplainArchitectureInputSchema = z.object({
 export const SemanticSearchInputSchema = z.object({
   query: z.string().describe('Natural language query (e.g., "how do we handle auth?")'),
   repositoryId: z.string().optional().describe('Filter by repository ID'),
-  limit: z.number().int().min(1).max(100).optional().default(20),
+  limit: z.number().int().min(1).max(100).optional().default(10),
   offset: z.number().int().min(0).optional().default(0),
+  includeSnippets: z.boolean().optional().default(false).describe('Attach up to 10 lines / 500 chars of source per result. Default: false (saves tokens).'),
 });
 
 export const ExactSearchInputSchema = z.object({
   query: z.string().describe('Exact text or symbol to search for'),
-  limit: z.number().int().min(1).max(100).optional().default(20),
+  limit: z.number().int().min(1).max(100).optional().default(10),
   offset: z.number().int().min(0).optional().default(0),
+  includeSnippets: z.boolean().optional().default(false).describe('Attach up to 10 lines / 500 chars of source per result. Default: false (saves tokens).'),
 });
 
 export const HybridSearchInputSchema = z.object({
   query: z.string().describe('Search query (works for both semantic and exact matching)'),
   repositoryId: z.string().optional().describe('Filter by repository ID'),
-  limit: z.number().int().min(1).max(100).optional().default(20),
+  limit: z.number().int().min(1).max(100).optional().default(10),
   offset: z.number().int().min(0).optional().default(0),
+  includeSnippets: z.boolean().optional().default(false).describe('Attach up to 10 lines / 500 chars of source per result. Default: false (saves tokens).'),
 });
 
 export const FindDeadCodeInputSchema = z.object({
   repositoryId: z.string().optional().describe('Filter by repository ID'),
-  limit: z.number().int().min(1).max(100).optional().default(20),
+  limit: z.number().int().min(1).max(100).optional().default(10),
   offset: z.number().int().min(0).optional().default(0),
 });
 
@@ -100,7 +103,7 @@ export const CalculateComplexityInputSchema = z.object({
 
 export const FindComplexFunctionsInputSchema = z.object({
   repositoryId: z.string().optional().describe('Filter by repository ID'),
-  limit: z.number().int().min(1).max(100).optional().default(20),
+  limit: z.number().int().min(1).max(100).optional().default(10),
   offset: z.number().int().min(0).optional().default(0),
 });
 
@@ -211,7 +214,7 @@ export const TOOL_DEFINITIONS = [
         },
         limit: {
           type: 'number',
-          description: 'Maximum results (default: 20, max: 100)',
+          description: 'Maximum results (default: 10, max: 100)',
         },
         offset: {
           type: 'number',
@@ -233,7 +236,7 @@ export const TOOL_DEFINITIONS = [
         },
         limit: {
           type: 'number',
-          description: 'Maximum results (default: 20)',
+          description: 'Maximum results (default: 10)',
         },
         offset: {
           type: 'number',
@@ -255,7 +258,7 @@ export const TOOL_DEFINITIONS = [
         },
         limit: {
           type: 'number',
-          description: 'Maximum results (default: 20)',
+          description: 'Maximum results (default: 10)',
         },
         offset: {
           type: 'number',
@@ -315,7 +318,7 @@ export const TOOL_DEFINITIONS = [
         },
         detailLevel: {
           type: 'number',
-          description: 'Detail level: 1=compact (~500 tokens), 2=detailed (~2000 tokens), 3=comprehensive (~5000 tokens)',
+          description: 'Detail level: 1=summary, 2=detailed, 3=full',
         },
       },
       required: ['repositoryId'],
@@ -334,11 +337,15 @@ export const TOOL_DEFINITIONS = [
         },
         limit: {
           type: 'number',
-          description: 'Maximum results (default: 20)',
+          description: 'Maximum results (default: 10)',
         },
         offset: {
           type: 'number',
           description: 'Pagination offset (default: 0)',
+        },
+        includeSnippets: {
+          type: 'boolean',
+          description: 'Attach up to 10 lines / 500 chars of source per result (default: false)',
         },
       },
       required: ['query'],
@@ -357,11 +364,15 @@ export const TOOL_DEFINITIONS = [
         },
         limit: {
           type: 'number',
-          description: 'Maximum results (default: 20)',
+          description: 'Maximum results (default: 10)',
         },
         offset: {
           type: 'number',
           description: 'Pagination offset (default: 0)',
+        },
+        includeSnippets: {
+          type: 'boolean',
+          description: 'Attach up to 10 lines / 500 chars of source per result (default: false)',
         },
       },
       required: ['query'],
@@ -380,11 +391,15 @@ export const TOOL_DEFINITIONS = [
         },
         limit: {
           type: 'number',
-          description: 'Maximum results (default: 20)',
+          description: 'Maximum results (default: 10)',
         },
         offset: {
           type: 'number',
           description: 'Pagination offset (default: 0)',
+        },
+        includeSnippets: {
+          type: 'boolean',
+          description: 'Attach up to 10 lines / 500 chars of source per result (default: false)',
         },
       },
       required: ['query'],
@@ -402,7 +417,7 @@ export const TOOL_DEFINITIONS = [
         },
         limit: {
           type: 'number',
-          description: 'Maximum results (default: 20)',
+          description: 'Maximum results (default: 10)',
         },
         offset: {
           type: 'number',
@@ -437,7 +452,7 @@ export const TOOL_DEFINITIONS = [
         },
         limit: {
           type: 'number',
-          description: 'Maximum results (default: 20)',
+          description: 'Maximum results (default: 10)',
         },
         offset: {
           type: 'number',
@@ -496,8 +511,7 @@ export const TOOL_DEFINITIONS = [
 export const TOOL_DEFINITIONS_COMPACT = [
   {
     name: 'index_repository',
-    description:
-      'COMPACT MODE — response keys abbreviated: n=name, qn=qualifiedName, k=kind, fp=filePath, ls=lineStart, le=lineEnd, rid=repositoryId, lang=language, s=score, t=total, m=hasMore, r=results/callers/callees, sym=symbol, nid=nodeId, x=isExported, cx=complexity, st=searchType. Respond terse: drop articles/filler/pleasantries/hedging. Fragments OK. Short synonyms. Technical terms exact. Code blocks unchanged. Auto-clarity for security warnings or irreversible ops. | Index codebase. Parse files, build graph, persist. Auto-starts file watcher on completion.',
+    description: 'Index codebase. Parse files, build graph, persist. Auto-starts file watcher on completion.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -625,7 +639,7 @@ export const TOOL_DEFINITIONS_COMPACT = [
       type: 'object',
       properties: {
         repositoryId: { type: 'string', description: 'Repo ID to analyze' },
-        detailLevel: { type: 'number', description: '1=compact, 2=detailed, 3=comprehensive' },
+        detailLevel: { type: 'number', description: '1=summary, 2=detailed, 3=full' },
       },
       required: ['repositoryId'],
     },
@@ -638,8 +652,9 @@ export const TOOL_DEFINITIONS_COMPACT = [
       properties: {
         query: { type: 'string', description: 'Natural language query' },
         repositoryId: { type: 'string', description: 'Filter by repo ID' },
-        limit: { type: 'number', description: 'Max results' },
+        limit: { type: 'number', description: 'Max results (default: 10)' },
         offset: { type: 'number', description: 'Pagination offset' },
+        includeSnippets: { type: 'boolean', description: 'Include code snippets (default: false)' },
       },
       required: ['query'],
     },
@@ -651,8 +666,9 @@ export const TOOL_DEFINITIONS_COMPACT = [
       type: 'object',
       properties: {
         query: { type: 'string', description: 'Text or symbol to search' },
-        limit: { type: 'number', description: 'Max results' },
+        limit: { type: 'number', description: 'Max results (default: 10)' },
         offset: { type: 'number', description: 'Pagination offset' },
+        includeSnippets: { type: 'boolean', description: 'Include code snippets (default: false)' },
       },
       required: ['query'],
     },
@@ -665,8 +681,9 @@ export const TOOL_DEFINITIONS_COMPACT = [
       properties: {
         query: { type: 'string', description: 'Search query' },
         repositoryId: { type: 'string', description: 'Filter by repo ID' },
-        limit: { type: 'number', description: 'Max results' },
+        limit: { type: 'number', description: 'Max results (default: 10)' },
         offset: { type: 'number', description: 'Pagination offset' },
+        includeSnippets: { type: 'boolean', description: 'Include code snippets (default: false)' },
       },
       required: ['query'],
     },

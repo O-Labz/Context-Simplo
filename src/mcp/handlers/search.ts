@@ -23,9 +23,8 @@ export async function exactSearch(
     input.offset || 0
   );
 
-  // Add code snippets
   let resultsWithSnippets = result.results;
-  if (context.workspaceRoot && result.results.length > 0) {
+  if (input.includeSnippets && context.workspaceRoot && result.results.length > 0) {
     try {
       const { extractSnippetsBatch } = await import('../../search/snippet.js');
       const snippets = await extractSnippetsBatch(
@@ -37,14 +36,14 @@ export async function exactSearch(
         })),
         { maxLines: 10, maxChars: 500 }
       );
-      
+
       resultsWithSnippets = result.results.map(r => {
         const key = `${r.filePath}:${r.lineStart}:${r.lineEnd}`;
         const snippet = snippets.get(key);
         return snippet ? { ...r, snippet } : r;
       });
-    } catch (error) {
-      // Continue without snippets if extraction fails
+    } catch {
+      // Snippet extraction is best-effort; results without snippets are still valid.
     }
   }
 
@@ -95,7 +94,6 @@ export async function semanticSearch(
     };
   }
 
-  // Get repository ID - use provided one or first available
   let repoId = input.repositoryId;
   if (!repoId) {
     const repos = context.storage.listRepositories();
@@ -121,9 +119,8 @@ export async function semanticSearch(
     input.offset || 0
   );
 
-  // Add code snippets
   let resultsWithSnippets = result.results;
-  if (context.workspaceRoot && result.results.length > 0) {
+  if (input.includeSnippets && context.workspaceRoot && result.results.length > 0) {
     try {
       const { extractSnippetsBatch } = await import('../../search/snippet.js');
       const snippets = await extractSnippetsBatch(
@@ -135,14 +132,14 @@ export async function semanticSearch(
         })),
         { maxLines: 10, maxChars: 500 }
       );
-      
+
       resultsWithSnippets = result.results.map(r => {
         const key = `${r.filePath}:${r.lineStart}:${r.lineEnd}`;
         const snippet = snippets.get(key);
         return snippet ? { ...r, snippet } : r;
       });
-    } catch (error) {
-      // Continue without snippets if extraction fails
+    } catch {
+      // Snippet extraction is best-effort; results without snippets are still valid.
     }
   }
 
@@ -215,7 +212,6 @@ export async function hybridSearch(
     };
   }
 
-  // Get repository ID - use provided one or first available
   let repoId = input.repositoryId;
   if (!repoId) {
     const repos = context.storage.listRepositories();
@@ -241,9 +237,8 @@ export async function hybridSearch(
     input.offset || 0
   );
 
-  // Add code snippets
   let resultsWithSnippets = result.results;
-  if (context.workspaceRoot && result.results.length > 0) {
+  if (input.includeSnippets && context.workspaceRoot && result.results.length > 0) {
     try {
       const { extractSnippetsBatch } = await import('../../search/snippet.js');
       const snippets = await extractSnippetsBatch(
@@ -255,14 +250,14 @@ export async function hybridSearch(
         })),
         { maxLines: 10, maxChars: 500 }
       );
-      
+
       resultsWithSnippets = result.results.map(r => {
         const key = `${r.filePath}:${r.lineStart}:${r.lineEnd}`;
         const snippet = snippets.get(key);
         return snippet ? { ...r, snippet } : r;
       });
-    } catch (error) {
-      // Continue without snippets if extraction fails
+    } catch {
+      // Snippet extraction is best-effort; results without snippets are still valid.
     }
   }
 

@@ -11,6 +11,8 @@ import { SqliteStorageProvider } from '../../src/store/sqlite.js';
 import { CodeGraph } from '../../src/core/graph.js';
 import { Indexer } from '../../src/core/indexer.js';
 import { SymbolicSearch } from '../../src/search/symbolic.js';
+import { formatMCPResponse } from '../../src/mcp/formatter.js';
+import { loadConfig } from '../../src/core/config.js';
 
 const TEST_WORKSPACE = resolve(__dirname, '../fixtures/e2e-test');
 const TEST_DB = resolve(TEST_WORKSPACE, 'test.db');
@@ -141,5 +143,55 @@ export function newFunction(): void {
     const stats = newGraph.getStats();
     expect(stats.nodeCount).toBeGreaterThan(0);
     expect(stats.edgeCount).toBeGreaterThan(0);
+  });
+});
+
+// v0.2.0 regression: end-to-end MCP wire payload must stay within byte budget.
+// Without this guard, accumulated drift across handlers + formatter could re-introduce
+// the v0.1.0 bloat that no individual unit test catches.
+describe('v0.2.0 MCP payload byte budget', () => {
+  // Representative find_symbol result: 5 rows, full handler output shape, repo+lang shared.
+  const fiveResultPayload = {
+    results: Array.from({ length: 5 }, (_, i) => ({
+      id: `hash${i.toString().padStart(12, '0')}`,
+      nodeId: `node-${i}`,
+      name: `findSymbol${i}`,
+      qualifiedName: `src/mcp/handlers/query.findSymbol${i}`,
+      kind: 'function',
+      filePath: 'src/mcp/handlers/query.ts',
+      lineStart: 19 + i * 30,
+      lineEnd: 49 + i * 30,
+      visibility: 'public',
+      isExported: true,
+      language: 'typescript',
+      repositoryId: 'default-repo',
+      docstring: null,
+      complexity: null,
+      parentSymbol: null,
+    })),
+    total: 5,
+    limit: 10,
+    offset: 0,
+    hasMore: false,
+  };
+
+  it('compact mode: 5-result find_symbol response stays under 1500 bytes', () => {
+    const config = loadConfig();
+    const wire = formatMCPResponse(fiveResultPayload, config.responseMode.value);
+    const byteSize = Buffer.byteLength(wire, 'utf8');
+    expect(byteSize).toBeLessThan(1500);
+  });
+
+  it('compact mode is materially smaller than full mode for the same payload', () => {
+    const compactBytes = Buffer.byteLength(formatMCPResponse(fiveResultPayload, 'compact'), 'utf8');
+    const fullBytes = Buffer.byteLength(formatMCPResponse(fiveResultPayload, 'full'), 'utf8');
+    // Compact must be at least 40% smaller; loosen only with explicit benchmark evidence.
+    expect(compactBytes).toBeLessThan(fullBytes * 0.6);
+  });
+
+  it('compact mode default: output is minified (no indentation newlines)', () => {
+    const config = loadConfig();
+    const wire = formatMCPResponse(fiveResultPayload, config.responseMode.value);
+    expect(wire).not.toMatch(/\n\s+"/);
   });
 });
