@@ -1,5 +1,6 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { compactResponse, formatMCPResponse } from '../../src/mcp/formatter.js';
+import { loadConfig } from '../../src/core/config.js';
 
 const mockFindSymbolResult = {
   results: [
@@ -186,5 +187,43 @@ describe('formatMCPResponse', () => {
     const parsed = JSON.parse(output);
     expect(parsed).not.toHaveProperty('result');
     expect(parsed).toHaveProperty('n', 'test');
+  });
+});
+
+// v0.2.0 regression: compact mode is now the default (was 'full' in v0.1.0)
+describe('v0.2.0 default response mode', () => {
+  const ORIGINAL_ENV = { ...process.env };
+
+  beforeEach(() => {
+    delete process.env['CONTEXT_SIMPLO_RESPONSE_MODE'];
+  });
+
+  afterEach(() => {
+    process.env = { ...ORIGINAL_ENV };
+  });
+
+  it('loadConfig() returns responseMode=compact by default', () => {
+    const config = loadConfig();
+    expect(config.responseMode.value).toBe('compact');
+  });
+
+  it('formatMCPResponse with default config produces minified compact JSON', () => {
+    const config = loadConfig();
+    const output = formatMCPResponse(mockFindSymbolResult, config.responseMode.value);
+    expect(output).not.toMatch(/\n/); // minified
+    const parsed = JSON.parse(output);
+    expect(parsed).toHaveProperty('r');
+    expect(parsed).not.toHaveProperty('results');
+  });
+
+  it('CONTEXT_SIMPLO_RESPONSE_MODE=full env var still works (escape hatch preserved)', () => {
+    process.env['CONTEXT_SIMPLO_RESPONSE_MODE'] = 'full';
+    const config = loadConfig();
+    expect(config.responseMode.value).toBe('full');
+
+    const output = formatMCPResponse(mockFindSymbolResult, config.responseMode.value);
+    const parsed = JSON.parse(output);
+    expect(parsed).toHaveProperty('results');
+    expect(parsed.results[0]).toHaveProperty('name', 'findSymbol');
   });
 });

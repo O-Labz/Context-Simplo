@@ -1,66 +1,53 @@
 ---
-description: Use Context-Simplo MCP for code intelligence and analysis
-alwaysApply: true
+description: Route code queries through Context-Simplo MCP
+alwaysApply: false
 ---
 
-# Context-Simplo MCP
+# Context-Simplo Routing
 
-MCP server: `user-context-simplo`. Use it **instead of** grep/ripgrep/Glob/SemanticSearch when the codebase is indexed.
+**MCP server:** `user-context-simplo`  
+**Repository ID (pre-cached):** `f00acc4e11a3eac5`
 
-## Startup: call `list_repositories` first. If empty, call `index_repository` with path `/workspace`.
+## When to use
 
-## Tool selection
+Use Context-Simplo **instead of** Grep/Glob/SemanticSearch/Read chains when:
 
-- **Symbol by name** → `find_symbol` (with optional `kind` filter)
-- **Who calls X / what does X call** → `find_callers` / `find_callees`
-- **Execution path A→B** → `find_path`
-- **Conceptual search** ("how do we handle auth?") → `semantic_search`
-- **Literal search** (exact name/string) → `exact_search`
-- **Unsure** → `hybrid_search`
-- **Before any refactor** → `get_impact_radius` (check blast radius first)
-- **Code quality** → `find_dead_code`, `find_complex_functions`, `calculate_complexity`
-- **Architecture overview** → `explain_architecture`
-- **Validate proposed code** → `lint_context`
+- Searching for symbols by name, kind, or pattern
+- Finding callers/callees of a function
+- Tracing execution paths
+- Semantic/conceptual code queries
+- Impact analysis before refactoring
+- Architecture overviews
+- Code quality scans (dead code, complexity)
 
-## Cost-saving rules
+**Skip Context-Simplo** for single-file edits where the file is already open.
 
-- Prefer Context-Simplo over multi-file Read/Grep chains — one MCP call replaces many tool calls
-- Use `limit` parameter to cap results (default 10, increase only if needed)
-- Pass `repositoryId` to scope queries and avoid full-index scans
+## Tool routing
+
+| Query type | Tool |
+|------------|------|
+| Symbol by name | `find_symbol` (pass `kind` to filter) |
+| Who calls X / what does X call | `find_callers` / `find_callees` |
+| Path from A to B | `find_path` |
+| Conceptual ("how do we handle auth?") | `semantic_search` |
+| Exact name/string | `exact_search` |
+| Unsure | `hybrid_search` |
+| Pre-refactor check | `get_impact_radius` |
+| Code quality | `find_dead_code`, `find_complex_functions`, `calculate_complexity` |
+| Architecture | `explain_architecture` |
+| Validate code | `lint_context` |
+
+## Token optimization
+
+- Pass `repositoryId: "f00acc4e11a3eac5"` to all tools (avoids full-index scan)
+- Default `limit: 10` is sufficient; increase only if results are incomplete
+- Set `includeSnippets: true` only when code context is required for the answer
 - Use `incremental: true` when re-indexing after changes
-- Skip Context-Simplo for single-file edits where the file is already open/known
 
-## Compact mode (token savings)
+## Response format
 
-Set `CONTEXT_SIMPLO_RESPONSE_MODE=compact` in the server environment to enable ~60% input token savings.
+Server runs in **compact mode** (60% token savings). Response keys abbreviated:
 
-In compact mode, response keys are abbreviated:
+`r`=results/callers/callees, `n`=name, `qn`=qualifiedName, `k`=kind, `fp`=filePath, `ls`=lineStart, `le`=lineEnd, `rid`=repositoryId, `lang`=language, `s`=score, `t`=total, `m`=hasMore, `nid`=nodeId, `x`=isExported, `cx`=complexity, `st`=searchType, `sym`=symbol, `nodes`=affectedNodes, `files`=affectedFiles, `entry`=entryPoints, `mods`=modules, `abs`=keyAbstractions
 
-| Full key | Compact | Full key | Compact |
-|----------|---------|----------|---------|
-| `results` / `callers` / `callees` | `r` | `repositoryId` | `rid` |
-| `name` | `n` | `language` | `lang` |
-| `qualifiedName` | `qn` | `nodeId` | `nid` |
-| `kind` | `k` | `score` | `s` |
-| `filePath` | `fp` | `isExported` | `x` |
-| `lineStart` | `ls` | `complexity` | `cx` |
-| `lineEnd` | `le` | `total` | `t` |
-| `symbol` | `sym` | `hasMore` | `m` |
-| `affectedNodes` | `nodes` | `searchType` | `st` |
-| `affectedFiles` | `files` | `entryPoints` | `entry` |
-| `modules` | `mods` | `keyAbstractions` | `abs` |
-
-Compact mode also removes `null` values, `id` hash fields, `visibility`, `limit`, and `offset` from responses, and minifies JSON (no indentation). `repositoryId` and `language` are hoisted to the envelope when all results share the same value.
-
-## Response style
-
-Be direct and concise in all responses. Drop articles (a/an/the), filler (just/really/basically/simply), pleasantries (sure/certainly/of course), and hedging. Fragments OK. Use short synonyms: "fix" not "implement a solution for", "use" not "utilize". Technical terms, code blocks, and error messages stay exact.
-
-Pattern: `[thing] [action] [reason]. [next step].`
-
-Example — not: "Sure! I'd be happy to help. The issue you're experiencing is likely caused by..."
-Example — yes: "Bug in auth middleware. Token expiry uses `<` not `<=`. Fix:"
-
-Exception: use full sentences for security warnings, irreversible operations, and multi-step sequences where brevity risks misreading.
-
-Never create or edit `.md` files unless explicitly asked.
+Null values, `id` hash fields, `visibility`, `limit`, `offset` stripped. JSON minified.

@@ -1,0 +1,9 @@
+# Raw benchmark runs are environment-dependent and noisy
+*.json
+
+# Keep summaries and reports for audit trail
+!REPORT.md
+!SMOKE.md
+!baseline-*.md
+!candidate-*.md
+!variant-*.md
