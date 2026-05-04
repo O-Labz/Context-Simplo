@@ -34,7 +34,7 @@ const DEFAULT_CONFIG = {
   embeddingConcurrency: 5,
   embeddingBatchSize: 20,
   graphMemoryLimitMb: 512,
-  responseMode: 'full' as ResponseMode,
+  responseMode: 'compact' as ResponseMode,
 } as const;
 
 const ENV_VAR_MAP = {

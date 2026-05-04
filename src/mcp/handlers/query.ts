@@ -268,7 +268,7 @@ export async function explainArchitecture(
 
   return {
     repository: {
-      id: repo.id,
+      repositoryId: repo.id,
       name: repo.name,
       path: repo.path,
     },

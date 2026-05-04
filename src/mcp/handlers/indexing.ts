@@ -164,7 +164,7 @@ export async function listRepositories(
         (p) => p === repo.path || repo.path.startsWith(p)
       );
       return {
-        id: repo.id,
+        repositoryId: repo.id,
         name: repo.name,
         path: repo.path,
         fileCount: repo.fileCount,
