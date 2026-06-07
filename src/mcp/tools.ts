@@ -207,6 +207,14 @@ export const ListActiveGoalsInputSchema = z.object({
   limit: z.number().int().min(1).max(100).optional().default(50),
 });
 
+export const ShowEvolutionInputSchema = z.object({
+  repositoryId: RepositoryIdSchema,
+  entityRef: z.string().min(1).optional().describe('Entity ref (file/symbol/service)'),
+  topic: z.string().min(1).optional().describe('Topic/keywords'),
+  limit: z.number().int().min(1).max(200).optional().default(50),
+  offset: z.number().int().min(0).optional().default(0),
+});
+
 export const TOOL_DEFINITIONS = [
   {
     name: 'index_repository',
@@ -760,6 +768,22 @@ export const TOOL_DEFINITIONS = [
       required: ['repositoryId'],
     },
   },
+  {
+    name: 'show_evolution',
+    description:
+      'Show the chronological evolution (decisions, failures, diffs) for a topic or entity, ordered by time and paginated.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        repositoryId: { type: 'string', description: '16-hex repository id' },
+        entityRef: { type: 'string', description: 'Entity ref (file/symbol/service)' },
+        topic: { type: 'string', description: 'Topic/keywords' },
+        limit: { type: 'number', description: 'Max entries (default 50, max 200)' },
+        offset: { type: 'number', description: 'Pagination offset' },
+      },
+      required: ['repositoryId'],
+    },
+  },
 ] as const;
 
 /**
@@ -1175,6 +1199,21 @@ export const TOOL_DEFINITIONS_COMPACT = [
       properties: {
         repositoryId: { type: 'string', description: '16-hex repo id' },
         limit: { type: 'number', description: 'Max results' },
+      },
+      required: ['repositoryId'],
+    },
+  },
+  {
+    name: 'show_evolution',
+    description: 'Chronological evolution (decisions, failures, diffs) for topic/entity. Paginated.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        repositoryId: { type: 'string', description: '16-hex repo id' },
+        entityRef: { type: 'string', description: 'Entity ref' },
+        topic: { type: 'string', description: 'Topic/keywords' },
+        limit: { type: 'number', description: 'Max entries (max 200)' },
+        offset: { type: 'number', description: 'Offset' },
       },
       required: ['repositoryId'],
     },

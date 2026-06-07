@@ -240,6 +240,8 @@ export class MCPServer {
         return emlHandlers.trackIntent(args, this.requireEml());
       case 'list_active_goals':
         return emlHandlers.listActiveGoals(args, this.requireEml());
+      case 'show_evolution':
+        return emlHandlers.showEvolution(args, this.requireEml());
       default:
         throw new ValidationError(`Unknown tool: ${name}`);
     }

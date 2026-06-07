@@ -32,6 +32,7 @@ import {
   FlagContradictionInputSchema,
   TrackIntentInputSchema,
   ListActiveGoalsInputSchema,
+  ShowEvolutionInputSchema,
 } from '../../mcp/tools.js';
 import type { MemoryObject, MemoryRepo } from '../store/memory-repo.js';
 import type { MemoryVectorStore } from '../store/memory-vectors.js';
@@ -44,6 +45,7 @@ import type { OwnershipEngine } from '../engines/ownership.js';
 import type { FreshnessEngine } from '../engines/freshness.js';
 import type { ContradictionEngine } from '../engines/contradiction.js';
 import type { IntentEngine } from '../engines/intent.js';
+import type { TimelineEngine } from '../engines/timeline.js';
 import { gatherCandidates, type QueryEmbedder } from '../retrieval/candidates.js';
 import { rankMemories, type RankOptions } from '../retrieval/rank.js';
 
@@ -63,6 +65,7 @@ export interface EmlServices {
   freshness?: FreshnessEngine;
   contradictions?: ContradictionEngine;
   intents?: IntentEngine;
+  timeline?: TimelineEngine;
   vcs?: {
     webhookSecret?: string;
     githubToken?: string;
@@ -424,6 +427,21 @@ export function listActiveGoals(args: unknown, eml: EmlServices): { results: Rec
   const input = parsed.data;
   if (!eml.intents) return { results: [] };
   return { results: eml.intents.listActive(input.repositoryId, input.limit) as unknown as Record<string, unknown>[] };
+}
+
+export function showEvolution(args: unknown, eml: EmlServices): Record<string, unknown> {
+  requireEnabled(eml);
+  const parsed = ShowEvolutionInputSchema.safeParse(args);
+  if (!parsed.success) throw validationFrom(parsed.error);
+  const input = parsed.data;
+  if (!eml.timeline) return { entries: [], total: 0 };
+  return eml.timeline.showEvolution({
+    repositoryId: input.repositoryId,
+    entityRef: input.entityRef,
+    topic: input.topic,
+    limit: input.limit,
+    offset: input.offset,
+  }) as unknown as Record<string, unknown>;
 }
 
 export function flagContradiction(args: unknown, eml: EmlServices): Record<string, unknown> {

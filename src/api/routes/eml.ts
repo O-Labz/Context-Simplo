@@ -27,6 +27,7 @@ import {
   reinforceMemory,
   trackIntent,
   listActiveGoals,
+  showEvolution,
   toMemoryView,
 } from '../../eml/mcp/handlers.js';
 
@@ -265,6 +266,33 @@ export async function registerEmlRoutes(
       try {
         const limit = Math.min(Math.max(parseInt(request.query.limit ?? '50', 10) || 50, 1), 100);
         return reply.send(listActiveGoals({ repositoryId: request.query.repositoryId, limit }, eml));
+      } catch (error) {
+        return sendEmlError(reply, error);
+      }
+    }
+  );
+
+  // Timeline: chronological evolution for a topic/entity.
+  fastify.get<{ Querystring: { repositoryId?: string; entityRef?: string; topic?: string; limit?: string; offset?: string } }>(
+    '/api/eml/timeline',
+    async (request, reply) => {
+      const eml = getEml(reply);
+      if (!eml) return reply;
+      try {
+        const limit = Math.min(Math.max(parseInt(request.query.limit ?? '50', 10) || 50, 1), 200);
+        const offset = Math.max(parseInt(request.query.offset ?? '0', 10) || 0, 0);
+        return reply.send(
+          showEvolution(
+            {
+              repositoryId: request.query.repositoryId,
+              entityRef: request.query.entityRef,
+              topic: request.query.topic,
+              limit,
+              offset,
+            },
+            eml
+          )
+        );
       } catch (error) {
         return sendEmlError(reply, error);
       }
