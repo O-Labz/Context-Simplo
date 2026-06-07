@@ -313,6 +313,22 @@ async function main() {
       await processEventForExtraction(event, eml, { chatClient });
     });
 
+    // Observe the latest commit delta after each indexing job (best-effort).
+    const { DiffObserver, createSimpleGitRunner } = await import('./eml/ingest/diff.js');
+    const diffObserver = new DiffObserver(emlEventStore);
+    indexer.on('job:complete', (job) => {
+      void (async () => {
+        try {
+          const repo = storage.getRepository(job.repositoryId);
+          if (!repo) return;
+          const runner = await createSimpleGitRunner(repo.path);
+          await diffObserver.observe(runner, job.repositoryId, 'HEAD~1', 'HEAD');
+        } catch {
+          // best-effort: shallow repos / no prior commit / non-git dirs are fine
+        }
+      })();
+    });
+
     emlEventBus.start();
     console.log('EML event bus started');
   }
