@@ -172,8 +172,8 @@ export async function listRepositories(
         edgeCount: repo.edgeCount,
         languages: repo.languages,
         isWatched: isActivelyWatched,
-        lastIndexedAt: repo.lastIndexedAt?.toISOString(),
-        createdAt: repo.createdAt.toISOString(),
+        lastIndexedAt: repo.lastIndexedAt?.toLocaleString(),
+        createdAt: repo.createdAt.toLocaleString(),
         status: repo.nodeCount === 0
           ? 'empty — run index_repository first'
           : isActivelyWatched
