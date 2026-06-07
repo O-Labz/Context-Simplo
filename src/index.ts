@@ -313,16 +313,20 @@ async function main() {
       await processEventForExtraction(event, eml, { chatClient });
     });
 
-    // Observe the latest commit delta after each indexing job (best-effort).
+    // Observe the latest commit delta + authorship after each indexing job.
     const { DiffObserver, createSimpleGitRunner } = await import('./eml/ingest/diff.js');
+    const { GitIngest } = await import('./eml/ingest/git.js');
     const diffObserver = new DiffObserver(emlEventStore);
+    const gitIngest = new GitIngest(emlDb, emlEventStore);
     indexer.on('job:complete', (job) => {
       void (async () => {
         try {
           const repo = storage.getRepository(job.repositoryId);
           if (!repo) return;
           const runner = await createSimpleGitRunner(repo.path);
-          await diffObserver.observe(runner, job.repositoryId, 'HEAD~1', 'HEAD');
+          await diffObserver.observe(runner, job.repositoryId, 'HEAD~1', 'HEAD', {
+            authorship: gitIngest,
+          });
         } catch {
           // best-effort: shallow repos / no prior commit / non-git dirs are fine
         }
