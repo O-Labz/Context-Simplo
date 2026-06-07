@@ -291,6 +291,22 @@ async function main() {
     emlEventBus.on('eml:event_processed', (payload: unknown) => {
       broadcaster.broadcast('eml:event_processed', payload);
     });
+
+    // Subscribe the extraction pipeline: each ingested event is gated, then
+    // routed to the LLM or deterministic fallback extractor and resolved.
+    const { processEventForExtraction } = await import('./eml/extract/resolve.js');
+    const { createChatClient } = await import('./eml/extract/llm-extractor.js');
+    const chatClient =
+      config.emlExtraction.value === 'llm'
+        ? createChatClient(config.llmProvider.value, {
+            apiKey: config.llmApiKey.value,
+            baseUrl: config.llmBaseUrl.value,
+          })
+        : null;
+    emlEventBus.subscribe(async (event) => {
+      await processEventForExtraction(event, eml, { chatClient });
+    });
+
     emlEventBus.start();
     console.log('EML event bus started');
   }
