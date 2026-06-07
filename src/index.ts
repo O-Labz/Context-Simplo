@@ -147,6 +147,7 @@ async function main() {
   const { SqliteGraphStore } = await import('./eml/store/sqlite-graph.js');
   const { HotCache } = await import('./eml/store/hot-cache.js');
   const { DecisionEngine } = await import('./eml/engines/decision.js');
+  const { FailureEngine } = await import('./eml/engines/failure.js');
   const emlDb = storage.getDatabase();
   const emlEventStore = new EventStore(emlDb);
   const emlEventBus = config.emlEnabled.value
@@ -178,6 +179,7 @@ async function main() {
     eventStore: emlEventStore,
     eventBus: emlEventBus,
     decisions: new DecisionEngine(emlDb, emlMemoryRepo, emlNow),
+    failures: new FailureEngine(emlDb, emlMemoryRepo),
     embedQuery: emlEmbedQuery,
     now: emlNow,
   };

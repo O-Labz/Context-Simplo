@@ -125,6 +125,10 @@ export async function resolveExtraction(
       });
     }
 
+    if (memory.kind === 'failure' && eml.failures) {
+      eml.failures.fromMemory(memory);
+    }
+
     await embedAndLink(memory, eml);
     summary.created.push(memory.id);
   }
