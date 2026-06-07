@@ -183,6 +183,12 @@ async function main() {
     decisions: new DecisionEngine(emlDb, emlMemoryRepo, emlNow),
     failures: new FailureEngine(emlDb, emlMemoryRepo),
     ownership: new OwnershipEngine(emlDb, emlGraph, { eventStore: emlEventStore, now: emlNow }),
+    vcs: {
+      webhookSecret: config.emlWebhookSecret.value,
+      githubToken: config.githubToken.value,
+      gitlabToken: config.gitlabToken.value,
+      gitlabHost: config.gitlabHost.value,
+    },
     embedQuery: emlEmbedQuery,
     now: emlNow,
   };
