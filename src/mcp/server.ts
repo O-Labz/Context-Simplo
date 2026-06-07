@@ -242,6 +242,8 @@ export class MCPServer {
         return emlHandlers.listActiveGoals(args, this.requireEml());
       case 'show_evolution':
         return emlHandlers.showEvolution(args, this.requireEml());
+      case 'find_knowledge_gaps':
+        return emlHandlers.findKnowledgeGaps(args, this.requireEml());
       default:
         throw new ValidationError(`Unknown tool: ${name}`);
     }
