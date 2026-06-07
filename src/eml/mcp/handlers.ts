@@ -33,6 +33,7 @@ import {
   TrackIntentInputSchema,
   ListActiveGoalsInputSchema,
   ShowEvolutionInputSchema,
+  FindKnowledgeGapsInputSchema,
 } from '../../mcp/tools.js';
 import type { MemoryObject, MemoryRepo } from '../store/memory-repo.js';
 import type { MemoryVectorStore } from '../store/memory-vectors.js';
@@ -46,6 +47,7 @@ import type { FreshnessEngine } from '../engines/freshness.js';
 import type { ContradictionEngine } from '../engines/contradiction.js';
 import type { IntentEngine } from '../engines/intent.js';
 import type { TimelineEngine } from '../engines/timeline.js';
+import type { GapsEngine } from '../engines/gaps.js';
 import { gatherCandidates, type QueryEmbedder } from '../retrieval/candidates.js';
 import { rankMemories, type RankOptions } from '../retrieval/rank.js';
 
@@ -66,6 +68,7 @@ export interface EmlServices {
   contradictions?: ContradictionEngine;
   intents?: IntentEngine;
   timeline?: TimelineEngine;
+  gaps?: GapsEngine;
   vcs?: {
     webhookSecret?: string;
     githubToken?: string;
@@ -442,6 +445,16 @@ export function showEvolution(args: unknown, eml: EmlServices): Record<string, u
     limit: input.limit,
     offset: input.offset,
   }) as unknown as Record<string, unknown>;
+}
+
+export function findKnowledgeGaps(args: unknown, eml: EmlServices): Record<string, unknown> {
+  requireEnabled(eml);
+  const parsed = FindKnowledgeGapsInputSchema.safeParse(args);
+  if (!parsed.success) throw validationFrom(parsed.error);
+  const input = parsed.data;
+  if (!eml.gaps) return { gaps: [], total: 0 };
+  const gaps = eml.gaps.findKnowledgeGaps(input.repositoryId, { limit: input.limit });
+  return { gaps, total: gaps.length } as unknown as Record<string, unknown>;
 }
 
 export function flagContradiction(args: unknown, eml: EmlServices): Record<string, unknown> {

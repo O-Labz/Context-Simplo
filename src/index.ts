@@ -153,6 +153,7 @@ async function main() {
   const { ContradictionEngine } = await import('./eml/engines/contradiction.js');
   const { IntentEngine } = await import('./eml/engines/intent.js');
   const { TimelineEngine } = await import('./eml/engines/timeline.js');
+  const { GapsEngine } = await import('./eml/engines/gaps.js');
   const emlDb = storage.getDatabase();
   const emlEventStore = new EventStore(emlDb);
   const emlEventBus = config.emlEnabled.value
@@ -195,6 +196,9 @@ async function main() {
     }),
     intents: emlIntents,
     timeline: new TimelineEngine(emlDb, emlMemoryRepo),
+    gaps: new GapsEngine(emlDb, {
+      ownership: new OwnershipEngine(emlDb, emlGraph, { eventStore: emlEventStore, now: emlNow }),
+    }),
     vcs: {
       webhookSecret: config.emlWebhookSecret.value,
       githubToken: config.githubToken.value,

@@ -28,6 +28,7 @@ import {
   trackIntent,
   listActiveGoals,
   showEvolution,
+  findKnowledgeGaps,
   toMemoryView,
 } from '../../eml/mcp/handlers.js';
 
@@ -292,6 +293,23 @@ export async function registerEmlRoutes(
             },
             eml
           )
+        );
+      } catch (error) {
+        return sendEmlError(reply, error);
+      }
+    }
+  );
+
+  // Knowledge gaps: ranked under-owned/complex hotspots.
+  fastify.get<{ Querystring: { repositoryId?: string; limit?: string } }>(
+    '/api/eml/gaps',
+    async (request, reply) => {
+      const eml = getEml(reply);
+      if (!eml) return reply;
+      try {
+        const limit = Math.min(Math.max(parseInt(request.query.limit ?? '20', 10) || 20, 1), 100);
+        return reply.send(
+          findKnowledgeGaps({ repositoryId: request.query.repositoryId, limit }, eml)
         );
       } catch (error) {
         return sendEmlError(reply, error);

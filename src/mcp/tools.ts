@@ -215,6 +215,11 @@ export const ShowEvolutionInputSchema = z.object({
   offset: z.number().int().min(0).optional().default(0),
 });
 
+export const FindKnowledgeGapsInputSchema = z.object({
+  repositoryId: RepositoryIdSchema,
+  limit: z.number().int().min(1).max(100).optional().default(20),
+});
+
 export const TOOL_DEFINITIONS = [
   {
     name: 'index_repository',
@@ -784,6 +789,19 @@ export const TOOL_DEFINITIONS = [
       required: ['repositoryId'],
     },
   },
+  {
+    name: 'find_knowledge_gaps',
+    description:
+      'Find under-documented, weakly-owned, complex, high-churn code hotspots ranked by knowledge-gap risk.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        repositoryId: { type: 'string', description: '16-hex repository id' },
+        limit: { type: 'number', description: 'Max gaps (default 20, max 100)' },
+      },
+      required: ['repositoryId'],
+    },
+  },
 ] as const;
 
 /**
@@ -1214,6 +1232,18 @@ export const TOOL_DEFINITIONS_COMPACT = [
         topic: { type: 'string', description: 'Topic/keywords' },
         limit: { type: 'number', description: 'Max entries (max 200)' },
         offset: { type: 'number', description: 'Offset' },
+      },
+      required: ['repositoryId'],
+    },
+  },
+  {
+    name: 'find_knowledge_gaps',
+    description: 'Rank under-documented, weakly-owned, complex, high-churn hotspots by risk.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        repositoryId: { type: 'string', description: '16-hex repo id' },
+        limit: { type: 'number', description: 'Max gaps (max 100)' },
       },
       required: ['repositoryId'],
     },
