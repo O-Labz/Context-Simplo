@@ -8,6 +8,8 @@ Context-Simplo fixes that. It indexes your codebase into a graph and vector stor
 
 It runs as a single Docker container. Local-first, your code never has to leave your machine.
 
+In practice, this cuts context usage by about 75% compared to grep-and-read workflows. Your assistant spends fewer tokens finding things and more actually building.
+
 ## Why it's different
 
 Most "AI code context" tools stop at search. They give the model a better grep and call it a day. The hard part isn't finding code, it's understanding it: how it connects, who knows it, and the history of decisions that got you here.
