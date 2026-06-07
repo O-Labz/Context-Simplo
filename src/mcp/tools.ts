@@ -170,6 +170,12 @@ export const WhyWasThisChosenInputSchema = z
     message: 'one of topic or entityRef is required',
   });
 
+export const HaveWeTriedThisInputSchema = z.object({
+  repositoryId: RepositoryIdSchema,
+  description: z.string().min(1).describe('Describe the approach/idea to check against past failures'),
+  limit: z.number().int().min(1).max(50).optional().default(10),
+});
+
 export const TOOL_DEFINITIONS = [
   {
     name: 'index_repository',
@@ -630,6 +636,20 @@ export const TOOL_DEFINITIONS = [
       required: ['repositoryId'],
     },
   },
+  {
+    name: 'have_we_tried_this',
+    description:
+      'Check whether an approach was already attempted and failed: returns similar past failures with lessons learned. Empty list when none found.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        repositoryId: { type: 'string', description: '16-hex repository id' },
+        description: { type: 'string', description: 'Describe the approach/idea to check' },
+        limit: { type: 'number', description: 'Max results (default 10)' },
+      },
+      required: ['repositoryId', 'description'],
+    },
+  },
 ] as const;
 
 /**
@@ -956,6 +976,19 @@ export const TOOL_DEFINITIONS_COMPACT = [
         limit: { type: 'number', description: 'Max results' },
       },
       required: ['repositoryId'],
+    },
+  },
+  {
+    name: 'have_we_tried_this',
+    description: 'Past failures similar to an approach, with lessons. Empty list if none.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        repositoryId: { type: 'string', description: '16-hex repo id' },
+        description: { type: 'string', description: 'Approach/idea to check' },
+        limit: { type: 'number', description: 'Max results' },
+      },
+      required: ['repositoryId', 'description'],
     },
   },
 ] as const;

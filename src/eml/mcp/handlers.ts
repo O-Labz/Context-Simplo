@@ -20,6 +20,7 @@ import {
   MemoryRecallInputSchema,
   MemorySearchInputSchema,
   WhyWasThisChosenInputSchema,
+  HaveWeTriedThisInputSchema,
 } from '../../mcp/tools.js';
 import type { MemoryObject, MemoryRepo } from '../store/memory-repo.js';
 import type { MemoryVectorStore } from '../store/memory-vectors.js';
@@ -27,6 +28,7 @@ import type { GraphStore } from '../store/graph-store.js';
 import type { EventStore } from '../events/store.js';
 import type { EventBus } from '../events/bus.js';
 import type { DecisionEngine } from '../engines/decision.js';
+import type { FailureEngine } from '../engines/failure.js';
 import { gatherCandidates, type QueryEmbedder } from '../retrieval/candidates.js';
 import { rankMemories, type RankOptions } from '../retrieval/rank.js';
 
@@ -41,6 +43,7 @@ export interface EmlServices {
   eventStore: EventStore;
   eventBus?: EventBus;
   decisions?: DecisionEngine;
+  failures?: FailureEngine;
   embedQuery?: QueryEmbedder;
   now: () => Date;
   /** Returns a 0..1 goal bias for a memory (wired by the intent engine). */
@@ -118,6 +121,11 @@ export async function memoryRemember(args: unknown, eml: EmlServices): Promise<M
   // Persist the structured decision side-record for decision memories.
   if (input.kind === 'decision' && eml.decisions) {
     eml.decisions.fromMemory(memory);
+  }
+
+  // Persist the structured failure side-record for failure memories.
+  if (input.kind === 'failure' && eml.failures) {
+    eml.failures.fromMemory(memory);
   }
 
   // Append the audit/source event (drives extraction reinforcement downstream).
@@ -255,4 +263,49 @@ export function whyWasThisChosen(args: unknown, eml: EmlServices): WhyWasThisCho
       status: d.status,
     })),
   };
+}
+
+export interface HaveWeTriedThisResult {
+  results: Record<string, unknown>[];
+}
+
+export async function haveWeTriedThis(args: unknown, eml: EmlServices): Promise<HaveWeTriedThisResult> {
+  requireEnabled(eml);
+  const parsed = HaveWeTriedThisInputSchema.safeParse(args);
+  if (!parsed.success) throw validationFrom(parsed.error);
+  const input = parsed.data;
+  if (!eml.failures) return { results: [] };
+
+  const candidates = await gatherCandidates({
+    query: input.description,
+    repositoryId: input.repositoryId,
+    limit: input.limit,
+    repo: eml.memoryRepo,
+    vectors: eml.memoryVectors,
+    embedQuery: eml.embedQuery,
+    graph: eml.graph,
+  });
+
+  const memories = candidates.ids
+    .map((id) => eml.memoryRepo.find(id))
+    .filter((m): m is MemoryObject => m !== null)
+    .filter((m) => m.kind === 'failure');
+
+  const ranked = rankMemories(memories, candidates.lists, eml.now());
+
+  const results: Record<string, unknown>[] = [];
+  for (const r of ranked.slice(0, input.limit)) {
+    const failure = eml.failures.get(r.memory.id);
+    if (!failure) continue;
+    results.push({
+      ...toMemoryView(r.memory, r.score),
+      failureType: failure.failureType,
+      whatFailed: failure.whatFailed,
+      whyFailed: failure.whyFailed,
+      lessons: failure.lessons,
+      rootCause: failure.rootCause,
+      incidentRef: failure.incidentRef,
+    });
+  }
+  return { results };
 }

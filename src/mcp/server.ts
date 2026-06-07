@@ -226,6 +226,8 @@ export class MCPServer {
         return emlHandlers.memorySearch(args, this.requireEml());
       case 'why_was_this_chosen':
         return emlHandlers.whyWasThisChosen(args, this.requireEml());
+      case 'have_we_tried_this':
+        return emlHandlers.haveWeTriedThis(args, this.requireEml());
       default:
         throw new ValidationError(`Unknown tool: ${name}`);
     }
