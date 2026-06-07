@@ -75,18 +75,6 @@ async function main() {
   await storage.initialize();
   console.log('SQLite storage initialized');
 
-  let emlEventStore: import('./eml/events/store.js').EventStore | undefined;
-  let emlEventBus: import('./eml/events/bus.js').EventBus | undefined;
-  if (config.emlEnabled.value) {
-    const { EventStore } = await import('./eml/events/store.js');
-    const { EventBus } = await import('./eml/events/bus.js');
-    emlEventStore = new EventStore(storage.getDatabase());
-    emlEventBus = new EventBus(emlEventStore, {
-      concurrency: config.emlWorkerConcurrency.value,
-    });
-    console.log('EML event store + bus initialized');
-  }
-
   const vectorStore = new LanceDBVectorStore(lanceDbPath);
   await vectorStore.initialize();
   console.log('LanceDB vector store initialized');
@@ -149,6 +137,48 @@ async function main() {
   const indexer = new Indexer(storage, graph, workspaceRoot, embeddingQueue, vectorStore);
   console.log('Indexer ready');
 
+  // --- Engineering Memory Layer (EML) bootstrap ---
+  // Always construct the services bundle so REST/MCP surfaces exist and report
+  // a 503 when disabled; only start the worker bus when enabled.
+  const { EventStore } = await import('./eml/events/store.js');
+  const { EventBus } = await import('./eml/events/bus.js');
+  const { MemoryRepo } = await import('./eml/store/memory-repo.js');
+  const { MemoryVectorStore } = await import('./eml/store/memory-vectors.js');
+  const { SqliteGraphStore } = await import('./eml/store/sqlite-graph.js');
+  const { HotCache } = await import('./eml/store/hot-cache.js');
+  const emlDb = storage.getDatabase();
+  const emlEventStore = new EventStore(emlDb);
+  const emlEventBus = config.emlEnabled.value
+    ? new EventBus(emlEventStore, { concurrency: config.emlWorkerConcurrency.value })
+    : undefined;
+  const emlMemoryVectors = new MemoryVectorStore(lanceDbPath);
+  await emlMemoryVectors.initialize();
+  const emlEmbedQuery =
+    config.llmProvider.value !== 'none' && embeddingProvider
+      ? async (q: string): Promise<number[] | null> => {
+          try {
+            const vectors = await embeddingProvider.embed([q]);
+            return vectors[0] ?? null;
+          } catch {
+            return null;
+          }
+        }
+      : undefined;
+  const eml: import('./eml/mcp/handlers.js').EmlServices = {
+    enabled: config.emlEnabled.value,
+    extraction: config.emlExtraction.value,
+    db: emlDb,
+    storage,
+    memoryRepo: new MemoryRepo(emlDb),
+    memoryVectors: emlMemoryVectors,
+    graph: new SqliteGraphStore(emlDb, { cache: new HotCache(config.emlGraphHotCacheMb.value) }),
+    eventStore: emlEventStore,
+    eventBus: emlEventBus,
+    embedQuery: emlEmbedQuery,
+    now: () => new Date(),
+  };
+  console.log(`EML services ready (enabled: ${eml.enabled}, extraction: ${eml.extraction})`);
+
   const { SymbolicSearch } = await import('./search/symbolic.js');
   const symbolicSearch = new SymbolicSearch(storage);
 
@@ -174,6 +204,7 @@ async function main() {
     embeddingProvider: config.llmProvider.value !== 'none' ? embeddingProvider : undefined,
     watcher,
     responseMode: config.responseMode.value,
+    eml,
   });
 
   const configManager = new ConfigManager({
@@ -247,6 +278,7 @@ async function main() {
       embeddingProvider,
       mcpServer,
       configManager,
+      eml,
     })
   );
 
@@ -265,8 +297,9 @@ async function main() {
 
   const shutdownManager = new ShutdownManager(10000);
   if (emlEventBus) {
-    shutdownManager.register('EML event bus', () => emlEventBus!.stop(), 95);
+    shutdownManager.register('EML event bus', () => emlEventBus.stop(), 95);
   }
+  shutdownManager.register('EML vector store', () => emlMemoryVectors.close(), 65);
   shutdownManager.register('File watcher', () => watcher.close(), 100);
   if (embeddingQueue) {
     shutdownManager.register('Embedding queue', () => embeddingQueue.drain(), 90);

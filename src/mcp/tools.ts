@@ -118,6 +118,47 @@ export const QueryGraphInputSchema = z.object({
   parameters: z.record(z.unknown()).optional().describe('Query parameters'),
 });
 
+// --- Engineering Memory Layer (EML) tool input schemas ---
+
+const RepositoryIdSchema = z
+  .string()
+  .regex(/^[0-9a-f]{16}$/)
+  .describe('16-hex repository id');
+
+export const MemoryKindToolSchema = z.enum(['decision', 'failure', 'intent', 'gap', 'ownership', 'note']);
+
+export const MemoryRememberInputSchema = z.object({
+  kind: MemoryKindToolSchema.describe('Memory kind'),
+  title: z.string().min(1).max(200).describe('Short title'),
+  summary: z.string().max(2000).optional().describe('One-paragraph summary'),
+  body: z.string().max(20000).optional().describe('Full memory body'),
+  repositoryId: RepositoryIdSchema,
+  idempotencyKey: z.string().min(1).max(128).optional().describe('Dedup key for safe re-submit'),
+  entityRefs: z
+    .array(
+      z.object({
+        kind: z.enum(['node', 'file', 'service', 'symbol']),
+        ref: z.string().min(1),
+      })
+    )
+    .optional()
+    .describe('Code entities this memory relates to'),
+});
+
+export const MemoryRecallInputSchema = z.object({
+  id: z.string().min(1).max(128).optional().describe('Memory id to recall'),
+  repositoryId: RepositoryIdSchema,
+  entityRef: z.string().optional().describe('Recall memories linked to this entity ref'),
+  limit: z.number().int().min(1).max(100).optional().default(10),
+});
+
+export const MemorySearchInputSchema = z.object({
+  query: z.string().min(1).describe('Search query'),
+  repositoryId: RepositoryIdSchema,
+  limit: z.number().int().min(1).max(100).optional().default(10),
+  kind: MemoryKindToolSchema.optional().describe('Optional kind filter'),
+});
+
 export const TOOL_DEFINITIONS = [
   {
     name: 'index_repository',
@@ -498,6 +539,71 @@ export const TOOL_DEFINITIONS = [
       required: ['query'],
     },
   },
+  {
+    name: 'memory_remember',
+    description:
+      'Persist an engineering memory (decision/failure/intent/gap/ownership/note) for later recall. Shared across all MCP clients.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        kind: {
+          type: 'string',
+          enum: ['decision', 'failure', 'intent', 'gap', 'ownership', 'note'],
+          description: 'Memory kind',
+        },
+        title: { type: 'string', description: 'Short title' },
+        summary: { type: 'string', description: 'One-paragraph summary' },
+        body: { type: 'string', description: 'Full memory body' },
+        repositoryId: { type: 'string', description: '16-hex repository id' },
+        idempotencyKey: { type: 'string', description: 'Dedup key for safe re-submit' },
+        entityRefs: {
+          type: 'array',
+          description: 'Code entities this memory relates to',
+          items: {
+            type: 'object',
+            properties: {
+              kind: { type: 'string', enum: ['node', 'file', 'service', 'symbol'] },
+              ref: { type: 'string' },
+            },
+            required: ['kind', 'ref'],
+          },
+        },
+      },
+      required: ['kind', 'title', 'repositoryId'],
+    },
+  },
+  {
+    name: 'memory_recall',
+    description: 'Recall a stored memory by id, or memories linked to a code entity.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        id: { type: 'string', description: 'Memory id to recall' },
+        repositoryId: { type: 'string', description: '16-hex repository id' },
+        entityRef: { type: 'string', description: 'Recall memories linked to this entity ref' },
+        limit: { type: 'number', description: 'Max results (default 10)' },
+      },
+      required: ['repositoryId'],
+    },
+  },
+  {
+    name: 'memory_search',
+    description: 'Search engineering memories by meaning + text, ranked by relevance/confidence/freshness.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        query: { type: 'string', description: 'Search query' },
+        repositoryId: { type: 'string', description: '16-hex repository id' },
+        limit: { type: 'number', description: 'Max results (default 10)' },
+        kind: {
+          type: 'string',
+          enum: ['decision', 'failure', 'intent', 'gap', 'ownership', 'note'],
+          description: 'Optional kind filter',
+        },
+      },
+      required: ['query', 'repositoryId'],
+    },
+  },
 ] as const;
 
 /**
@@ -746,6 +852,70 @@ export const TOOL_DEFINITIONS_COMPACT = [
         parameters: { type: 'object', description: 'Query parameters' },
       },
       required: ['query'],
+    },
+  },
+  {
+    name: 'memory_remember',
+    description: 'Persist engineering memory (decision/failure/intent/gap/ownership/note). Shared across clients.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        kind: {
+          type: 'string',
+          enum: ['decision', 'failure', 'intent', 'gap', 'ownership', 'note'],
+          description: 'Memory kind',
+        },
+        title: { type: 'string', description: 'Short title' },
+        summary: { type: 'string', description: 'Summary' },
+        body: { type: 'string', description: 'Full body' },
+        repositoryId: { type: 'string', description: '16-hex repo id' },
+        idempotencyKey: { type: 'string', description: 'Dedup key' },
+        entityRefs: {
+          type: 'array',
+          description: 'Linked code entities',
+          items: {
+            type: 'object',
+            properties: {
+              kind: { type: 'string', enum: ['node', 'file', 'service', 'symbol'] },
+              ref: { type: 'string' },
+            },
+            required: ['kind', 'ref'],
+          },
+        },
+      },
+      required: ['kind', 'title', 'repositoryId'],
+    },
+  },
+  {
+    name: 'memory_recall',
+    description: 'Recall memory by id, or memories linked to an entity.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        id: { type: 'string', description: 'Memory id' },
+        repositoryId: { type: 'string', description: '16-hex repo id' },
+        entityRef: { type: 'string', description: 'Linked entity ref' },
+        limit: { type: 'number', description: 'Max results' },
+      },
+      required: ['repositoryId'],
+    },
+  },
+  {
+    name: 'memory_search',
+    description: 'Search memories by meaning + text. Ranked by relevance/confidence/freshness.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        query: { type: 'string', description: 'Search query' },
+        repositoryId: { type: 'string', description: '16-hex repo id' },
+        limit: { type: 'number', description: 'Max results' },
+        kind: {
+          type: 'string',
+          enum: ['decision', 'failure', 'intent', 'gap', 'ownership', 'note'],
+          description: 'Optional kind filter',
+        },
+      },
+      required: ['query', 'repositoryId'],
     },
   },
 ] as const;

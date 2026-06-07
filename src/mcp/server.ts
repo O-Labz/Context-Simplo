@@ -40,8 +40,11 @@ import { HybridSearch } from '../search/hybrid.js';
 import type { LanceDBVectorStore } from '../store/lance.js';
 import type { EmbeddingProvider } from '../llm/provider.js';
 import type { FileWatcher } from '../core/watcher.js';
-import { MCPProtocolError, ValidationError } from '../core/errors.js';
+import { EmlError, MCPProtocolError, ValidationError } from '../core/errors.js';
 import * as handlers from './handlers/index.js';
+import * as emlHandlers from '../eml/mcp/handlers.js';
+import type { EmlServices } from '../eml/mcp/handlers.js';
+import { EmlDisabledError } from '../core/errors.js';
 
 export interface MCPServerOptions {
   storage: StorageProvider;
@@ -52,6 +55,7 @@ export interface MCPServerOptions {
   embeddingProvider?: EmbeddingProvider;
   watcher?: FileWatcher;
   responseMode?: ResponseMode;
+  eml?: EmlServices;
 }
 
 export interface MCPMetrics {
@@ -75,6 +79,7 @@ export class MCPServer {
   private watcher?: import('../core/watcher.js').FileWatcher;
   private vectorStore?: LanceDBVectorStore;
   private responseMode: ResponseMode;
+  private eml?: EmlServices;
   private metrics: MCPMetrics = {
     totalRequests: 0,
     requestsPerMinute: 0,
@@ -94,6 +99,7 @@ export class MCPServer {
 
     this.watcher = options.watcher;
     this.vectorStore = options.vectorStore;
+    this.eml = options.eml;
 
     if (options.vectorStore && options.embeddingProvider) {
       this.vectorSearch = new VectorSearch(options.vectorStore, options.embeddingProvider);
@@ -212,9 +218,20 @@ export class MCPServer {
         return handlers.lintContext(args, context);
       case 'query_graph':
         return handlers.queryGraph(args, context);
+      case 'memory_remember':
+        return emlHandlers.memoryRemember(args, this.requireEml());
+      case 'memory_recall':
+        return emlHandlers.memoryRecall(args, this.requireEml());
+      case 'memory_search':
+        return emlHandlers.memorySearch(args, this.requireEml());
       default:
         throw new ValidationError(`Unknown tool: ${name}`);
     }
+  }
+
+  private requireEml(): EmlServices {
+    if (!this.eml) throw new EmlDisabledError();
+    return this.eml;
   }
 
   private setupErrorHandling(): void {
@@ -235,6 +252,12 @@ export class MCPServer {
 
     if (error instanceof MCPProtocolError) {
       return error;
+    }
+
+    if (error instanceof EmlError) {
+      // 400-class domain errors map to invalid-params; others to internal error.
+      const mcpCode = error.httpStatus === 400 || error.httpStatus === 404 ? -32602 : -32603;
+      return new MCPProtocolError(error.message, mcpCode, error);
     }
 
     return new MCPProtocolError(error.message, -32603, error);
