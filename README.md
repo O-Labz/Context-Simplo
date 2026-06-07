@@ -1,12 +1,59 @@
 # Context-Simplo
 
-Context-Simplo indexes your codebase into a graph + vector database and hands that intelligence to AI coding assistants over MCP. Instead of letting the assistant grep around file by file, it can ask Context-Simplo directly for things like call graphs, impact analysis, dead-code checks, and semantic search.
+Your AI assistant is brilliant at writing code and terrible at remembering anything. Every session it starts from zero: re-reading files, re-discovering how your code fits together, asking you the same questions, repeating mistakes the team already learned from six months ago.
 
-It runs as a single Docker container.
+Context-Simplo fixes that. It indexes your codebase into a graph and vector store, then layers a persistent engineering memory on top, and serves all of it to your assistant over MCP. The assistant stops grepping around blind and starts asking real questions: who calls this function, what breaks if I delete it, why did we pick Postgres over Mongo, have we tried this migration before, who actually owns this module.
+
+![Context-Simplo in action](docs/images/demo.gif)
+
+It runs as a single Docker container. Local-first, your code never has to leave your machine.
+
+## Why it's different
+
+Most "AI code context" tools stop at search. They give the model a better grep and call it a day. The hard part isn't finding code, it's understanding it: how it connects, who knows it, and the history of decisions that got you here.
+
+Context-Simplo tracks two things at once:
+
+1. **The structure** of your code, as a live dependency graph plus semantic search.
+2. **The memory** of your engineering, captured from commits, PRs, and your assistant's own work, then kept honest over time.
+
+The second part is the one nobody else does well, and it's where most of the value is.
+
+## What you get
+
+### Code intelligence
+
+- **Semantic + keyword search.** Ask in plain English ("where do we validate webhook signatures") or by symbol. Results are fused so you get the best of both.
+- **Call graphs and call hierarchies.** Walk who-calls-what in either direction without opening a file.
+- **Impact analysis.** Before you touch something, see everything downstream that depends on it.
+- **Dead code detection.** Find symbols nothing references anymore.
+- **Complexity scoring.** Real cyclomatic complexity, not a guess, so you know which functions are quietly turning into landmines.
+- **Dependency graph.** Module and file relationships you can actually query.
+
+### Engineering memory
+
+This is the layer that learns your project and remembers it across sessions, across assistants, and across team members.
+
+- **Decision memory.** Captures architectural choices with their rationale, alternatives, and tradeoffs. Ask "why was this chosen" and get the real answer instead of a shrug.
+- **Failure memory.** Records what's been tried and didn't work. Ask "have we tried this" before burning a day re-running a doomed migration.
+- **Ownership and expertise.** Resolves git authorship into people and ranks who actually knows a file or service by recent, weighted activity. Ask "who knows this code."
+- **Knowledge freshness.** Memories decay. Confidence drops as things go stale and climbs again when reinforced or verified, so old facts don't masquerade as current truth.
+- **Contradiction detection.** When two claims about the same thing disagree, both get flagged and their confidence drops. No more silently trusting outdated notes.
+- **Intent tracking.** Record the goals you're working toward and retrieval leans toward what's relevant to them.
+- **Decision timeline.** A chronological view of how a topic or file evolved: decisions, failures, and diffs in order.
+- **Knowledge gap detection.** Ranks the risky parts of your codebase by complexity, weak ownership, missing documentation, and churn, so you know where the bus-factor problems are.
+- **Architecture drift.** Declare your rules (layering, allowed and forbidden dependencies, naming) and get told the moment reality violates them.
+- **Impact simulation.** Model a delete, rename, interface removal, or dependency removal and see the blast radius, the owners to notify, and the rules it would break, before you commit to it.
+
+Memory is fed automatically from your git history, GitHub/GitLab (via API or signed webhooks), and your assistant's own actions. It's event-sourced and model-agnostic, so two different assistants pointed at the same project share the same brain.
+
+### Dashboard
+
+A clean web UI at `localhost:3001` to manage repositories, run searches, explore the graph, and browse the memory layer: decisions, the evolution timeline, architecture drift, knowledge gaps, and active goals. Plus live metrics on indexing, embeddings, storage, and MCP traffic.
 
 ## Run it
 
-You'll need Docker. For semantic search you also need an embedding model - the simplest local option is Ollama.
+You'll need Docker. For semantic search you also need an embedding model. The simplest local option is Ollama.
 
 ```bash
 ollama pull nomic-embed-text
@@ -33,7 +80,7 @@ Once it's up:
 
 ## Embedding options
 
-Rather use OpenAI? Swap the `LLM_*` variables:
+Prefer OpenAI? Swap the `LLM_*` variables:
 
 ```bash
   -e LLM_PROVIDER=openai \
@@ -42,14 +89,17 @@ Rather use OpenAI? Swap the `LLM_*` variables:
   -e LLM_EMBEDDING_MODEL=text-embedding-3-small
 ```
 
-Don't want any AI involved? Start it with `-e LLM_PROVIDER=none`. You lose semantic search, but the structural tools (call graphs, impact analysis, dead code, complexity) all still work.
+Want no AI in the loop at all? Start it with `-e LLM_PROVIDER=none`. You lose semantic search, but everything structural (call graphs, impact analysis, dead code, complexity) and the decision, ownership, drift, and impact-simulation memory all still work without ever calling a model.
+
+Turn the engineering memory layer on with `-e EML_ENABLED=true`.
 
 ## Good to know
 
 - Mounting your home directory at `/host` lets you switch between projects from the dashboard without restarting the container.
-- Your index lives in the `context-simplo-data` volume, so it sticks around across restarts.
-- 2GB of RAM handles most repos; give it 4GB for the big ones.
+- Your index and memory live in the `context-simplo-data` volume, so they survive restarts.
+- 2GB of RAM handles most repos. Give it 4GB for the big ones.
+- Indexing is incremental. Re-runs only touch what changed.
 
 ## License
 
-MIT - see [LICENSE](LICENSE).
+MIT, see [LICENSE](LICENSE).
