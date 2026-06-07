@@ -14,13 +14,19 @@ import { z } from 'zod';
 import type Database from 'better-sqlite3';
 import type { StorageProvider } from '../../store/provider.js';
 import type { EmlExtractionMode } from '../../core/types.js';
-import { DuplicateMemoryError, EmlDisabledError, MemoryValidationError } from '../../core/errors.js';
+import {
+  DuplicateMemoryError,
+  EmlDisabledError,
+  MemoryValidationError,
+  RepositoryNotIndexedError,
+} from '../../core/errors.js';
 import {
   MemoryRememberInputSchema,
   MemoryRecallInputSchema,
   MemorySearchInputSchema,
   WhyWasThisChosenInputSchema,
   HaveWeTriedThisInputSchema,
+  WhoKnowsInputSchema,
 } from '../../mcp/tools.js';
 import type { MemoryObject, MemoryRepo } from '../store/memory-repo.js';
 import type { MemoryVectorStore } from '../store/memory-vectors.js';
@@ -29,6 +35,7 @@ import type { EventStore } from '../events/store.js';
 import type { EventBus } from '../events/bus.js';
 import type { DecisionEngine } from '../engines/decision.js';
 import type { FailureEngine } from '../engines/failure.js';
+import type { OwnershipEngine } from '../engines/ownership.js';
 import { gatherCandidates, type QueryEmbedder } from '../retrieval/candidates.js';
 import { rankMemories, type RankOptions } from '../retrieval/rank.js';
 
@@ -44,6 +51,7 @@ export interface EmlServices {
   eventBus?: EventBus;
   decisions?: DecisionEngine;
   failures?: FailureEngine;
+  ownership?: OwnershipEngine;
   embedQuery?: QueryEmbedder;
   now: () => Date;
   /** Returns a 0..1 goal bias for a memory (wired by the intent engine). */
@@ -308,4 +316,40 @@ export async function haveWeTriedThis(args: unknown, eml: EmlServices): Promise<
     });
   }
   return { results };
+}
+
+export interface WhoKnowsResult {
+  results: Record<string, unknown>[];
+}
+
+export function whoKnows(args: unknown, eml: EmlServices): WhoKnowsResult {
+  requireEnabled(eml);
+  const parsed = WhoKnowsInputSchema.safeParse(args);
+  if (!parsed.success) throw validationFrom(parsed.error);
+  const input = parsed.data;
+
+  // Repository must be indexed for ownership queries.
+  if (!eml.storage.getRepository(input.repositoryId)) {
+    throw new RepositoryNotIndexedError(input.repositoryId);
+  }
+  if (!eml.ownership) return { results: [] };
+
+  const owners = eml.ownership.rankOwners(input.entityRef, {
+    limit: input.limit,
+    useGraphProximity: true,
+  });
+  return {
+    results: owners.map((o) => ({
+      personId: o.personId,
+      displayName: o.displayName,
+      score: o.score,
+      signalCount: o.signalCount,
+      lastActivityAt: o.lastActivityAt,
+    })),
+  };
+}
+
+/** Alias surface for `ownership_for` (same ranking, full breakdown). */
+export function ownershipFor(args: unknown, eml: EmlServices): WhoKnowsResult {
+  return whoKnows(args, eml);
 }

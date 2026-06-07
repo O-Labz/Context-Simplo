@@ -148,6 +148,7 @@ async function main() {
   const { HotCache } = await import('./eml/store/hot-cache.js');
   const { DecisionEngine } = await import('./eml/engines/decision.js');
   const { FailureEngine } = await import('./eml/engines/failure.js');
+  const { OwnershipEngine } = await import('./eml/engines/ownership.js');
   const emlDb = storage.getDatabase();
   const emlEventStore = new EventStore(emlDb);
   const emlEventBus = config.emlEnabled.value
@@ -168,6 +169,7 @@ async function main() {
       : undefined;
   const emlMemoryRepo = new MemoryRepo(emlDb);
   const emlNow = (): Date => new Date();
+  const emlGraph = new SqliteGraphStore(emlDb, { cache: new HotCache(config.emlGraphHotCacheMb.value) });
   const eml: import('./eml/mcp/handlers.js').EmlServices = {
     enabled: config.emlEnabled.value,
     extraction: config.emlExtraction.value,
@@ -175,11 +177,12 @@ async function main() {
     storage,
     memoryRepo: emlMemoryRepo,
     memoryVectors: emlMemoryVectors,
-    graph: new SqliteGraphStore(emlDb, { cache: new HotCache(config.emlGraphHotCacheMb.value) }),
+    graph: emlGraph,
     eventStore: emlEventStore,
     eventBus: emlEventBus,
     decisions: new DecisionEngine(emlDb, emlMemoryRepo, emlNow),
     failures: new FailureEngine(emlDb, emlMemoryRepo),
+    ownership: new OwnershipEngine(emlDb, emlGraph, { eventStore: emlEventStore, now: emlNow }),
     embedQuery: emlEmbedQuery,
     now: emlNow,
   };

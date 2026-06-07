@@ -176,6 +176,12 @@ export const HaveWeTriedThisInputSchema = z.object({
   limit: z.number().int().min(1).max(50).optional().default(10),
 });
 
+export const WhoKnowsInputSchema = z.object({
+  repositoryId: RepositoryIdSchema,
+  entityRef: z.string().min(1).describe('Entity ref (file/service/symbol) to find owners for'),
+  limit: z.number().int().min(1).max(50).optional().default(10),
+});
+
 export const TOOL_DEFINITIONS = [
   {
     name: 'index_repository',
@@ -650,6 +656,20 @@ export const TOOL_DEFINITIONS = [
       required: ['repositoryId', 'description'],
     },
   },
+  {
+    name: 'who_knows',
+    description:
+      'Find who knows/owns a file, service, or symbol: returns people ranked by ownership signal volume and recency. Empty list when no signals.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        repositoryId: { type: 'string', description: '16-hex repository id' },
+        entityRef: { type: 'string', description: 'Entity ref (file/service/symbol)' },
+        limit: { type: 'number', description: 'Max results (default 10)' },
+      },
+      required: ['repositoryId', 'entityRef'],
+    },
+  },
 ] as const;
 
 /**
@@ -989,6 +1009,19 @@ export const TOOL_DEFINITIONS_COMPACT = [
         limit: { type: 'number', description: 'Max results' },
       },
       required: ['repositoryId', 'description'],
+    },
+  },
+  {
+    name: 'who_knows',
+    description: 'Who owns a file/service/symbol. People ranked by signal volume + recency. Empty if none.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        repositoryId: { type: 'string', description: '16-hex repo id' },
+        entityRef: { type: 'string', description: 'Entity ref (file/service/symbol)' },
+        limit: { type: 'number', description: 'Max results' },
+      },
+      required: ['repositoryId', 'entityRef'],
     },
   },
 ] as const;
