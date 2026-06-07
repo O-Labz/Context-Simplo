@@ -75,6 +75,18 @@ async function main() {
   await storage.initialize();
   console.log('SQLite storage initialized');
 
+  let emlEventStore: import('./eml/events/store.js').EventStore | undefined;
+  let emlEventBus: import('./eml/events/bus.js').EventBus | undefined;
+  if (config.emlEnabled.value) {
+    const { EventStore } = await import('./eml/events/store.js');
+    const { EventBus } = await import('./eml/events/bus.js');
+    emlEventStore = new EventStore(storage.getDatabase());
+    emlEventBus = new EventBus(emlEventStore, {
+      concurrency: config.emlWorkerConcurrency.value,
+    });
+    console.log('EML event store + bus initialized');
+  }
+
   const vectorStore = new LanceDBVectorStore(lanceDbPath);
   await vectorStore.initialize();
   console.log('LanceDB vector store initialized');
@@ -243,7 +255,18 @@ async function main() {
   console.log('API server started on port 3001');
   console.log(`WebSocket clients: ${broadcaster.getClientCount()}`);
 
+  if (emlEventBus) {
+    emlEventBus.on('eml:event_processed', (payload: unknown) => {
+      broadcaster.broadcast('eml:event_processed', payload);
+    });
+    emlEventBus.start();
+    console.log('EML event bus started');
+  }
+
   const shutdownManager = new ShutdownManager(10000);
+  if (emlEventBus) {
+    shutdownManager.register('EML event bus', () => emlEventBus!.stop(), 95);
+  }
   shutdownManager.register('File watcher', () => watcher.close(), 100);
   if (embeddingQueue) {
     shutdownManager.register('Embedding queue', () => embeddingQueue.drain(), 90);
