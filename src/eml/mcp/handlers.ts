@@ -19,12 +19,14 @@ import {
   MemoryRememberInputSchema,
   MemoryRecallInputSchema,
   MemorySearchInputSchema,
+  WhyWasThisChosenInputSchema,
 } from '../../mcp/tools.js';
 import type { MemoryObject, MemoryRepo } from '../store/memory-repo.js';
 import type { MemoryVectorStore } from '../store/memory-vectors.js';
 import type { GraphStore } from '../store/graph-store.js';
 import type { EventStore } from '../events/store.js';
 import type { EventBus } from '../events/bus.js';
+import type { DecisionEngine } from '../engines/decision.js';
 import { gatherCandidates, type QueryEmbedder } from '../retrieval/candidates.js';
 import { rankMemories, type RankOptions } from '../retrieval/rank.js';
 
@@ -38,6 +40,7 @@ export interface EmlServices {
   graph: GraphStore;
   eventStore: EventStore;
   eventBus?: EventBus;
+  decisions?: DecisionEngine;
   embedQuery?: QueryEmbedder;
   now: () => Date;
   /** Returns a 0..1 goal bias for a memory (wired by the intent engine). */
@@ -110,6 +113,11 @@ export async function memoryRemember(args: unknown, eml: EmlServices): Promise<M
       `INSERT OR IGNORE INTO entity_links (memory_id, target_kind, target_ref) VALUES (?, ?, ?)`
     );
     for (const e of input.entityRefs) stmt.run(memory.id, e.kind, e.ref);
+  }
+
+  // Persist the structured decision side-record for decision memories.
+  if (input.kind === 'decision' && eml.decisions) {
+    eml.decisions.fromMemory(memory);
   }
 
   // Append the audit/source event (drives extraction reinforcement downstream).
@@ -213,5 +221,38 @@ export async function memorySearch(args: unknown, eml: EmlServices): Promise<Mem
   const ranked = rankMemories(memories, candidates.lists, eml.now(), rankOpts);
   return {
     results: ranked.slice(0, input.limit).map((r) => toMemoryView(r.memory, r.score)),
+  };
+}
+
+export interface WhyWasThisChosenResult {
+  results: Record<string, unknown>[];
+}
+
+export function whyWasThisChosen(args: unknown, eml: EmlServices): WhyWasThisChosenResult {
+  requireEnabled(eml);
+  const parsed = WhyWasThisChosenInputSchema.safeParse(args);
+  if (!parsed.success) throw validationFrom(parsed.error);
+  const input = parsed.data;
+  if (!eml.decisions) return { results: [] };
+
+  const decisions = eml.decisions.whyWasThisChosen({
+    repositoryId: input.repositoryId,
+    topic: input.topic,
+    entityRef: input.entityRef,
+    limit: input.limit,
+  });
+
+  return {
+    results: decisions.map((d) => ({
+      ...toMemoryView(d.memory),
+      decision: d.decision,
+      rationale: d.rationale,
+      alternatives: d.alternatives,
+      tradeoffs: d.tradeoffs,
+      decisionDate: d.decisionDate,
+      author: d.author,
+      affectedSystems: d.affectedSystems,
+      status: d.status,
+    })),
   };
 }

@@ -10,7 +10,7 @@ import type { FastifyInstance, FastifyReply } from 'fastify';
 import { ZodError } from 'zod';
 import { EmlError } from '../../core/errors.js';
 import type { EmlServices } from '../../eml/mcp/handlers.js';
-import { memoryRemember, memorySearch, toMemoryView } from '../../eml/mcp/handlers.js';
+import { memoryRemember, memorySearch, whyWasThisChosen, toMemoryView } from '../../eml/mcp/handlers.js';
 
 export interface EmlRouteOptions {
   eml?: EmlServices;
@@ -126,4 +126,28 @@ export async function registerEmlRoutes(
       return sendEmlError(reply, error);
     }
   });
+
+  // Architectural decisions for a topic/entity (empty list, never 404).
+  fastify.get<{ Querystring: { repositoryId?: string; topic?: string; entityRef?: string; limit?: string } }>(
+    '/api/eml/decisions',
+    async (request, reply) => {
+      const eml = getEml(reply);
+      if (!eml) return reply;
+      try {
+        const limit = Math.min(Math.max(parseInt(request.query.limit ?? '10', 10) || 10, 1), 50);
+        const result = whyWasThisChosen(
+          {
+            repositoryId: request.query.repositoryId,
+            topic: request.query.topic,
+            entityRef: request.query.entityRef,
+            limit,
+          },
+          eml
+        );
+        return reply.send(result);
+      } catch (error) {
+        return sendEmlError(reply, error);
+      }
+    }
+  );
 }
