@@ -18,6 +18,7 @@ import {
   DuplicateMemoryError,
   EmlDisabledError,
   MemoryValidationError,
+  MemoryNotFoundError,
   RepositoryNotIndexedError,
 } from '../../core/errors.js';
 import {
@@ -27,6 +28,7 @@ import {
   WhyWasThisChosenInputSchema,
   HaveWeTriedThisInputSchema,
   WhoKnowsInputSchema,
+  MemoryIdActionInputSchema,
 } from '../../mcp/tools.js';
 import type { MemoryObject, MemoryRepo } from '../store/memory-repo.js';
 import type { MemoryVectorStore } from '../store/memory-vectors.js';
@@ -36,6 +38,7 @@ import type { EventBus } from '../events/bus.js';
 import type { DecisionEngine } from '../engines/decision.js';
 import type { FailureEngine } from '../engines/failure.js';
 import type { OwnershipEngine } from '../engines/ownership.js';
+import type { FreshnessEngine } from '../engines/freshness.js';
 import { gatherCandidates, type QueryEmbedder } from '../retrieval/candidates.js';
 import { rankMemories, type RankOptions } from '../retrieval/rank.js';
 
@@ -52,6 +55,7 @@ export interface EmlServices {
   decisions?: DecisionEngine;
   failures?: FailureEngine;
   ownership?: OwnershipEngine;
+  freshness?: FreshnessEngine;
   vcs?: {
     webhookSecret?: string;
     githubToken?: string;
@@ -358,4 +362,34 @@ export function whoKnows(args: unknown, eml: EmlServices): WhoKnowsResult {
 /** Alias surface for `ownership_for` (same ranking, full breakdown). */
 export function ownershipFor(args: unknown, eml: EmlServices): WhoKnowsResult {
   return whoKnows(args, eml);
+}
+
+function loadScopedMemory(eml: EmlServices, id: string, repositoryId: string): MemoryObject {
+  const memory = eml.memoryRepo.find(id);
+  if (!memory || memory.repositoryId !== repositoryId) {
+    throw new MemoryNotFoundError(id);
+  }
+  return memory;
+}
+
+export function verifyMemory(args: unknown, eml: EmlServices): Record<string, unknown> {
+  requireEnabled(eml);
+  const parsed = MemoryIdActionInputSchema.safeParse(args);
+  if (!parsed.success) throw validationFrom(parsed.error);
+  const input = parsed.data;
+  loadScopedMemory(eml, input.id, input.repositoryId);
+  if (!eml.freshness) return { id: input.id };
+  const updated = eml.freshness.verify(input.id);
+  return toMemoryView(updated);
+}
+
+export function reinforceMemory(args: unknown, eml: EmlServices): Record<string, unknown> {
+  requireEnabled(eml);
+  const parsed = MemoryIdActionInputSchema.safeParse(args);
+  if (!parsed.success) throw validationFrom(parsed.error);
+  const input = parsed.data;
+  loadScopedMemory(eml, input.id, input.repositoryId);
+  if (!eml.freshness) return { id: input.id };
+  const updated = eml.freshness.reinforce(input.id);
+  return toMemoryView(updated);
 }

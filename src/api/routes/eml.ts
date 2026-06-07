@@ -23,6 +23,8 @@ import {
   whyWasThisChosen,
   haveWeTriedThis,
   whoKnows,
+  verifyMemory,
+  reinforceMemory,
   toMemoryView,
 } from '../../eml/mcp/handlers.js';
 
@@ -205,6 +207,37 @@ export async function registerEmlRoutes(
           eml
         );
         return reply.send(result);
+      } catch (error) {
+        return sendEmlError(reply, error);
+      }
+    }
+  );
+
+  // Verify / reinforce a memory (freshness lifecycle).
+  fastify.post<{ Params: { id: string }; Body: { repositoryId?: string } }>(
+    '/api/eml/memories/:id/verify',
+    async (request, reply) => {
+      const eml = getEml(reply);
+      if (!eml) return reply;
+      try {
+        return reply.send(
+          verifyMemory({ id: request.params.id, repositoryId: request.body?.repositoryId }, eml)
+        );
+      } catch (error) {
+        return sendEmlError(reply, error);
+      }
+    }
+  );
+
+  fastify.post<{ Params: { id: string }; Body: { repositoryId?: string } }>(
+    '/api/eml/memories/:id/reinforce',
+    async (request, reply) => {
+      const eml = getEml(reply);
+      if (!eml) return reply;
+      try {
+        return reply.send(
+          reinforceMemory({ id: request.params.id, repositoryId: request.body?.repositoryId }, eml)
+        );
       } catch (error) {
         return sendEmlError(reply, error);
       }
