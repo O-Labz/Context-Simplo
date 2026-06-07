@@ -1,6 +1,8 @@
 # Context-Simplo
 
-Your AI assistant is brilliant at writing code and terrible at remembering anything. Every session it starts from zero: re-reading files, re-discovering how your code fits together, asking you the same questions, repeating mistakes the team already learned from six months ago.
+**Cut your AI coding assistant's token usage by ~75%.**
+
+Your AI assistant is brilliant at writing code and terrible at remembering anything. Every session it starts from zero: re-reading files, re-discovering how your code fits together, asking you the same questions, repeating mistakes the team already learned from six months ago. All of that burns tokens on *finding* code instead of *building* it.
 
 Context-Simplo fixes that. It indexes your codebase into a graph and vector store, then layers a persistent engineering memory on top, and serves all of it to your assistant over MCP. The assistant stops grepping around blind and starts asking real questions: who calls this function, what breaks if I delete it, why did we pick Postgres over Mongo, have we tried this migration before, who actually owns this module.
 
@@ -8,7 +10,19 @@ Context-Simplo fixes that. It indexes your codebase into a graph and vector stor
 
 It runs as a single Docker container. Local-first, your code never has to leave your machine.
 
-In practice, this cuts context usage by about 75% compared to grep-and-read workflows. Your assistant spends fewer tokens finding things and more actually building.
+## The number that matters
+
+On a suite of 10 real engineering workflows, answering through Context-Simplo used **~75% fewer tokens** than the same questions answered with a grep-and-read loop — same answers, a fraction of the context.
+
+| Approach | Tokens to answer the same questions |
+|----------|-------------------------------------|
+| grep-and-read (glob + read + grep) | ~42,000 |
+| Context-Simplo MCP | ~6,000 |
+| **Reduction** | **~85%** |
+
+The internal wire-format benchmark (v0.1.0 → v0.2.0) independently shows a **74% drop** (13,041 → 3,391 tokens) on the same indexed repo, with zero capability regressions. It's reproducible on your own machine in two commands — see **[the full benchmark](docs/benchmark.md)**.
+
+Fewer tokens finding things means more tokens — and more of your budget — left for actually building.
 
 ## Why it's different
 
