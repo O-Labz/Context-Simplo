@@ -408,7 +408,7 @@ export class SqliteStorageProvider implements StorageProvider {
   getEdge(id: string): GraphEdge | null {
     const row = this.db
       .prepare(
-        'SELECT id, source_id, target_id, kind, confidence, metadata, created_at FROM edges WHERE id = ?'
+        'SELECT id, source_id, target_id, kind, confidence, metadata, repository_id, created_at, updated_at FROM edges WHERE id = ?'
       )
       .get(id) as any;
 
@@ -418,7 +418,8 @@ export class SqliteStorageProvider implements StorageProvider {
   }
 
   getEdges(sourceId?: string, targetId?: string): GraphEdge[] {
-    let sql = 'SELECT id, source_id, target_id, kind, confidence, metadata, created_at FROM edges WHERE 1=1';
+    let sql =
+      'SELECT id, source_id, target_id, kind, confidence, metadata, repository_id, created_at, updated_at FROM edges WHERE 1=1';
     const params: any[] = [];
 
     if (sourceId) {

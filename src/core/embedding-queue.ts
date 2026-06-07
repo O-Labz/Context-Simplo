@@ -58,6 +58,7 @@ export class EmbeddingQueue extends EventEmitter {
   private totalTokens = 0;
   private concurrency: number;
   private maxRetries: number;
+  private batchSize: number;
   private draining = false;
 
   constructor(provider: EmbeddingProvider, options: EmbeddingQueueOptions) {
@@ -65,6 +66,7 @@ export class EmbeddingQueue extends EventEmitter {
     this.provider = provider;
     this.concurrency = options.concurrency;
     this.maxRetries = options.maxRetries;
+    this.batchSize = Math.max(1, options.batchSize || 1);
   }
 
   async embed(texts: string[]): Promise<number[][]> {
@@ -105,7 +107,14 @@ export class EmbeddingQueue extends EventEmitter {
 
   private async processJob(job: EmbeddingJob): Promise<void> {
     try {
-      const embeddings = await this.provider.embed(job.texts);
+      // Honor batchSize: split a large request into provider-sized batches so a
+      // single job cannot exceed the configured batch limit, preserving order.
+      const embeddings: number[][] = [];
+      for (let i = 0; i < job.texts.length; i += this.batchSize) {
+        const slice = job.texts.slice(i, i + this.batchSize);
+        const batch = await this.provider.embed(slice);
+        embeddings.push(...batch);
+      }
       this.completed++;
       this.totalTokens += job.texts.reduce((sum, text) => sum + text.length / 4, 0);
       job.resolve(embeddings);

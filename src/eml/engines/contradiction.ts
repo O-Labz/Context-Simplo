@@ -126,11 +126,20 @@ export class ContradictionEngine {
 
     this.graph.addNode({ id: memoryA.id, label: 'memory', ref: memoryA.id, repositoryId: memoryA.repositoryId });
     this.graph.addNode({ id: memoryB.id, label: 'memory', ref: memoryB.id, repositoryId: memoryB.repositoryId });
+    // A contradiction is symmetric: store both directed edges so neighbor
+    // queries surface the relationship regardless of traversal direction.
     this.graph.addEdge({
       src: memoryA.id,
       dst: memoryB.id,
       label: 'CONTRADICTS',
       repositoryId: memoryA.repositoryId,
+      weight: 1,
+    });
+    this.graph.addEdge({
+      src: memoryB.id,
+      dst: memoryA.id,
+      label: 'CONTRADICTS',
+      repositoryId: memoryB.repositoryId,
       weight: 1,
     });
 
