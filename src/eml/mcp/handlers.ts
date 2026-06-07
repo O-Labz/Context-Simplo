@@ -30,6 +30,8 @@ import {
   WhoKnowsInputSchema,
   MemoryIdActionInputSchema,
   FlagContradictionInputSchema,
+  TrackIntentInputSchema,
+  ListActiveGoalsInputSchema,
 } from '../../mcp/tools.js';
 import type { MemoryObject, MemoryRepo } from '../store/memory-repo.js';
 import type { MemoryVectorStore } from '../store/memory-vectors.js';
@@ -41,6 +43,7 @@ import type { FailureEngine } from '../engines/failure.js';
 import type { OwnershipEngine } from '../engines/ownership.js';
 import type { FreshnessEngine } from '../engines/freshness.js';
 import type { ContradictionEngine } from '../engines/contradiction.js';
+import type { IntentEngine } from '../engines/intent.js';
 import { gatherCandidates, type QueryEmbedder } from '../retrieval/candidates.js';
 import { rankMemories, type RankOptions } from '../retrieval/rank.js';
 
@@ -59,6 +62,7 @@ export interface EmlServices {
   ownership?: OwnershipEngine;
   freshness?: FreshnessEngine;
   contradictions?: ContradictionEngine;
+  intents?: IntentEngine;
   vcs?: {
     webhookSecret?: string;
     githubToken?: string;
@@ -395,6 +399,31 @@ export function reinforceMemory(args: unknown, eml: EmlServices): Record<string,
   if (!eml.freshness) return { id: input.id };
   const updated = eml.freshness.reinforce(input.id);
   return toMemoryView(updated);
+}
+
+export function trackIntent(args: unknown, eml: EmlServices): Record<string, unknown> {
+  requireEnabled(eml);
+  const parsed = TrackIntentInputSchema.safeParse(args);
+  if (!parsed.success) throw validationFrom(parsed.error);
+  const input = parsed.data;
+  if (!eml.intents) throw new EmlDisabledError();
+  const { memory, intent } = eml.intents.track({
+    repositoryId: input.repositoryId,
+    goal: input.goal,
+    category: input.category,
+    priority: input.priority,
+    targetDate: input.targetDate ?? null,
+  });
+  return { id: memory.id, ...intent };
+}
+
+export function listActiveGoals(args: unknown, eml: EmlServices): { results: Record<string, unknown>[] } {
+  requireEnabled(eml);
+  const parsed = ListActiveGoalsInputSchema.safeParse(args);
+  if (!parsed.success) throw validationFrom(parsed.error);
+  const input = parsed.data;
+  if (!eml.intents) return { results: [] };
+  return { results: eml.intents.listActive(input.repositoryId, input.limit) as unknown as Record<string, unknown>[] };
 }
 
 export function flagContradiction(args: unknown, eml: EmlServices): Record<string, unknown> {

@@ -42,6 +42,43 @@ export interface RankOptions {
   goalBiasOf?: (memory: MemoryObject) => number;
 }
 
+export interface ActiveGoal {
+  text: string;
+  /** 1..5; higher priority goals confer a stronger bias. */
+  priority: number;
+}
+
+function tokenize(text: string): Set<string> {
+  return new Set(
+    text
+      .toLowerCase()
+      .split(/[^a-z0-9]+/)
+      .filter((t) => t.length > 2)
+  );
+}
+
+/**
+ * Bias in [0,1] reflecting how strongly a memory advances any active goal.
+ * Computed as priority-weighted Jaccard token overlap; returns the strongest
+ * match across goals.
+ */
+export function goalBiasFor(memory: MemoryObject, goals: ActiveGoal[]): number {
+  if (goals.length === 0) return 0;
+  const memTokens = tokenize(`${memory.title} ${memory.summary}`);
+  if (memTokens.size === 0) return 0;
+  let best = 0;
+  for (const goal of goals) {
+    const goalTokens = tokenize(goal.text);
+    if (goalTokens.size === 0) continue;
+    let shared = 0;
+    for (const t of goalTokens) if (memTokens.has(t)) shared++;
+    const overlap = shared / goalTokens.size;
+    const priorityWeight = Math.max(0.2, Math.min(1, goal.priority / 5));
+    best = Math.max(best, overlap * priorityWeight);
+  }
+  return Math.max(0, Math.min(1, best));
+}
+
 export interface RankedMemory {
   memory: MemoryObject;
   score: number;

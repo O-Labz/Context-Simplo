@@ -236,6 +236,10 @@ export class MCPServer {
         return emlHandlers.reinforceMemory(args, this.requireEml());
       case 'flag_contradiction':
         return emlHandlers.flagContradiction(args, this.requireEml());
+      case 'track_intent':
+        return emlHandlers.trackIntent(args, this.requireEml());
+      case 'list_active_goals':
+        return emlHandlers.listActiveGoals(args, this.requireEml());
       default:
         throw new ValidationError(`Unknown tool: ${name}`);
     }

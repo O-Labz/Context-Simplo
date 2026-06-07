@@ -151,6 +151,7 @@ async function main() {
   const { OwnershipEngine } = await import('./eml/engines/ownership.js');
   const { FreshnessEngine } = await import('./eml/engines/freshness.js');
   const { ContradictionEngine } = await import('./eml/engines/contradiction.js');
+  const { IntentEngine } = await import('./eml/engines/intent.js');
   const emlDb = storage.getDatabase();
   const emlEventStore = new EventStore(emlDb);
   const emlEventBus = config.emlEnabled.value
@@ -172,6 +173,7 @@ async function main() {
   const emlMemoryRepo = new MemoryRepo(emlDb);
   const emlNow = (): Date => new Date();
   const emlGraph = new SqliteGraphStore(emlDb, { cache: new HotCache(config.emlGraphHotCacheMb.value) });
+  const emlIntents = new IntentEngine(emlDb, emlMemoryRepo);
   const eml: import('./eml/mcp/handlers.js').EmlServices = {
     enabled: config.emlEnabled.value,
     extraction: config.emlExtraction.value,
@@ -190,12 +192,14 @@ async function main() {
       eventStore: emlEventStore,
       now: emlNow,
     }),
+    intents: emlIntents,
     vcs: {
       webhookSecret: config.emlWebhookSecret.value,
       githubToken: config.githubToken.value,
       gitlabToken: config.gitlabToken.value,
       gitlabHost: config.gitlabHost.value,
     },
+    goalBiasOf: (memory) => emlIntents.goalBiasOf(memory),
     embedQuery: emlEmbedQuery,
     now: emlNow,
   };
