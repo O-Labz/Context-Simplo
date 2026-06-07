@@ -20,7 +20,13 @@
  */
 
 import { ConfigError } from './errors.js';
-import type { AppConfig, ConfigValue, LLMProviderType, ResponseMode } from './types.js';
+import type {
+  AppConfig,
+  ConfigValue,
+  EmlExtractionMode,
+  LLMProviderType,
+  ResponseMode,
+} from './types.js';
 
 const DEFAULT_CONFIG = {
   llmProvider: 'none' as LLMProviderType,
@@ -35,6 +41,14 @@ const DEFAULT_CONFIG = {
   embeddingBatchSize: 20,
   graphMemoryLimitMb: 512,
   responseMode: 'compact' as ResponseMode,
+  emlEnabled: true,
+  emlExtraction: 'fallback' as EmlExtractionMode,
+  emlWorkerConcurrency: 4,
+  emlGraphHotCacheMb: 128,
+  githubToken: undefined as string | undefined,
+  gitlabToken: undefined as string | undefined,
+  gitlabHost: 'https://gitlab.com',
+  emlWebhookSecret: undefined as string | undefined,
 } as const;
 
 const ENV_VAR_MAP = {
@@ -50,7 +64,17 @@ const ENV_VAR_MAP = {
   embeddingBatchSize: 'EMBEDDING_BATCH_SIZE',
   graphMemoryLimitMb: 'GRAPH_MEMORY_LIMIT_MB',
   responseMode: 'CONTEXT_SIMPLO_RESPONSE_MODE',
+  emlEnabled: 'EML_ENABLED',
+  emlExtraction: 'EML_EXTRACTION',
+  emlWorkerConcurrency: 'EML_WORKER_CONCURRENCY',
+  emlGraphHotCacheMb: 'EML_GRAPH_HOT_CACHE_MB',
+  githubToken: 'GITHUB_TOKEN',
+  gitlabToken: 'GITLAB_TOKEN',
+  gitlabHost: 'GITLAB_HOST',
+  emlWebhookSecret: 'EML_WEBHOOK_SECRET',
 } as const;
+
+const EML_EXTRACTION_MODES: readonly EmlExtractionMode[] = ['llm', 'fallback', 'off'];
 
 type ConfigKey = keyof typeof DEFAULT_CONFIG;
 
@@ -175,8 +199,46 @@ export function loadConfig(dashboardConfig?: DashboardConfig): AppConfig {
     envResponseMode = envResponseModeRaw as ResponseMode;
   }
 
+  const envEmlEnabled = parseEnvValue('emlEnabled', process.env[ENV_VAR_MAP.emlEnabled]) as
+    | boolean
+    | undefined;
+  const envEmlWorkerConcurrency = parseEnvValue(
+    'emlWorkerConcurrency',
+    process.env[ENV_VAR_MAP.emlWorkerConcurrency]
+  ) as number | undefined;
+  const envEmlGraphHotCacheMb = parseEnvValue(
+    'emlGraphHotCacheMb',
+    process.env[ENV_VAR_MAP.emlGraphHotCacheMb]
+  ) as number | undefined;
+  const envGithubToken = parseEnvValue('githubToken', process.env[ENV_VAR_MAP.githubToken]) as
+    | string
+    | undefined;
+  const envGitlabToken = parseEnvValue('gitlabToken', process.env[ENV_VAR_MAP.gitlabToken]) as
+    | string
+    | undefined;
+  const envGitlabHost = parseEnvValue('gitlabHost', process.env[ENV_VAR_MAP.gitlabHost]) as
+    | string
+    | undefined;
+  const envEmlWebhookSecret = parseEnvValue(
+    'emlWebhookSecret',
+    process.env[ENV_VAR_MAP.emlWebhookSecret]
+  ) as string | undefined;
+
+  const envEmlExtractionRaw = process.env[ENV_VAR_MAP.emlExtraction];
+  let envEmlExtraction: EmlExtractionMode | undefined;
+  if (envEmlExtractionRaw !== undefined) {
+    if (!EML_EXTRACTION_MODES.includes(envEmlExtractionRaw as EmlExtractionMode)) {
+      throw new ConfigError(
+        'emlExtraction',
+        `Invalid value: ${envEmlExtractionRaw}. Must be one of ${EML_EXTRACTION_MODES.join(', ')}`
+      );
+    }
+    envEmlExtraction = envEmlExtractionRaw as EmlExtractionMode;
+  }
+
   validateUrl(envLlmBaseUrl, 'llmBaseUrl');
   validateUrl(dashboardConfig?.llmBaseUrl, 'llmBaseUrl');
+  validateUrl(envGitlabHost, 'gitlabHost');
 
   const llmProvider = createConfigValue(
     'llmProvider',
@@ -262,6 +324,35 @@ export function loadConfig(dashboardConfig?: DashboardConfig): AppConfig {
     DEFAULT_CONFIG.responseMode
   );
 
+  const emlEnabled = createConfigValue('emlEnabled', envEmlEnabled, undefined, DEFAULT_CONFIG.emlEnabled);
+  const emlExtraction = createConfigValue(
+    'emlExtraction',
+    envEmlExtraction,
+    undefined,
+    DEFAULT_CONFIG.emlExtraction
+  );
+  const emlWorkerConcurrency = createConfigValue(
+    'emlWorkerConcurrency',
+    envEmlWorkerConcurrency,
+    undefined,
+    DEFAULT_CONFIG.emlWorkerConcurrency
+  );
+  const emlGraphHotCacheMb = createConfigValue(
+    'emlGraphHotCacheMb',
+    envEmlGraphHotCacheMb,
+    undefined,
+    DEFAULT_CONFIG.emlGraphHotCacheMb
+  );
+  const githubToken = createConfigValue('githubToken', envGithubToken, undefined, DEFAULT_CONFIG.githubToken);
+  const gitlabToken = createConfigValue('gitlabToken', envGitlabToken, undefined, DEFAULT_CONFIG.gitlabToken);
+  const gitlabHost = createConfigValue('gitlabHost', envGitlabHost, undefined, DEFAULT_CONFIG.gitlabHost);
+  const emlWebhookSecret = createConfigValue(
+    'emlWebhookSecret',
+    envEmlWebhookSecret,
+    undefined,
+    DEFAULT_CONFIG.emlWebhookSecret
+  );
+
   if (llmProvider.value === 'openai' && !llmApiKey.value) {
     throw new ConfigError(
       'llmApiKey',
@@ -289,6 +380,14 @@ export function loadConfig(dashboardConfig?: DashboardConfig): AppConfig {
     embeddingBatchSize,
     graphMemoryLimitMb,
     responseMode,
+    emlEnabled,
+    emlExtraction,
+    emlWorkerConcurrency,
+    emlGraphHotCacheMb,
+    githubToken,
+    gitlabToken,
+    gitlabHost,
+    emlWebhookSecret,
   };
 }
 

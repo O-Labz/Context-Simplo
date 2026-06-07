@@ -23,7 +23,9 @@ import {
   registerMcpConfigRoutes,
   registerBrowseRoutes,
   registerWorkspaceRoutes,
+  registerEmlRoutes,
 } from './routes/index.js';
+import type { EmlServices } from '../eml/mcp/handlers.js';
 
 export interface APIServerOptions {
   storage: StorageProvider;
@@ -46,6 +48,7 @@ export interface APIServerOptions {
   embeddingProvider?: any;
   mcpServer?: any;
   configManager?: any;
+  eml?: EmlServices;
 }
 
 export interface APIServer {
@@ -232,6 +235,9 @@ export async function createAPIServer(
     workspaceRoot: options.workspaceRoot,
     mountRoot: options.mountRoot,
   });
+
+  // Engineering Memory Layer routes (always registered; return 503 when disabled).
+  await registerEmlRoutes(fastify, { eml: options.eml });
 
   // Register workspace routes if workspace switching is supported
   if (options.getWorkspaceRoot && options.setWorkspaceRoot && options.mountRoot) {

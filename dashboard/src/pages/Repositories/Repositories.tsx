@@ -615,9 +615,9 @@ export default function Repositories() {
             onClick={() => setShowAddDialog(false)}
           />
           <div className="fixed inset-0 z-50 flex items-center justify-center p-4 pointer-events-none">
-            <div className="bg-white rounded-2xl w-full max-w-[560px] shadow-2xl pointer-events-auto animate-scale-in flex flex-col max-h-[90vh]">
+            <div className="bg-white rounded-2xl w-full max-w-[560px] shadow-2xl pointer-events-auto animate-scale-in flex flex-col max-h-[90vh] overflow-hidden">
               {/* Header */}
-              <div className="px-6 pt-6 pb-0 border-b border-outline-variant/20">
+              <div className="px-6 pt-6 pb-0 border-b border-outline-variant/20 shrink-0">
                 <div className="flex items-center justify-between mb-4">
                   <div className="flex items-center gap-3">
                     <div className="w-10 h-10 primary-gradient rounded-xl flex items-center justify-center shadow-md">
@@ -668,7 +668,7 @@ export default function Repositories() {
               </div>
 
               {/* Content */}
-              <div className="flex-1 overflow-hidden px-6 py-4">
+              <div className="flex-1 min-h-0 overflow-y-auto px-6 py-4">
                 {addMode === 'browse' ? (
                   <FolderBrowser
                     selected={newRepoPath}
@@ -722,7 +722,7 @@ export default function Repositories() {
               </div>
 
               {/* Footer */}
-              <div className="px-6 py-4 border-t border-outline-variant/20 flex items-center gap-3">
+              <div className="px-6 py-4 border-t border-outline-variant/20 flex items-center gap-3 shrink-0">
                 <button
                   onClick={() => {
                     setShowAddDialog(false);
@@ -766,9 +766,9 @@ export default function Repositories() {
             onClick={() => setShowWorkspaceDialog(false)}
           />
           <div className="fixed inset-0 z-50 flex items-center justify-center p-4 pointer-events-none">
-            <div className="bg-white rounded-2xl w-full max-w-[560px] shadow-2xl pointer-events-auto animate-scale-in flex flex-col max-h-[90vh]">
+            <div className="bg-white rounded-2xl w-full max-w-[560px] shadow-2xl pointer-events-auto animate-scale-in flex flex-col max-h-[90vh] overflow-hidden">
               {/* Header */}
-              <div className="px-6 pt-6 pb-4 border-b border-outline-variant/20">
+              <div className="px-6 pt-6 pb-4 border-b border-outline-variant/20 shrink-0">
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-3">
                     <div className="w-10 h-10 bg-tertiary/10 rounded-xl flex items-center justify-center">
@@ -793,7 +793,7 @@ export default function Repositories() {
               </div>
 
               {/* Content */}
-              <div className="flex-1 overflow-hidden px-6 py-4">
+              <div className="flex-1 min-h-0 overflow-y-auto px-6 py-4">
                 <FolderBrowser
                   selected={newWorkspacePath}
                   onSelect={(path) => setNewWorkspacePath(path)}
@@ -802,7 +802,7 @@ export default function Repositories() {
               </div>
 
               {/* Footer */}
-              <div className="px-6 py-4 border-t border-outline-variant/20 flex items-center gap-3">
+              <div className="px-6 py-4 border-t border-outline-variant/20 flex items-center gap-3 shrink-0">
                 <button
                   onClick={() => {
                     setShowWorkspaceDialog(false);
@@ -816,7 +816,8 @@ export default function Repositories() {
                 <button
                   onClick={handleChangeWorkspace}
                   disabled={changingWorkspace || !newWorkspacePath.trim()}
-                  className="px-6 py-2.5 bg-tertiary text-white font-semibold text-sm rounded-xl shadow-lg shadow-tertiary/20 active:scale-[0.97] transition-all disabled:opacity-40 disabled:cursor-not-allowed disabled:shadow-none flex items-center gap-2"
+                  className="px-6 py-2.5 primary-gradient font-semibold text-sm rounded-xl shadow-lg shadow-tertiary/20 active:scale-[0.97] transition-all disabled:opacity-40 disabled:cursor-not-allowed disabled:shadow-none flex items-center gap-2"
+                  style={{ color: 'white' }}
                 >
                   {changingWorkspace ? (
                     <>
