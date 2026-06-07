@@ -10,6 +10,7 @@
   "scripts": {
     "dev": "tsx watch src/index.ts",
     "build": "tsc --project tsconfig.build.json",
+    "postbuild": "node -e \"const fs=require('fs');fs.mkdirSync('dist/store/migrations',{recursive:true});for(const f of fs.readdirSync('src/store/migrations')){if(f.endsWith('.sql'))fs.copyFileSync('src/store/migrations/'+f,'dist/store/migrations/'+f)}\"",
     "build:dashboard": "cd dashboard && pnpm build",
     "test": "NODE_OPTIONS='--max-old-space-size=4096' vitest run",
     "test:watch": "NODE_OPTIONS='--max-old-space-size=4096' vitest",
