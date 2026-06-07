@@ -159,6 +159,17 @@ export const MemorySearchInputSchema = z.object({
   kind: MemoryKindToolSchema.optional().describe('Optional kind filter'),
 });
 
+export const WhyWasThisChosenInputSchema = z
+  .object({
+    repositoryId: RepositoryIdSchema,
+    topic: z.string().min(1).optional().describe('Topic/keywords to search decisions for'),
+    entityRef: z.string().min(1).optional().describe('Entity ref (file/symbol/service) the decision affects'),
+    limit: z.number().int().min(1).max(50).optional().default(10),
+  })
+  .refine((v) => Boolean(v.topic) || Boolean(v.entityRef), {
+    message: 'one of topic or entityRef is required',
+  });
+
 export const TOOL_DEFINITIONS = [
   {
     name: 'index_repository',
@@ -604,6 +615,21 @@ export const TOOL_DEFINITIONS = [
       required: ['query', 'repositoryId'],
     },
   },
+  {
+    name: 'why_was_this_chosen',
+    description:
+      'Explain architectural decisions for a topic or entity: returns rationale, alternatives, and tradeoffs. Empty list when none found.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        repositoryId: { type: 'string', description: '16-hex repository id' },
+        topic: { type: 'string', description: 'Topic/keywords to search decisions for' },
+        entityRef: { type: 'string', description: 'Entity ref (file/symbol/service) the decision affects' },
+        limit: { type: 'number', description: 'Max results (default 10)' },
+      },
+      required: ['repositoryId'],
+    },
+  },
 ] as const;
 
 /**
@@ -916,6 +942,20 @@ export const TOOL_DEFINITIONS_COMPACT = [
         },
       },
       required: ['query', 'repositoryId'],
+    },
+  },
+  {
+    name: 'why_was_this_chosen',
+    description: 'Decisions for topic/entity: rationale, alternatives, tradeoffs. Empty list if none.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        repositoryId: { type: 'string', description: '16-hex repo id' },
+        topic: { type: 'string', description: 'Topic/keywords' },
+        entityRef: { type: 'string', description: 'Entity ref (file/symbol/service)' },
+        limit: { type: 'number', description: 'Max results' },
+      },
+      required: ['repositoryId'],
     },
   },
 ] as const;

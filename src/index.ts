@@ -146,6 +146,7 @@ async function main() {
   const { MemoryVectorStore } = await import('./eml/store/memory-vectors.js');
   const { SqliteGraphStore } = await import('./eml/store/sqlite-graph.js');
   const { HotCache } = await import('./eml/store/hot-cache.js');
+  const { DecisionEngine } = await import('./eml/engines/decision.js');
   const emlDb = storage.getDatabase();
   const emlEventStore = new EventStore(emlDb);
   const emlEventBus = config.emlEnabled.value
@@ -164,18 +165,21 @@ async function main() {
           }
         }
       : undefined;
+  const emlMemoryRepo = new MemoryRepo(emlDb);
+  const emlNow = (): Date => new Date();
   const eml: import('./eml/mcp/handlers.js').EmlServices = {
     enabled: config.emlEnabled.value,
     extraction: config.emlExtraction.value,
     db: emlDb,
     storage,
-    memoryRepo: new MemoryRepo(emlDb),
+    memoryRepo: emlMemoryRepo,
     memoryVectors: emlMemoryVectors,
     graph: new SqliteGraphStore(emlDb, { cache: new HotCache(config.emlGraphHotCacheMb.value) }),
     eventStore: emlEventStore,
     eventBus: emlEventBus,
+    decisions: new DecisionEngine(emlDb, emlMemoryRepo, emlNow),
     embedQuery: emlEmbedQuery,
-    now: () => new Date(),
+    now: emlNow,
   };
   console.log(`EML services ready (enabled: ${eml.enabled}, extraction: ${eml.extraction})`);
 

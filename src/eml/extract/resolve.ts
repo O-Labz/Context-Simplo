@@ -119,6 +119,12 @@ export async function resolveExtraction(
       for (const e of extracted.entityRefs) stmt.run(memory.id, e.kind, e.ref);
     }
 
+    if (memory.kind === 'decision' && eml.decisions) {
+      eml.decisions.fromMemory(memory, {
+        affectedSystems: extracted.entityRefs.map((e) => e.ref),
+      });
+    }
+
     await embedAndLink(memory, eml);
     summary.created.push(memory.id);
   }
