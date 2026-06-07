@@ -109,3 +109,33 @@ body {
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
 }
+
+/* Custom Scrollbar Styling */
+.scrollable-panel {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(113, 124, 130, 0.3) transparent;
+}
+
+.scrollable-panel::-webkit-scrollbar {
+  width: 8px;
+}
+
+.scrollable-panel::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.scrollable-panel::-webkit-scrollbar-thumb {
+  background-color: rgba(113, 124, 130, 0.3);
+  border-radius: 4px;
+  border: 2px solid transparent;
+  background-clip: padding-box;
+}
+
+.scrollable-panel::-webkit-scrollbar-thumb:hover {
+  background-color: rgba(113, 124, 130, 0.5);
+}
+
+/* Smooth scrolling behavior */
+.scrollable-panel {
+  scroll-behavior: smooth;
+}

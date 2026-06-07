@@ -64,7 +64,7 @@ export function MemoryList({ repositoryId }: { repositoryId: string | null }) {
         emptyLabel="No memories captured yet."
       />
       {!loading && !error && !disabled && results.length > 0 && (
-        <ul className="space-y-3 max-h-[28rem] overflow-y-auto pr-1">
+        <ul className="space-y-3 max-h-[36rem] overflow-y-auto pr-2 scrollable-panel">
           {results.map((m) => (
             <li
               key={m.id}
