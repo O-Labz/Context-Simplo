@@ -110,6 +110,163 @@ export class MCPProtocolError extends ContextSimploError {
   }
 }
 
+/**
+ * Base class for all Engineering Memory Layer (EML) domain errors.
+ * Each subclass carries a stable `code` and the canonical `httpStatus`
+ * from the plan's error-to-status table (single source of truth).
+ */
+export abstract class EmlError extends ContextSimploError {
+  abstract readonly httpStatus: number;
+}
+
+export class EmlDisabledError extends EmlError {
+  readonly code = 'eml_disabled';
+  readonly httpStatus = 503;
+
+  constructor() {
+    super('Engineering Memory Layer is disabled (set EML_ENABLED=true)');
+  }
+}
+
+export class MemoryValidationError extends EmlError {
+  readonly code = 'memory_invalid';
+  readonly httpStatus = 400;
+  readonly field?: string;
+
+  constructor(reason: string, field?: string, cause?: Error) {
+    super(`Invalid memory request: ${reason}`, cause);
+    this.field = field;
+  }
+}
+
+export class MemoryNotFoundError extends EmlError {
+  readonly code = 'memory_not_found';
+  readonly httpStatus = 404;
+
+  constructor(memoryId: string) {
+    super(`Memory not found: ${memoryId}`);
+  }
+}
+
+export class DuplicateMemoryError extends EmlError {
+  readonly code = 'memory_duplicate';
+  readonly httpStatus = 409;
+
+  constructor(idempotencyKey: string) {
+    super(`Memory with idempotency key already exists: ${idempotencyKey}`);
+  }
+}
+
+export class EventValidationError extends EmlError {
+  readonly code = 'event_invalid';
+  readonly httpStatus = 400;
+
+  constructor(reason: string, cause?: Error) {
+    super(`Invalid event: ${reason}`, cause);
+  }
+}
+
+export class EventIngestConflictError extends EmlError {
+  readonly code = 'event_duplicate';
+  readonly httpStatus = 409;
+
+  constructor(contentHash: string) {
+    super(`Event already ingested: ${contentHash}`);
+  }
+}
+
+export class LlmUnavailableError extends EmlError {
+  readonly code = 'llm_unavailable';
+  readonly httpStatus = 503;
+
+  constructor(reason: string, cause?: Error) {
+    super(`LLM unavailable: ${reason}`, cause);
+  }
+}
+
+export class GraphQueryError extends EmlError {
+  readonly code = 'graph_query_failed';
+  readonly httpStatus = 500;
+
+  constructor(operation: string, reason: string, cause?: Error) {
+    super(`Graph query '${operation}' failed: ${reason}`, cause);
+  }
+}
+
+export class WebhookSignatureError extends EmlError {
+  readonly code = 'webhook_bad_signature';
+  readonly httpStatus = 401;
+
+  constructor(reason: string = 'signature mismatch') {
+    super(`Webhook signature verification failed: ${reason}`);
+  }
+}
+
+export class VcsAuthError extends EmlError {
+  readonly code = 'vcs_auth_failed';
+  readonly httpStatus = 502;
+
+  constructor(reason: string, cause?: Error) {
+    super(`VCS authentication failed: ${reason}`, cause);
+  }
+}
+
+export class VcsRateLimitError extends EmlError {
+  readonly code = 'vcs_rate_limited';
+  readonly httpStatus = 429;
+  readonly retryAfterSeconds?: number;
+
+  constructor(retryAfterSeconds?: number, cause?: Error) {
+    super('VCS rate limit exceeded', cause);
+    this.retryAfterSeconds = retryAfterSeconds;
+  }
+}
+
+export class RepositoryNotIndexedError extends EmlError {
+  readonly code = 'repo_not_indexed';
+  readonly httpStatus = 404;
+
+  constructor(repositoryId: string) {
+    super(`Repository not indexed: ${repositoryId}`);
+  }
+}
+
+export class ImpactTargetNotFoundError extends EmlError {
+  readonly code = 'impact_target_not_found';
+  readonly httpStatus = 404;
+
+  constructor(targetRef: string) {
+    super(`Impact target not found: ${targetRef}`);
+  }
+}
+
+export class ArchitectureRuleValidationError extends EmlError {
+  readonly code = 'rule_invalid';
+  readonly httpStatus = 400;
+
+  constructor(reason: string, cause?: Error) {
+    super(`Invalid architecture rule: ${reason}`, cause);
+  }
+}
+
+export class ConcurrencyConflictError extends EmlError {
+  readonly code = 'concurrency_conflict';
+  readonly httpStatus = 409;
+
+  constructor(resource: string) {
+    super(`Concurrent update conflict on ${resource}`);
+  }
+}
+
+export class ExtractionError extends EmlError {
+  readonly code = 'extraction_failed';
+  readonly httpStatus = 500;
+
+  constructor(reason: string, cause?: Error) {
+    super(`Extraction failed: ${reason}`, cause);
+  }
+}
+
 export function isRetryableError(error: Error): boolean {
   if (error instanceof LLMError) {
     return error.isRetryable;

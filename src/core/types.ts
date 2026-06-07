@@ -211,6 +211,10 @@ export const ResponseModeSchema = z.enum(['full', 'compact']);
 
 export type ResponseMode = z.infer<typeof ResponseModeSchema>;
 
+export const EmlExtractionModeSchema = z.enum(['llm', 'fallback', 'off']);
+
+export type EmlExtractionMode = z.infer<typeof EmlExtractionModeSchema>;
+
 export const ConfigValueSchema = z.object({
   value: z.unknown(),
   source: ConfigSourceSchema,
@@ -281,6 +285,46 @@ export const AppConfigSchema = z.object({
   }),
   responseMode: z.object({
     value: ResponseModeSchema,
+    source: ConfigSourceSchema,
+    isLocked: z.boolean(),
+  }),
+  emlEnabled: z.object({
+    value: z.boolean(),
+    source: ConfigSourceSchema,
+    isLocked: z.boolean(),
+  }),
+  emlExtraction: z.object({
+    value: EmlExtractionModeSchema,
+    source: ConfigSourceSchema,
+    isLocked: z.boolean(),
+  }),
+  emlWorkerConcurrency: z.object({
+    value: z.number().int().positive(),
+    source: ConfigSourceSchema,
+    isLocked: z.boolean(),
+  }),
+  emlGraphHotCacheMb: z.object({
+    value: z.number().int().positive(),
+    source: ConfigSourceSchema,
+    isLocked: z.boolean(),
+  }),
+  githubToken: z.object({
+    value: z.string().optional(),
+    source: ConfigSourceSchema,
+    isLocked: z.boolean(),
+  }),
+  gitlabToken: z.object({
+    value: z.string().optional(),
+    source: ConfigSourceSchema,
+    isLocked: z.boolean(),
+  }),
+  gitlabHost: z.object({
+    value: z.string().url(),
+    source: ConfigSourceSchema,
+    isLocked: z.boolean(),
+  }),
+  emlWebhookSecret: z.object({
+    value: z.string().optional(),
     source: ConfigSourceSchema,
     isLocked: z.boolean(),
   }),

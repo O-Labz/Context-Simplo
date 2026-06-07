@@ -74,6 +74,7 @@ export class SqliteStorageProvider implements StorageProvider {
 
     const migrationFiles = [
       { version: 1, file: '001_initial.sql', description: 'Complete initial schema with FTS5 and triggers' },
+      { version: 2, file: '002_eml.sql', description: 'Engineering Memory Layer schema' },
     ];
 
     for (const migration of migrationFiles) {
@@ -114,6 +115,14 @@ export class SqliteStorageProvider implements StorageProvider {
   transaction<T>(fn: () => T): T {
     const txn = this.db.transaction(fn);
     return txn();
+  }
+
+  /**
+   * Returns the underlying better-sqlite3 Database handle.
+   * Used by EML subsystems that own their own tables and prepared statements.
+   */
+  getDatabase(): Database.Database {
+    return this.db;
   }
 
   getRepository(id: string): RepositoryInfo | null {
