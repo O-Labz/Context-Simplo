@@ -152,6 +152,7 @@ async function main() {
   const { FreshnessEngine } = await import('./eml/engines/freshness.js');
   const { ContradictionEngine } = await import('./eml/engines/contradiction.js');
   const { IntentEngine } = await import('./eml/engines/intent.js');
+  const { TimelineEngine } = await import('./eml/engines/timeline.js');
   const emlDb = storage.getDatabase();
   const emlEventStore = new EventStore(emlDb);
   const emlEventBus = config.emlEnabled.value
@@ -193,6 +194,7 @@ async function main() {
       now: emlNow,
     }),
     intents: emlIntents,
+    timeline: new TimelineEngine(emlDb, emlMemoryRepo),
     vcs: {
       webhookSecret: config.emlWebhookSecret.value,
       githubToken: config.githubToken.value,
