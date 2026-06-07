@@ -25,6 +25,8 @@ import {
   whoKnows,
   verifyMemory,
   reinforceMemory,
+  trackIntent,
+  listActiveGoals,
   toMemoryView,
 } from '../../eml/mcp/handlers.js';
 
@@ -238,6 +240,31 @@ export async function registerEmlRoutes(
         return reply.send(
           reinforceMemory({ id: request.params.id, repositoryId: request.body?.repositoryId }, eml)
         );
+      } catch (error) {
+        return sendEmlError(reply, error);
+      }
+    }
+  );
+
+  // Intents: track a goal / list active goals.
+  fastify.post('/api/eml/intents', async (request, reply) => {
+    const eml = getEml(reply);
+    if (!eml) return reply;
+    try {
+      return reply.code(201).send(trackIntent(request.body, eml));
+    } catch (error) {
+      return sendEmlError(reply, error);
+    }
+  });
+
+  fastify.get<{ Querystring: { repositoryId?: string; limit?: string } }>(
+    '/api/eml/intents',
+    async (request, reply) => {
+      const eml = getEml(reply);
+      if (!eml) return reply;
+      try {
+        const limit = Math.min(Math.max(parseInt(request.query.limit ?? '50', 10) || 50, 1), 100);
+        return reply.send(listActiveGoals({ repositoryId: request.query.repositoryId, limit }, eml));
       } catch (error) {
         return sendEmlError(reply, error);
       }

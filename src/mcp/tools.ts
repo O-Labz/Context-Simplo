@@ -194,6 +194,19 @@ export const FlagContradictionInputSchema = z.object({
   kind: z.string().min(1).max(64).optional().describe('Contradiction kind'),
 });
 
+export const TrackIntentInputSchema = z.object({
+  repositoryId: RepositoryIdSchema,
+  goal: z.string().min(1).max(200).describe('The goal/intent to track'),
+  category: z.string().min(1).max(64).describe('Category (e.g. perf, refactor, feature)'),
+  priority: z.number().int().min(1).max(5).optional().default(3).describe('Priority 1-5'),
+  targetDate: z.string().min(1).max(40).optional().describe('Optional ISO target date'),
+});
+
+export const ListActiveGoalsInputSchema = z.object({
+  repositoryId: RepositoryIdSchema,
+  limit: z.number().int().min(1).max(100).optional().default(50),
+});
+
 export const TOOL_DEFINITIONS = [
   {
     name: 'index_repository',
@@ -720,6 +733,33 @@ export const TOOL_DEFINITIONS = [
       required: ['repositoryId', 'memoryA', 'memoryB'],
     },
   },
+  {
+    name: 'track_intent',
+    description: 'Track an active engineering goal/intent. Active intents bias memory retrieval toward advancing them.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        repositoryId: { type: 'string', description: '16-hex repository id' },
+        goal: { type: 'string', description: 'The goal/intent to track' },
+        category: { type: 'string', description: 'Category (perf, refactor, feature, ...)' },
+        priority: { type: 'number', description: 'Priority 1-5 (default 3)' },
+        targetDate: { type: 'string', description: 'Optional ISO target date' },
+      },
+      required: ['repositoryId', 'goal', 'category'],
+    },
+  },
+  {
+    name: 'list_active_goals',
+    description: 'List active engineering goals/intents for a repository, highest priority first.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        repositoryId: { type: 'string', description: '16-hex repository id' },
+        limit: { type: 'number', description: 'Max results (default 50)' },
+      },
+      required: ['repositoryId'],
+    },
+  },
 ] as const;
 
 /**
@@ -1110,6 +1150,33 @@ export const TOOL_DEFINITIONS_COMPACT = [
         kind: { type: 'string', description: 'Contradiction kind' },
       },
       required: ['repositoryId', 'memoryA', 'memoryB'],
+    },
+  },
+  {
+    name: 'track_intent',
+    description: 'Track an active goal/intent. Biases retrieval toward advancing it.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        repositoryId: { type: 'string', description: '16-hex repo id' },
+        goal: { type: 'string', description: 'Goal/intent' },
+        category: { type: 'string', description: 'Category' },
+        priority: { type: 'number', description: 'Priority 1-5' },
+        targetDate: { type: 'string', description: 'ISO target date' },
+      },
+      required: ['repositoryId', 'goal', 'category'],
+    },
+  },
+  {
+    name: 'list_active_goals',
+    description: 'List active goals/intents, highest priority first.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        repositoryId: { type: 'string', description: '16-hex repo id' },
+        limit: { type: 'number', description: 'Max results' },
+      },
+      required: ['repositoryId'],
     },
   },
 ] as const;
