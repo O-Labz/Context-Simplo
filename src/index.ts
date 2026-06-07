@@ -357,8 +357,13 @@ async function main() {
           await diffObserver.observe(runner, job.repositoryId, 'HEAD~1', 'HEAD', {
             authorship: gitIngest,
           });
-        } catch {
-          // best-effort: shallow repos / no prior commit / non-git dirs are fine
+        } catch (err) {
+          // Best-effort: shallow repos / no prior commit / non-git dirs are fine.
+          // Surface the reason so a missing `git` binary (e.g. in a container
+          // without git installed) is visible instead of silently swallowed.
+          console.warn(
+            `eml.diff.observe skipped for ${job.repositoryId}: ${(err as Error).message}`
+          );
         }
       })();
     });

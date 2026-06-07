@@ -15,6 +15,7 @@ import type Database from 'better-sqlite3';
 import type { StorageProvider } from '../../store/provider.js';
 import type { EmlExtractionMode } from '../../core/types.js';
 import {
+  ArchitectureRuleValidationError,
   DuplicateMemoryError,
   EmlDisabledError,
   MemoryValidationError,
@@ -476,7 +477,11 @@ export function detectDrift(args: unknown, eml: EmlServices): Record<string, unk
 export function addArchitectureRule(args: unknown, eml: EmlServices): Record<string, unknown> {
   requireEnabled(eml);
   const parsed = AddArchitectureRuleInputSchema.safeParse(args);
-  if (!parsed.success) throw validationFrom(parsed.error);
+  if (!parsed.success) {
+    throw new ArchitectureRuleValidationError(
+      parsed.error.issues.map((i) => `${i.path.join('.')}: ${i.message}`).join('; ')
+    );
+  }
   if (!eml.drift) throw new EmlDisabledError();
   const rule = eml.drift.addRule(parsed.data);
   return rule as unknown as Record<string, unknown>;
