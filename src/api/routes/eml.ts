@@ -15,6 +15,7 @@ import {
   memorySearch,
   whyWasThisChosen,
   haveWeTriedThis,
+  whoKnows,
   toMemoryView,
 } from '../../eml/mcp/handlers.js';
 
@@ -169,6 +170,29 @@ export async function registerEmlRoutes(
           {
             repositoryId: request.query.repositoryId,
             description: request.query.description,
+            limit,
+          },
+          eml
+        );
+        return reply.send(result);
+      } catch (error) {
+        return sendEmlError(reply, error);
+      }
+    }
+  );
+
+  // Ownership: who knows/owns an entity (404 when repo not indexed).
+  fastify.get<{ Querystring: { repositoryId?: string; entityRef?: string; limit?: string } }>(
+    '/api/eml/ownership',
+    async (request, reply) => {
+      const eml = getEml(reply);
+      if (!eml) return reply;
+      try {
+        const limit = Math.min(Math.max(parseInt(request.query.limit ?? '10', 10) || 10, 1), 50);
+        const result = whoKnows(
+          {
+            repositoryId: request.query.repositoryId,
+            entityRef: request.query.entityRef,
             limit,
           },
           eml
