@@ -246,6 +246,8 @@ export class MCPServer {
         return emlHandlers.findKnowledgeGaps(args, this.requireEml());
       case 'detect_drift':
         return emlHandlers.detectDrift(args, this.requireEml());
+      case 'simulate_impact':
+        return emlHandlers.simulateImpact(args, this.requireEml());
       default:
         throw new ValidationError(`Unknown tool: ${name}`);
     }

@@ -36,6 +36,7 @@ import {
   FindKnowledgeGapsInputSchema,
   DetectDriftInputSchema,
   AddArchitectureRuleInputSchema,
+  SimulateImpactInputSchema,
 } from '../../mcp/tools.js';
 import type { MemoryObject, MemoryRepo } from '../store/memory-repo.js';
 import type { MemoryVectorStore } from '../store/memory-vectors.js';
@@ -51,6 +52,7 @@ import type { IntentEngine } from '../engines/intent.js';
 import type { TimelineEngine } from '../engines/timeline.js';
 import type { GapsEngine } from '../engines/gaps.js';
 import type { DriftEngine } from '../engines/drift.js';
+import type { ImpactSimEngine } from '../engines/impact-sim.js';
 import { gatherCandidates, type QueryEmbedder } from '../retrieval/candidates.js';
 import { rankMemories, type RankOptions } from '../retrieval/rank.js';
 
@@ -73,6 +75,7 @@ export interface EmlServices {
   timeline?: TimelineEngine;
   gaps?: GapsEngine;
   drift?: DriftEngine;
+  impactSim?: ImpactSimEngine;
   vcs?: {
     webhookSecret?: string;
     githubToken?: string;
@@ -477,6 +480,15 @@ export function addArchitectureRule(args: unknown, eml: EmlServices): Record<str
   if (!eml.drift) throw new EmlDisabledError();
   const rule = eml.drift.addRule(parsed.data);
   return rule as unknown as Record<string, unknown>;
+}
+
+export function simulateImpact(args: unknown, eml: EmlServices): Record<string, unknown> {
+  requireEnabled(eml);
+  const parsed = SimulateImpactInputSchema.safeParse(args);
+  if (!parsed.success) throw validationFrom(parsed.error);
+  if (!eml.impactSim) throw new EmlDisabledError();
+  const result = eml.impactSim.simulate(parsed.data);
+  return result as unknown as Record<string, unknown>;
 }
 
 export function flagContradiction(args: unknown, eml: EmlServices): Record<string, unknown> {

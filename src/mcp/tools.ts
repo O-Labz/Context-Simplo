@@ -224,6 +224,13 @@ export const DetectDriftInputSchema = z.object({
   repositoryId: RepositoryIdSchema,
 });
 
+export const SimulateImpactInputSchema = z.object({
+  repositoryId: RepositoryIdSchema,
+  op: z.enum(['delete', 'rename', 'interface-removal', 'dependency-removal']),
+  targetRef: z.string().min(1),
+  newRef: z.string().min(1).optional(),
+});
+
 export const AddArchitectureRuleInputSchema = z.object({
   repositoryId: RepositoryIdSchema,
   ruleType: z.enum(['layer', 'allowed_dep', 'forbidden_dep', 'naming']),
@@ -825,6 +832,25 @@ export const TOOL_DEFINITIONS = [
       required: ['repositoryId'],
     },
   },
+  {
+    name: 'simulate_impact',
+    description:
+      'Simulate the blast radius of a change (delete/rename/interface-removal/dependency-removal): affected files/symbols, owners to notify, and rule violations introduced.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        repositoryId: { type: 'string', description: '16-hex repository id' },
+        op: {
+          type: 'string',
+          enum: ['delete', 'rename', 'interface-removal', 'dependency-removal'],
+          description: 'The change operation to simulate',
+        },
+        targetRef: { type: 'string', description: 'Entity ref to change (file/symbol/service)' },
+        newRef: { type: 'string', description: 'New ref (for rename ops)' },
+      },
+      required: ['repositoryId', 'op', 'targetRef'],
+    },
+  },
 ] as const;
 
 /**
@@ -1280,6 +1306,24 @@ export const TOOL_DEFINITIONS_COMPACT = [
         repositoryId: { type: 'string', description: '16-hex repo id' },
       },
       required: ['repositoryId'],
+    },
+  },
+  {
+    name: 'simulate_impact',
+    description: 'Simulate change blast radius: affected entities, owners to notify, rule violations.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        repositoryId: { type: 'string', description: '16-hex repo id' },
+        op: {
+          type: 'string',
+          enum: ['delete', 'rename', 'interface-removal', 'dependency-removal'],
+          description: 'Change op',
+        },
+        targetRef: { type: 'string', description: 'Entity ref' },
+        newRef: { type: 'string', description: 'New ref (rename)' },
+      },
+      required: ['repositoryId', 'op', 'targetRef'],
     },
   },
 ] as const;
