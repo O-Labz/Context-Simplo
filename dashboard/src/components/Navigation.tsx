@@ -28,6 +28,7 @@ export default function Navigation() {
     { path: '/', label: 'Repositories' },
     { path: '/search', label: 'Search' },
     { path: '/explorer', label: 'Explorer' },
+    { path: '/memory', label: 'Memory' },
     { path: '/mcp-setup', label: 'MCP Setup' },
     { path: '/metrics', label: 'Metrics' },
   ];
