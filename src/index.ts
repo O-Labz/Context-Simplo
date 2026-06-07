@@ -155,6 +155,7 @@ async function main() {
   const { TimelineEngine } = await import('./eml/engines/timeline.js');
   const { GapsEngine } = await import('./eml/engines/gaps.js');
   const { DriftEngine } = await import('./eml/engines/drift.js');
+  const { ImpactSimEngine } = await import('./eml/engines/impact-sim.js');
   const emlDb = storage.getDatabase();
   const emlEventStore = new EventStore(emlDb);
   const emlEventBus = config.emlEnabled.value
@@ -177,6 +178,8 @@ async function main() {
   const emlNow = (): Date => new Date();
   const emlGraph = new SqliteGraphStore(emlDb, { cache: new HotCache(config.emlGraphHotCacheMb.value) });
   const emlIntents = new IntentEngine(emlDb, emlMemoryRepo);
+  const emlOwnership = new OwnershipEngine(emlDb, emlGraph, { eventStore: emlEventStore, now: emlNow });
+  const emlDrift = new DriftEngine(emlDb, { eventStore: emlEventStore });
   const eml: import('./eml/mcp/handlers.js').EmlServices = {
     enabled: config.emlEnabled.value,
     extraction: config.emlExtraction.value,
@@ -189,7 +192,7 @@ async function main() {
     eventBus: emlEventBus,
     decisions: new DecisionEngine(emlDb, emlMemoryRepo, emlNow),
     failures: new FailureEngine(emlDb, emlMemoryRepo),
-    ownership: new OwnershipEngine(emlDb, emlGraph, { eventStore: emlEventStore, now: emlNow }),
+    ownership: emlOwnership,
     freshness: new FreshnessEngine(emlMemoryRepo, { eventStore: emlEventStore, now: emlNow }),
     contradictions: new ContradictionEngine(emlDb, emlGraph, emlMemoryRepo, {
       eventStore: emlEventStore,
@@ -197,10 +200,9 @@ async function main() {
     }),
     intents: emlIntents,
     timeline: new TimelineEngine(emlDb, emlMemoryRepo),
-    gaps: new GapsEngine(emlDb, {
-      ownership: new OwnershipEngine(emlDb, emlGraph, { eventStore: emlEventStore, now: emlNow }),
-    }),
-    drift: new DriftEngine(emlDb, { eventStore: emlEventStore }),
+    gaps: new GapsEngine(emlDb, { ownership: emlOwnership }),
+    drift: emlDrift,
+    impactSim: new ImpactSimEngine(emlDb, { ownership: emlOwnership, drift: emlDrift }),
     vcs: {
       webhookSecret: config.emlWebhookSecret.value,
       githubToken: config.githubToken.value,

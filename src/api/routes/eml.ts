@@ -31,6 +31,7 @@ import {
   findKnowledgeGaps,
   detectDrift,
   addArchitectureRule,
+  simulateImpact,
   toMemoryView,
 } from '../../eml/mcp/handlers.js';
 
@@ -337,6 +338,17 @@ export async function registerEmlRoutes(
     if (!eml) return reply;
     try {
       return reply.send(detectDrift({ repositoryId: request.query.repositoryId }, eml));
+    } catch (error) {
+      return sendEmlError(reply, error);
+    }
+  });
+
+  // Impact simulation: predict blast radius of a structural change.
+  fastify.post<{ Body: Record<string, unknown> }>('/api/eml/simulate', async (request, reply) => {
+    const eml = getEml(reply);
+    if (!eml) return reply;
+    try {
+      return reply.send(simulateImpact(request.body ?? {}, eml));
     } catch (error) {
       return sendEmlError(reply, error);
     }
