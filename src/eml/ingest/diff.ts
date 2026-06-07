@@ -44,13 +44,22 @@ export function assertSafeRev(rev: string): void {
   }
 }
 
-interface NameStatusEntry {
+export interface NameStatusEntry {
   status: string;
   path: string;
   oldPath?: string;
 }
 
-function parseNameStatus(raw: string): NameStatusEntry[] {
+/**
+ * Optional hook that records git authorship/ownership for the observed
+ * revision. Implemented by the git ingest engine; kept as an interface here to
+ * avoid an import cycle.
+ */
+export interface AuthorshipRecorder {
+  recordForRevision(runner: GitDiffRunner, repositoryId: string, rev: string): Promise<void>;
+}
+
+export function parseNameStatus(raw: string): NameStatusEntry[] {
   const out: NameStatusEntry[] = [];
   for (const line of raw.split('\n')) {
     if (!line.trim()) continue;
@@ -180,7 +189,7 @@ export class DiffObserver {
     repositoryId: string,
     fromRev: string,
     toRev: string,
-    opts: { commitMessage?: string; sourceRef?: string } = {}
+    opts: { commitMessage?: string; sourceRef?: string; authorship?: AuthorshipRecorder } = {}
   ): Promise<DiffObserveResult> {
     assertSafeRev(fromRev);
     assertSafeRev(toRev);
@@ -215,6 +224,15 @@ export class DiffObserver {
         truncated,
       },
     });
+
+    // Attach git authorship/ownership signals alongside the diff (best-effort).
+    if (opts.authorship) {
+      try {
+        await opts.authorship.recordForRevision(runner, repositoryId, toRev);
+      } catch {
+        // authorship is supplementary; never fail the diff observation
+      }
+    }
 
     return {
       eventId: id,
