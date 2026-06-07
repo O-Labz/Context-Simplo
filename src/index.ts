@@ -150,6 +150,7 @@ async function main() {
   const { FailureEngine } = await import('./eml/engines/failure.js');
   const { OwnershipEngine } = await import('./eml/engines/ownership.js');
   const { FreshnessEngine } = await import('./eml/engines/freshness.js');
+  const { ContradictionEngine } = await import('./eml/engines/contradiction.js');
   const emlDb = storage.getDatabase();
   const emlEventStore = new EventStore(emlDb);
   const emlEventBus = config.emlEnabled.value
@@ -185,6 +186,10 @@ async function main() {
     failures: new FailureEngine(emlDb, emlMemoryRepo),
     ownership: new OwnershipEngine(emlDb, emlGraph, { eventStore: emlEventStore, now: emlNow }),
     freshness: new FreshnessEngine(emlMemoryRepo, { eventStore: emlEventStore, now: emlNow }),
+    contradictions: new ContradictionEngine(emlDb, emlGraph, emlMemoryRepo, {
+      eventStore: emlEventStore,
+      now: emlNow,
+    }),
     vcs: {
       webhookSecret: config.emlWebhookSecret.value,
       githubToken: config.githubToken.value,

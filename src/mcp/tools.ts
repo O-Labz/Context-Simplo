@@ -187,6 +187,13 @@ export const MemoryIdActionInputSchema = z.object({
   repositoryId: RepositoryIdSchema,
 });
 
+export const FlagContradictionInputSchema = z.object({
+  repositoryId: RepositoryIdSchema,
+  memoryA: z.string().min(1).max(128).describe('First memory id'),
+  memoryB: z.string().min(1).max(128).describe('Second memory id'),
+  kind: z.string().min(1).max(64).optional().describe('Contradiction kind'),
+});
+
 export const TOOL_DEFINITIONS = [
   {
     name: 'index_repository',
@@ -699,6 +706,20 @@ export const TOOL_DEFINITIONS = [
       required: ['id', 'repositoryId'],
     },
   },
+  {
+    name: 'flag_contradiction',
+    description: 'Manually flag two memories as contradictory. Records the pair, draws a CONTRADICTS edge, lowers confidence.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        repositoryId: { type: 'string', description: '16-hex repository id' },
+        memoryA: { type: 'string', description: 'First memory id' },
+        memoryB: { type: 'string', description: 'Second memory id' },
+        kind: { type: 'string', description: 'Contradiction kind' },
+      },
+      required: ['repositoryId', 'memoryA', 'memoryB'],
+    },
+  },
 ] as const;
 
 /**
@@ -1075,6 +1096,20 @@ export const TOOL_DEFINITIONS_COMPACT = [
         repositoryId: { type: 'string', description: '16-hex repo id' },
       },
       required: ['id', 'repositoryId'],
+    },
+  },
+  {
+    name: 'flag_contradiction',
+    description: 'Flag two memories as contradictory. Records pair + CONTRADICTS edge, lowers confidence.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        repositoryId: { type: 'string', description: '16-hex repo id' },
+        memoryA: { type: 'string', description: 'First memory id' },
+        memoryB: { type: 'string', description: 'Second memory id' },
+        kind: { type: 'string', description: 'Contradiction kind' },
+      },
+      required: ['repositoryId', 'memoryA', 'memoryB'],
     },
   },
 ] as const;

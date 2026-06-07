@@ -29,6 +29,7 @@ import {
   HaveWeTriedThisInputSchema,
   WhoKnowsInputSchema,
   MemoryIdActionInputSchema,
+  FlagContradictionInputSchema,
 } from '../../mcp/tools.js';
 import type { MemoryObject, MemoryRepo } from '../store/memory-repo.js';
 import type { MemoryVectorStore } from '../store/memory-vectors.js';
@@ -39,6 +40,7 @@ import type { DecisionEngine } from '../engines/decision.js';
 import type { FailureEngine } from '../engines/failure.js';
 import type { OwnershipEngine } from '../engines/ownership.js';
 import type { FreshnessEngine } from '../engines/freshness.js';
+import type { ContradictionEngine } from '../engines/contradiction.js';
 import { gatherCandidates, type QueryEmbedder } from '../retrieval/candidates.js';
 import { rankMemories, type RankOptions } from '../retrieval/rank.js';
 
@@ -56,6 +58,7 @@ export interface EmlServices {
   failures?: FailureEngine;
   ownership?: OwnershipEngine;
   freshness?: FreshnessEngine;
+  contradictions?: ContradictionEngine;
   vcs?: {
     webhookSecret?: string;
     githubToken?: string;
@@ -392,4 +395,16 @@ export function reinforceMemory(args: unknown, eml: EmlServices): Record<string,
   if (!eml.freshness) return { id: input.id };
   const updated = eml.freshness.reinforce(input.id);
   return toMemoryView(updated);
+}
+
+export function flagContradiction(args: unknown, eml: EmlServices): Record<string, unknown> {
+  requireEnabled(eml);
+  const parsed = FlagContradictionInputSchema.safeParse(args);
+  if (!parsed.success) throw validationFrom(parsed.error);
+  const input = parsed.data;
+  loadScopedMemory(eml, input.memoryA, input.repositoryId);
+  loadScopedMemory(eml, input.memoryB, input.repositoryId);
+  if (!eml.contradictions) return { recorded: false };
+  const record = eml.contradictions.flag(input.memoryA, input.memoryB, input.kind);
+  return record ? { recorded: true, ...record } : { recorded: false };
 }
