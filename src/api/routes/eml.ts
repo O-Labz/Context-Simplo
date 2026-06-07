@@ -29,6 +29,8 @@ import {
   listActiveGoals,
   showEvolution,
   findKnowledgeGaps,
+  detectDrift,
+  addArchitectureRule,
   toMemoryView,
 } from '../../eml/mcp/handlers.js';
 
@@ -316,6 +318,29 @@ export async function registerEmlRoutes(
       }
     }
   );
+
+  // Architecture rules: declare a rule.
+  fastify.post<{ Body: Record<string, unknown> }>('/api/eml/rules', async (request, reply) => {
+    const eml = getEml(reply);
+    if (!eml) return reply;
+    try {
+      const rule = addArchitectureRule(request.body ?? {}, eml);
+      return reply.status(201).send(rule);
+    } catch (error) {
+      return sendEmlError(reply, error);
+    }
+  });
+
+  // Architecture drift: evaluate declared rules against actual edges.
+  fastify.get<{ Querystring: { repositoryId?: string } }>('/api/eml/drift', async (request, reply) => {
+    const eml = getEml(reply);
+    if (!eml) return reply;
+    try {
+      return reply.send(detectDrift({ repositoryId: request.query.repositoryId }, eml));
+    } catch (error) {
+      return sendEmlError(reply, error);
+    }
+  });
 
   // Webhook receivers run in an encapsulated scope so we can capture the raw
   // request body (required for HMAC verification) without affecting the JSON

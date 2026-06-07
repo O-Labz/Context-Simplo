@@ -34,6 +34,8 @@ import {
   ListActiveGoalsInputSchema,
   ShowEvolutionInputSchema,
   FindKnowledgeGapsInputSchema,
+  DetectDriftInputSchema,
+  AddArchitectureRuleInputSchema,
 } from '../../mcp/tools.js';
 import type { MemoryObject, MemoryRepo } from '../store/memory-repo.js';
 import type { MemoryVectorStore } from '../store/memory-vectors.js';
@@ -48,6 +50,7 @@ import type { ContradictionEngine } from '../engines/contradiction.js';
 import type { IntentEngine } from '../engines/intent.js';
 import type { TimelineEngine } from '../engines/timeline.js';
 import type { GapsEngine } from '../engines/gaps.js';
+import type { DriftEngine } from '../engines/drift.js';
 import { gatherCandidates, type QueryEmbedder } from '../retrieval/candidates.js';
 import { rankMemories, type RankOptions } from '../retrieval/rank.js';
 
@@ -69,6 +72,7 @@ export interface EmlServices {
   intents?: IntentEngine;
   timeline?: TimelineEngine;
   gaps?: GapsEngine;
+  drift?: DriftEngine;
   vcs?: {
     webhookSecret?: string;
     githubToken?: string;
@@ -455,6 +459,24 @@ export function findKnowledgeGaps(args: unknown, eml: EmlServices): Record<strin
   if (!eml.gaps) return { gaps: [], total: 0 };
   const gaps = eml.gaps.findKnowledgeGaps(input.repositoryId, { limit: input.limit });
   return { gaps, total: gaps.length } as unknown as Record<string, unknown>;
+}
+
+export function detectDrift(args: unknown, eml: EmlServices): Record<string, unknown> {
+  requireEnabled(eml);
+  const parsed = DetectDriftInputSchema.safeParse(args);
+  if (!parsed.success) throw validationFrom(parsed.error);
+  if (!eml.drift) return { violations: [], total: 0 };
+  const violations = eml.drift.detectDrift(parsed.data.repositoryId);
+  return { violations, total: violations.length } as unknown as Record<string, unknown>;
+}
+
+export function addArchitectureRule(args: unknown, eml: EmlServices): Record<string, unknown> {
+  requireEnabled(eml);
+  const parsed = AddArchitectureRuleInputSchema.safeParse(args);
+  if (!parsed.success) throw validationFrom(parsed.error);
+  if (!eml.drift) throw new EmlDisabledError();
+  const rule = eml.drift.addRule(parsed.data);
+  return rule as unknown as Record<string, unknown>;
 }
 
 export function flagContradiction(args: unknown, eml: EmlServices): Record<string, unknown> {

@@ -220,6 +220,17 @@ export const FindKnowledgeGapsInputSchema = z.object({
   limit: z.number().int().min(1).max(100).optional().default(20),
 });
 
+export const DetectDriftInputSchema = z.object({
+  repositoryId: RepositoryIdSchema,
+});
+
+export const AddArchitectureRuleInputSchema = z.object({
+  repositoryId: RepositoryIdSchema,
+  ruleType: z.enum(['layer', 'allowed_dep', 'forbidden_dep', 'naming']),
+  spec: z.unknown(),
+  source: z.enum(['declared', 'inferred']).optional().default('declared'),
+});
+
 export const TOOL_DEFINITIONS = [
   {
     name: 'index_repository',
@@ -802,6 +813,18 @@ export const TOOL_DEFINITIONS = [
       required: ['repositoryId'],
     },
   },
+  {
+    name: 'detect_drift',
+    description:
+      'Detect architecture drift: forbidden/disallowed dependencies, layer violations, and naming violations against declared rules.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        repositoryId: { type: 'string', description: '16-hex repository id' },
+      },
+      required: ['repositoryId'],
+    },
+  },
 ] as const;
 
 /**
@@ -1244,6 +1267,17 @@ export const TOOL_DEFINITIONS_COMPACT = [
       properties: {
         repositoryId: { type: 'string', description: '16-hex repo id' },
         limit: { type: 'number', description: 'Max gaps (max 100)' },
+      },
+      required: ['repositoryId'],
+    },
+  },
+  {
+    name: 'detect_drift',
+    description: 'Detect architecture drift (forbidden deps, layer/naming violations) vs declared rules.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        repositoryId: { type: 'string', description: '16-hex repo id' },
       },
       required: ['repositoryId'],
     },
