@@ -26,7 +26,7 @@ export function IntentsPanel({ repositoryId }: { repositoryId: string | null }) 
         emptyLabel="No active goals tracked."
       />
       {!loading && !error && !disabled && intents.length > 0 && (
-        <ul className="space-y-2 max-h-[28rem] overflow-y-auto pr-1">
+        <ul className="space-y-2 max-h-[36rem] overflow-y-auto pr-2 scrollable-panel">
           {intents.map((it) => (
             <li key={it.memoryId} className="p-3 rounded-xl border border-outline-variant/15">
               <div className="flex items-center justify-between gap-3">

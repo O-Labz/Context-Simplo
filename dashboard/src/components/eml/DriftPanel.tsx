@@ -35,7 +35,7 @@ export function DriftPanel({ repositoryId }: { repositoryId: string | null }) {
         emptyLabel="No drift detected. Architecture matches declared rules."
       />
       {!loading && !error && !disabled && violations.length > 0 && (
-        <ul className="space-y-2 max-h-[28rem] overflow-y-auto pr-1">
+        <ul className="space-y-2 max-h-[36rem] overflow-y-auto pr-2 scrollable-panel">
           {violations.map((v, i) => (
             <li key={`${v.ruleId}-${i}`} className="p-3 rounded-xl bg-error/5 border border-error/20">
               <div className="flex items-center gap-2 mb-1">

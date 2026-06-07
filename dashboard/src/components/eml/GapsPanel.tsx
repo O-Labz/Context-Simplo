@@ -30,7 +30,7 @@ export function GapsPanel({ repositoryId }: { repositoryId: string | null }) {
         emptyLabel="No knowledge gaps detected."
       />
       {!loading && !error && !disabled && gaps.length > 0 && (
-        <ul className="space-y-2 max-h-[28rem] overflow-y-auto pr-1">
+        <ul className="space-y-2 max-h-[36rem] overflow-y-auto pr-2 scrollable-panel">
           {gaps.map((g) => (
             <li key={g.entityRef} className="p-3 rounded-xl border border-outline-variant/15">
               <div className="flex items-center justify-between gap-3">

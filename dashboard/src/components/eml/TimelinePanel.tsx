@@ -30,7 +30,7 @@ export function TimelinePanel({ repositoryId }: { repositoryId: string | null })
         emptyLabel="No timeline events yet."
       />
       {!loading && !error && !disabled && entries.length > 0 && (
-        <ol className="relative border-l border-outline-variant/30 ml-2 space-y-4 max-h-[28rem] overflow-y-auto">
+        <ol className="relative border-l border-outline-variant/30 ml-2 space-y-4 max-h-[36rem] overflow-y-auto pr-2 scrollable-panel">
           {entries.map((e) => (
             <li key={`${e.kind}-${e.id}`} className="ml-4">
               <span
