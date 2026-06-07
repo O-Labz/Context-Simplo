@@ -182,6 +182,11 @@ export const WhoKnowsInputSchema = z.object({
   limit: z.number().int().min(1).max(50).optional().default(10),
 });
 
+export const MemoryIdActionInputSchema = z.object({
+  id: z.string().min(1).max(128).describe('Memory id'),
+  repositoryId: RepositoryIdSchema,
+});
+
 export const TOOL_DEFINITIONS = [
   {
     name: 'index_repository',
@@ -670,6 +675,30 @@ export const TOOL_DEFINITIONS = [
       required: ['repositoryId', 'entityRef'],
     },
   },
+  {
+    name: 'verify_memory',
+    description: 'Mark a memory as verified now: refreshes recency and recomputes confidence.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        id: { type: 'string', description: 'Memory id' },
+        repositoryId: { type: 'string', description: '16-hex repository id' },
+      },
+      required: ['id', 'repositoryId'],
+    },
+  },
+  {
+    name: 'reinforce_memory',
+    description: 'Reinforce a memory: bumps source count, refreshes recency, recomputes confidence.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        id: { type: 'string', description: 'Memory id' },
+        repositoryId: { type: 'string', description: '16-hex repository id' },
+      },
+      required: ['id', 'repositoryId'],
+    },
+  },
 ] as const;
 
 /**
@@ -1022,6 +1051,30 @@ export const TOOL_DEFINITIONS_COMPACT = [
         limit: { type: 'number', description: 'Max results' },
       },
       required: ['repositoryId', 'entityRef'],
+    },
+  },
+  {
+    name: 'verify_memory',
+    description: 'Verify a memory now. Refresh recency + recompute confidence.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        id: { type: 'string', description: 'Memory id' },
+        repositoryId: { type: 'string', description: '16-hex repo id' },
+      },
+      required: ['id', 'repositoryId'],
+    },
+  },
+  {
+    name: 'reinforce_memory',
+    description: 'Reinforce a memory. Bump source count + refresh + recompute confidence.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        id: { type: 'string', description: 'Memory id' },
+        repositoryId: { type: 'string', description: '16-hex repo id' },
+      },
+      required: ['id', 'repositoryId'],
     },
   },
 ] as const;

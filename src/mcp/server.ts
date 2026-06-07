@@ -230,6 +230,10 @@ export class MCPServer {
         return emlHandlers.haveWeTriedThis(args, this.requireEml());
       case 'who_knows':
         return emlHandlers.whoKnows(args, this.requireEml());
+      case 'verify_memory':
+        return emlHandlers.verifyMemory(args, this.requireEml());
+      case 'reinforce_memory':
+        return emlHandlers.reinforceMemory(args, this.requireEml());
       default:
         throw new ValidationError(`Unknown tool: ${name}`);
     }
