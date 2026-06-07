@@ -118,6 +118,126 @@ export const QueryGraphInputSchema = z.object({
   parameters: z.record(z.unknown()).optional().describe('Query parameters'),
 });
 
+// --- Engineering Memory Layer (EML) tool input schemas ---
+
+const RepositoryIdSchema = z
+  .string()
+  .regex(/^[0-9a-f]{16}$/)
+  .describe('16-hex repository id');
+
+export const MemoryKindToolSchema = z.enum(['decision', 'failure', 'intent', 'gap', 'ownership', 'note']);
+
+export const MemoryRememberInputSchema = z.object({
+  kind: MemoryKindToolSchema.describe('Memory kind'),
+  title: z.string().min(1).max(200).describe('Short title'),
+  summary: z.string().max(2000).optional().describe('One-paragraph summary'),
+  body: z.string().max(20000).optional().describe('Full memory body'),
+  repositoryId: RepositoryIdSchema,
+  idempotencyKey: z.string().min(1).max(128).optional().describe('Dedup key for safe re-submit'),
+  entityRefs: z
+    .array(
+      z.object({
+        kind: z.enum(['node', 'file', 'service', 'symbol']),
+        ref: z.string().min(1),
+      })
+    )
+    .optional()
+    .describe('Code entities this memory relates to'),
+});
+
+export const MemoryRecallInputSchema = z.object({
+  id: z.string().min(1).max(128).optional().describe('Memory id to recall'),
+  repositoryId: RepositoryIdSchema,
+  entityRef: z.string().optional().describe('Recall memories linked to this entity ref'),
+  limit: z.number().int().min(1).max(100).optional().default(10),
+});
+
+export const MemorySearchInputSchema = z.object({
+  query: z.string().min(1).describe('Search query'),
+  repositoryId: RepositoryIdSchema,
+  limit: z.number().int().min(1).max(100).optional().default(10),
+  kind: MemoryKindToolSchema.optional().describe('Optional kind filter'),
+});
+
+export const WhyWasThisChosenInputSchema = z
+  .object({
+    repositoryId: RepositoryIdSchema,
+    topic: z.string().min(1).optional().describe('Topic/keywords to search decisions for'),
+    entityRef: z.string().min(1).optional().describe('Entity ref (file/symbol/service) the decision affects'),
+    limit: z.number().int().min(1).max(50).optional().default(10),
+  })
+  .refine((v) => Boolean(v.topic) || Boolean(v.entityRef), {
+    message: 'one of topic or entityRef is required',
+  });
+
+export const HaveWeTriedThisInputSchema = z.object({
+  repositoryId: RepositoryIdSchema,
+  description: z.string().min(1).describe('Describe the approach/idea to check against past failures'),
+  limit: z.number().int().min(1).max(50).optional().default(10),
+});
+
+export const WhoKnowsInputSchema = z.object({
+  repositoryId: RepositoryIdSchema,
+  entityRef: z.string().min(1).describe('Entity ref (file/service/symbol) to find owners for'),
+  limit: z.number().int().min(1).max(50).optional().default(10),
+});
+
+export const MemoryIdActionInputSchema = z.object({
+  id: z.string().min(1).max(128).describe('Memory id'),
+  repositoryId: RepositoryIdSchema,
+});
+
+export const FlagContradictionInputSchema = z.object({
+  repositoryId: RepositoryIdSchema,
+  memoryA: z.string().min(1).max(128).describe('First memory id'),
+  memoryB: z.string().min(1).max(128).describe('Second memory id'),
+  kind: z.string().min(1).max(64).optional().describe('Contradiction kind'),
+});
+
+export const TrackIntentInputSchema = z.object({
+  repositoryId: RepositoryIdSchema,
+  goal: z.string().min(1).max(200).describe('The goal/intent to track'),
+  category: z.string().min(1).max(64).describe('Category (e.g. perf, refactor, feature)'),
+  priority: z.number().int().min(1).max(5).optional().default(3).describe('Priority 1-5'),
+  targetDate: z.string().min(1).max(40).optional().describe('Optional ISO target date'),
+});
+
+export const ListActiveGoalsInputSchema = z.object({
+  repositoryId: RepositoryIdSchema,
+  limit: z.number().int().min(1).max(100).optional().default(50),
+});
+
+export const ShowEvolutionInputSchema = z.object({
+  repositoryId: RepositoryIdSchema,
+  entityRef: z.string().min(1).optional().describe('Entity ref (file/symbol/service)'),
+  topic: z.string().min(1).optional().describe('Topic/keywords'),
+  limit: z.number().int().min(1).max(200).optional().default(50),
+  offset: z.number().int().min(0).optional().default(0),
+});
+
+export const FindKnowledgeGapsInputSchema = z.object({
+  repositoryId: RepositoryIdSchema,
+  limit: z.number().int().min(1).max(100).optional().default(20),
+});
+
+export const DetectDriftInputSchema = z.object({
+  repositoryId: RepositoryIdSchema,
+});
+
+export const SimulateImpactInputSchema = z.object({
+  repositoryId: RepositoryIdSchema,
+  op: z.enum(['delete', 'rename', 'interface-removal', 'dependency-removal']),
+  targetRef: z.string().min(1),
+  newRef: z.string().min(1).optional(),
+});
+
+export const AddArchitectureRuleInputSchema = z.object({
+  repositoryId: RepositoryIdSchema,
+  ruleType: z.enum(['layer', 'allowed_dep', 'forbidden_dep', 'naming']),
+  spec: z.unknown(),
+  source: z.enum(['declared', 'inferred']).optional().default('declared'),
+});
+
 export const TOOL_DEFINITIONS = [
   {
     name: 'index_repository',
@@ -498,6 +618,239 @@ export const TOOL_DEFINITIONS = [
       required: ['query'],
     },
   },
+  {
+    name: 'memory_remember',
+    description:
+      'Persist an engineering memory (decision/failure/intent/gap/ownership/note) for later recall. Shared across all MCP clients.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        kind: {
+          type: 'string',
+          enum: ['decision', 'failure', 'intent', 'gap', 'ownership', 'note'],
+          description: 'Memory kind',
+        },
+        title: { type: 'string', description: 'Short title' },
+        summary: { type: 'string', description: 'One-paragraph summary' },
+        body: { type: 'string', description: 'Full memory body' },
+        repositoryId: { type: 'string', description: '16-hex repository id' },
+        idempotencyKey: { type: 'string', description: 'Dedup key for safe re-submit' },
+        entityRefs: {
+          type: 'array',
+          description: 'Code entities this memory relates to',
+          items: {
+            type: 'object',
+            properties: {
+              kind: { type: 'string', enum: ['node', 'file', 'service', 'symbol'] },
+              ref: { type: 'string' },
+            },
+            required: ['kind', 'ref'],
+          },
+        },
+      },
+      required: ['kind', 'title', 'repositoryId'],
+    },
+  },
+  {
+    name: 'memory_recall',
+    description: 'Recall a stored memory by id, or memories linked to a code entity.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        id: { type: 'string', description: 'Memory id to recall' },
+        repositoryId: { type: 'string', description: '16-hex repository id' },
+        entityRef: { type: 'string', description: 'Recall memories linked to this entity ref' },
+        limit: { type: 'number', description: 'Max results (default 10)' },
+      },
+      required: ['repositoryId'],
+    },
+  },
+  {
+    name: 'memory_search',
+    description: 'Search engineering memories by meaning + text, ranked by relevance/confidence/freshness.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        query: { type: 'string', description: 'Search query' },
+        repositoryId: { type: 'string', description: '16-hex repository id' },
+        limit: { type: 'number', description: 'Max results (default 10)' },
+        kind: {
+          type: 'string',
+          enum: ['decision', 'failure', 'intent', 'gap', 'ownership', 'note'],
+          description: 'Optional kind filter',
+        },
+      },
+      required: ['query', 'repositoryId'],
+    },
+  },
+  {
+    name: 'why_was_this_chosen',
+    description:
+      'Explain architectural decisions for a topic or entity: returns rationale, alternatives, and tradeoffs. Empty list when none found.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        repositoryId: { type: 'string', description: '16-hex repository id' },
+        topic: { type: 'string', description: 'Topic/keywords to search decisions for' },
+        entityRef: { type: 'string', description: 'Entity ref (file/symbol/service) the decision affects' },
+        limit: { type: 'number', description: 'Max results (default 10)' },
+      },
+      required: ['repositoryId'],
+    },
+  },
+  {
+    name: 'have_we_tried_this',
+    description:
+      'Check whether an approach was already attempted and failed: returns similar past failures with lessons learned. Empty list when none found.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        repositoryId: { type: 'string', description: '16-hex repository id' },
+        description: { type: 'string', description: 'Describe the approach/idea to check' },
+        limit: { type: 'number', description: 'Max results (default 10)' },
+      },
+      required: ['repositoryId', 'description'],
+    },
+  },
+  {
+    name: 'who_knows',
+    description:
+      'Find who knows/owns a file, service, or symbol: returns people ranked by ownership signal volume and recency. Empty list when no signals.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        repositoryId: { type: 'string', description: '16-hex repository id' },
+        entityRef: { type: 'string', description: 'Entity ref (file/service/symbol)' },
+        limit: { type: 'number', description: 'Max results (default 10)' },
+      },
+      required: ['repositoryId', 'entityRef'],
+    },
+  },
+  {
+    name: 'verify_memory',
+    description: 'Mark a memory as verified now: refreshes recency and recomputes confidence.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        id: { type: 'string', description: 'Memory id' },
+        repositoryId: { type: 'string', description: '16-hex repository id' },
+      },
+      required: ['id', 'repositoryId'],
+    },
+  },
+  {
+    name: 'reinforce_memory',
+    description: 'Reinforce a memory: bumps source count, refreshes recency, recomputes confidence.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        id: { type: 'string', description: 'Memory id' },
+        repositoryId: { type: 'string', description: '16-hex repository id' },
+      },
+      required: ['id', 'repositoryId'],
+    },
+  },
+  {
+    name: 'flag_contradiction',
+    description: 'Manually flag two memories as contradictory. Records the pair, draws a CONTRADICTS edge, lowers confidence.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        repositoryId: { type: 'string', description: '16-hex repository id' },
+        memoryA: { type: 'string', description: 'First memory id' },
+        memoryB: { type: 'string', description: 'Second memory id' },
+        kind: { type: 'string', description: 'Contradiction kind' },
+      },
+      required: ['repositoryId', 'memoryA', 'memoryB'],
+    },
+  },
+  {
+    name: 'track_intent',
+    description: 'Track an active engineering goal/intent. Active intents bias memory retrieval toward advancing them.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        repositoryId: { type: 'string', description: '16-hex repository id' },
+        goal: { type: 'string', description: 'The goal/intent to track' },
+        category: { type: 'string', description: 'Category (perf, refactor, feature, ...)' },
+        priority: { type: 'number', description: 'Priority 1-5 (default 3)' },
+        targetDate: { type: 'string', description: 'Optional ISO target date' },
+      },
+      required: ['repositoryId', 'goal', 'category'],
+    },
+  },
+  {
+    name: 'list_active_goals',
+    description: 'List active engineering goals/intents for a repository, highest priority first.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        repositoryId: { type: 'string', description: '16-hex repository id' },
+        limit: { type: 'number', description: 'Max results (default 50)' },
+      },
+      required: ['repositoryId'],
+    },
+  },
+  {
+    name: 'show_evolution',
+    description:
+      'Show the chronological evolution (decisions, failures, diffs) for a topic or entity, ordered by time and paginated.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        repositoryId: { type: 'string', description: '16-hex repository id' },
+        entityRef: { type: 'string', description: 'Entity ref (file/symbol/service)' },
+        topic: { type: 'string', description: 'Topic/keywords' },
+        limit: { type: 'number', description: 'Max entries (default 50, max 200)' },
+        offset: { type: 'number', description: 'Pagination offset' },
+      },
+      required: ['repositoryId'],
+    },
+  },
+  {
+    name: 'find_knowledge_gaps',
+    description:
+      'Find under-documented, weakly-owned, complex, high-churn code hotspots ranked by knowledge-gap risk.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        repositoryId: { type: 'string', description: '16-hex repository id' },
+        limit: { type: 'number', description: 'Max gaps (default 20, max 100)' },
+      },
+      required: ['repositoryId'],
+    },
+  },
+  {
+    name: 'detect_drift',
+    description:
+      'Detect architecture drift: forbidden/disallowed dependencies, layer violations, and naming violations against declared rules.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        repositoryId: { type: 'string', description: '16-hex repository id' },
+      },
+      required: ['repositoryId'],
+    },
+  },
+  {
+    name: 'simulate_impact',
+    description:
+      'Simulate the blast radius of a change (delete/rename/interface-removal/dependency-removal): affected files/symbols, owners to notify, and rule violations introduced.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        repositoryId: { type: 'string', description: '16-hex repository id' },
+        op: {
+          type: 'string',
+          enum: ['delete', 'rename', 'interface-removal', 'dependency-removal'],
+          description: 'The change operation to simulate',
+        },
+        targetRef: { type: 'string', description: 'Entity ref to change (file/symbol/service)' },
+        newRef: { type: 'string', description: 'New ref (for rename ops)' },
+      },
+      required: ['repositoryId', 'op', 'targetRef'],
+    },
+  },
 ] as const;
 
 /**
@@ -746,6 +1099,231 @@ export const TOOL_DEFINITIONS_COMPACT = [
         parameters: { type: 'object', description: 'Query parameters' },
       },
       required: ['query'],
+    },
+  },
+  {
+    name: 'memory_remember',
+    description: 'Persist engineering memory (decision/failure/intent/gap/ownership/note). Shared across clients.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        kind: {
+          type: 'string',
+          enum: ['decision', 'failure', 'intent', 'gap', 'ownership', 'note'],
+          description: 'Memory kind',
+        },
+        title: { type: 'string', description: 'Short title' },
+        summary: { type: 'string', description: 'Summary' },
+        body: { type: 'string', description: 'Full body' },
+        repositoryId: { type: 'string', description: '16-hex repo id' },
+        idempotencyKey: { type: 'string', description: 'Dedup key' },
+        entityRefs: {
+          type: 'array',
+          description: 'Linked code entities',
+          items: {
+            type: 'object',
+            properties: {
+              kind: { type: 'string', enum: ['node', 'file', 'service', 'symbol'] },
+              ref: { type: 'string' },
+            },
+            required: ['kind', 'ref'],
+          },
+        },
+      },
+      required: ['kind', 'title', 'repositoryId'],
+    },
+  },
+  {
+    name: 'memory_recall',
+    description: 'Recall memory by id, or memories linked to an entity.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        id: { type: 'string', description: 'Memory id' },
+        repositoryId: { type: 'string', description: '16-hex repo id' },
+        entityRef: { type: 'string', description: 'Linked entity ref' },
+        limit: { type: 'number', description: 'Max results' },
+      },
+      required: ['repositoryId'],
+    },
+  },
+  {
+    name: 'memory_search',
+    description: 'Search memories by meaning + text. Ranked by relevance/confidence/freshness.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        query: { type: 'string', description: 'Search query' },
+        repositoryId: { type: 'string', description: '16-hex repo id' },
+        limit: { type: 'number', description: 'Max results' },
+        kind: {
+          type: 'string',
+          enum: ['decision', 'failure', 'intent', 'gap', 'ownership', 'note'],
+          description: 'Optional kind filter',
+        },
+      },
+      required: ['query', 'repositoryId'],
+    },
+  },
+  {
+    name: 'why_was_this_chosen',
+    description: 'Decisions for topic/entity: rationale, alternatives, tradeoffs. Empty list if none.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        repositoryId: { type: 'string', description: '16-hex repo id' },
+        topic: { type: 'string', description: 'Topic/keywords' },
+        entityRef: { type: 'string', description: 'Entity ref (file/symbol/service)' },
+        limit: { type: 'number', description: 'Max results' },
+      },
+      required: ['repositoryId'],
+    },
+  },
+  {
+    name: 'have_we_tried_this',
+    description: 'Past failures similar to an approach, with lessons. Empty list if none.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        repositoryId: { type: 'string', description: '16-hex repo id' },
+        description: { type: 'string', description: 'Approach/idea to check' },
+        limit: { type: 'number', description: 'Max results' },
+      },
+      required: ['repositoryId', 'description'],
+    },
+  },
+  {
+    name: 'who_knows',
+    description: 'Who owns a file/service/symbol. People ranked by signal volume + recency. Empty if none.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        repositoryId: { type: 'string', description: '16-hex repo id' },
+        entityRef: { type: 'string', description: 'Entity ref (file/service/symbol)' },
+        limit: { type: 'number', description: 'Max results' },
+      },
+      required: ['repositoryId', 'entityRef'],
+    },
+  },
+  {
+    name: 'verify_memory',
+    description: 'Verify a memory now. Refresh recency + recompute confidence.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        id: { type: 'string', description: 'Memory id' },
+        repositoryId: { type: 'string', description: '16-hex repo id' },
+      },
+      required: ['id', 'repositoryId'],
+    },
+  },
+  {
+    name: 'reinforce_memory',
+    description: 'Reinforce a memory. Bump source count + refresh + recompute confidence.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        id: { type: 'string', description: 'Memory id' },
+        repositoryId: { type: 'string', description: '16-hex repo id' },
+      },
+      required: ['id', 'repositoryId'],
+    },
+  },
+  {
+    name: 'flag_contradiction',
+    description: 'Flag two memories as contradictory. Records pair + CONTRADICTS edge, lowers confidence.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        repositoryId: { type: 'string', description: '16-hex repo id' },
+        memoryA: { type: 'string', description: 'First memory id' },
+        memoryB: { type: 'string', description: 'Second memory id' },
+        kind: { type: 'string', description: 'Contradiction kind' },
+      },
+      required: ['repositoryId', 'memoryA', 'memoryB'],
+    },
+  },
+  {
+    name: 'track_intent',
+    description: 'Track an active goal/intent. Biases retrieval toward advancing it.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        repositoryId: { type: 'string', description: '16-hex repo id' },
+        goal: { type: 'string', description: 'Goal/intent' },
+        category: { type: 'string', description: 'Category' },
+        priority: { type: 'number', description: 'Priority 1-5' },
+        targetDate: { type: 'string', description: 'ISO target date' },
+      },
+      required: ['repositoryId', 'goal', 'category'],
+    },
+  },
+  {
+    name: 'list_active_goals',
+    description: 'List active goals/intents, highest priority first.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        repositoryId: { type: 'string', description: '16-hex repo id' },
+        limit: { type: 'number', description: 'Max results' },
+      },
+      required: ['repositoryId'],
+    },
+  },
+  {
+    name: 'show_evolution',
+    description: 'Chronological evolution (decisions, failures, diffs) for topic/entity. Paginated.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        repositoryId: { type: 'string', description: '16-hex repo id' },
+        entityRef: { type: 'string', description: 'Entity ref' },
+        topic: { type: 'string', description: 'Topic/keywords' },
+        limit: { type: 'number', description: 'Max entries (max 200)' },
+        offset: { type: 'number', description: 'Offset' },
+      },
+      required: ['repositoryId'],
+    },
+  },
+  {
+    name: 'find_knowledge_gaps',
+    description: 'Rank under-documented, weakly-owned, complex, high-churn hotspots by risk.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        repositoryId: { type: 'string', description: '16-hex repo id' },
+        limit: { type: 'number', description: 'Max gaps (max 100)' },
+      },
+      required: ['repositoryId'],
+    },
+  },
+  {
+    name: 'detect_drift',
+    description: 'Detect architecture drift (forbidden deps, layer/naming violations) vs declared rules.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        repositoryId: { type: 'string', description: '16-hex repo id' },
+      },
+      required: ['repositoryId'],
+    },
+  },
+  {
+    name: 'simulate_impact',
+    description: 'Simulate change blast radius: affected entities, owners to notify, rule violations.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        repositoryId: { type: 'string', description: '16-hex repo id' },
+        op: {
+          type: 'string',
+          enum: ['delete', 'rename', 'interface-removal', 'dependency-removal'],
+          description: 'Change op',
+        },
+        targetRef: { type: 'string', description: 'Entity ref' },
+        newRef: { type: 'string', description: 'New ref (rename)' },
+      },
+      required: ['repositoryId', 'op', 'targetRef'],
     },
   },
 ] as const;

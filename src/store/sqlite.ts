@@ -74,6 +74,7 @@ export class SqliteStorageProvider implements StorageProvider {
 
     const migrationFiles = [
       { version: 1, file: '001_initial.sql', description: 'Complete initial schema with FTS5 and triggers' },
+      { version: 2, file: '002_eml.sql', description: 'Engineering Memory Layer schema' },
     ];
 
     for (const migration of migrationFiles) {
@@ -114,6 +115,14 @@ export class SqliteStorageProvider implements StorageProvider {
   transaction<T>(fn: () => T): T {
     const txn = this.db.transaction(fn);
     return txn();
+  }
+
+  /**
+   * Returns the underlying better-sqlite3 Database handle.
+   * Used by EML subsystems that own their own tables and prepared statements.
+   */
+  getDatabase(): Database.Database {
+    return this.db;
   }
 
   getRepository(id: string): RepositoryInfo | null {
@@ -399,7 +408,7 @@ export class SqliteStorageProvider implements StorageProvider {
   getEdge(id: string): GraphEdge | null {
     const row = this.db
       .prepare(
-        'SELECT id, source_id, target_id, kind, confidence, metadata, created_at FROM edges WHERE id = ?'
+        'SELECT id, source_id, target_id, kind, confidence, metadata, repository_id, created_at, updated_at FROM edges WHERE id = ?'
       )
       .get(id) as any;
 
@@ -409,7 +418,8 @@ export class SqliteStorageProvider implements StorageProvider {
   }
 
   getEdges(sourceId?: string, targetId?: string): GraphEdge[] {
-    let sql = 'SELECT id, source_id, target_id, kind, confidence, metadata, created_at FROM edges WHERE 1=1';
+    let sql =
+      'SELECT id, source_id, target_id, kind, confidence, metadata, repository_id, created_at, updated_at FROM edges WHERE 1=1';
     const params: any[] = [];
 
     if (sourceId) {

@@ -42,9 +42,12 @@ RUN npm run build
 # Production stage
 FROM node:22-slim
 
-# Install runtime dependencies
+# Install runtime dependencies.
+# `git` is required at runtime by simple-git for the EML diff observer and
+# git-authorship ingestion; without it those features silently no-op.
 RUN apt-get update && apt-get install -y \
     curl \
+    git \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app

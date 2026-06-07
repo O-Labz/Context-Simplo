@@ -1,0 +1,509 @@
+/**
+ * EML MCP/REST handlers + the shared `EmlServices` container.
+ *
+ * Handlers are transport-agnostic: they validate input (Zod), enforce the
+ * `EML_ENABLED` flag, and either return plain data or throw an `EmlError`
+ * subclass. MCP and REST surfaces translate those errors to their own codes.
+ *
+ * The `EmlServices` interface is the single dependency bundle threaded through
+ * every EML surface. Later phases extend it with engine instances.
+ */
+
+import { randomUUID } from 'crypto';
+import { z } from 'zod';
+import type Database from 'better-sqlite3';
+import type { StorageProvider } from '../../store/provider.js';
+import type { EmlExtractionMode } from '../../core/types.js';
+import {
+  ArchitectureRuleValidationError,
+  DuplicateMemoryError,
+  EmlDisabledError,
+  MemoryValidationError,
+  MemoryNotFoundError,
+  RepositoryNotIndexedError,
+} from '../../core/errors.js';
+import {
+  MemoryRememberInputSchema,
+  MemoryRecallInputSchema,
+  MemorySearchInputSchema,
+  WhyWasThisChosenInputSchema,
+  HaveWeTriedThisInputSchema,
+  WhoKnowsInputSchema,
+  MemoryIdActionInputSchema,
+  FlagContradictionInputSchema,
+  TrackIntentInputSchema,
+  ListActiveGoalsInputSchema,
+  ShowEvolutionInputSchema,
+  FindKnowledgeGapsInputSchema,
+  DetectDriftInputSchema,
+  AddArchitectureRuleInputSchema,
+  SimulateImpactInputSchema,
+} from '../../mcp/tools.js';
+import type { MemoryObject, MemoryRepo } from '../store/memory-repo.js';
+import type { MemoryVectorStore } from '../store/memory-vectors.js';
+import type { GraphStore } from '../store/graph-store.js';
+import type { EventStore } from '../events/store.js';
+import type { EventBus } from '../events/bus.js';
+import type { DecisionEngine } from '../engines/decision.js';
+import type { FailureEngine } from '../engines/failure.js';
+import type { OwnershipEngine } from '../engines/ownership.js';
+import type { FreshnessEngine } from '../engines/freshness.js';
+import type { ContradictionEngine } from '../engines/contradiction.js';
+import type { IntentEngine } from '../engines/intent.js';
+import type { TimelineEngine } from '../engines/timeline.js';
+import type { GapsEngine } from '../engines/gaps.js';
+import type { DriftEngine } from '../engines/drift.js';
+import type { ImpactSimEngine } from '../engines/impact-sim.js';
+import { gatherCandidates, type QueryEmbedder } from '../retrieval/candidates.js';
+import { rankMemories, type RankOptions } from '../retrieval/rank.js';
+
+export interface EmlServices {
+  enabled: boolean;
+  extraction: EmlExtractionMode;
+  db: Database.Database;
+  storage: StorageProvider;
+  memoryRepo: MemoryRepo;
+  memoryVectors?: MemoryVectorStore;
+  graph: GraphStore;
+  eventStore: EventStore;
+  eventBus?: EventBus;
+  decisions?: DecisionEngine;
+  failures?: FailureEngine;
+  ownership?: OwnershipEngine;
+  freshness?: FreshnessEngine;
+  contradictions?: ContradictionEngine;
+  intents?: IntentEngine;
+  timeline?: TimelineEngine;
+  gaps?: GapsEngine;
+  drift?: DriftEngine;
+  impactSim?: ImpactSimEngine;
+  vcs?: {
+    webhookSecret?: string;
+    githubToken?: string;
+    gitlabToken?: string;
+    gitlabHost?: string;
+  };
+  embedQuery?: QueryEmbedder;
+  now: () => Date;
+  /** Returns a 0..1 goal bias for a memory (wired by the intent engine). */
+  goalBiasOf?: (memory: MemoryObject) => number;
+}
+
+function requireEnabled(eml: EmlServices): void {
+  if (!eml.enabled) throw new EmlDisabledError();
+}
+
+function validationFrom(error: z.ZodError): MemoryValidationError {
+  return new MemoryValidationError(
+    error.issues.map((i) => `${i.path.join('.')}: ${i.message}`).join('; '),
+    error.issues[0]?.path.join('.')
+  );
+}
+
+/** Compact-friendly memory shape returned by recall/search. */
+export function toMemoryView(memory: MemoryObject, score?: number): Record<string, unknown> {
+  return {
+    id: memory.id,
+    kind: memory.kind,
+    title: memory.title,
+    summary: memory.summary,
+    confidence: memory.confidence,
+    freshness: memory.freshness,
+    contradictionScore: memory.contradictionScore,
+    sourceCount: memory.sourceCount,
+    ...(score !== undefined ? { score } : {}),
+  };
+}
+
+export interface MemoryRememberResult {
+  id: string;
+}
+
+export async function memoryRemember(args: unknown, eml: EmlServices): Promise<MemoryRememberResult> {
+  requireEnabled(eml);
+  const parsed = MemoryRememberInputSchema.safeParse(args);
+  if (!parsed.success) throw validationFrom(parsed.error);
+  const input = parsed.data;
+
+  // Idempotency: reuse of a key surfaces as a conflict.
+  if (input.idempotencyKey) {
+    const existing = eml.db
+      .prepare(`SELECT id FROM eml_events WHERE type = 'memory.asserted' AND source_ref = ? LIMIT 1`)
+      .get(input.idempotencyKey) as { id: string } | undefined;
+    if (existing) throw new DuplicateMemoryError(input.idempotencyKey);
+  }
+
+  const memory = eml.memoryRepo.create({
+    kind: input.kind,
+    title: input.title,
+    summary: input.summary ?? '',
+    body: input.body ?? '',
+    repositoryId: input.repositoryId,
+    confidence: 0.5,
+  });
+
+  eml.memoryRepo.addProvenance({
+    memoryId: memory.id,
+    sourceType: 'agent',
+    sourceRef: input.idempotencyKey ?? `agent:${memory.id}`,
+    weight: 1,
+  });
+
+  // Link entities (entity_links) when provided.
+  if (input.entityRefs && input.entityRefs.length > 0) {
+    const stmt = eml.db.prepare(
+      `INSERT OR IGNORE INTO entity_links (memory_id, target_kind, target_ref) VALUES (?, ?, ?)`
+    );
+    for (const e of input.entityRefs) stmt.run(memory.id, e.kind, e.ref);
+  }
+
+  // Persist the structured decision side-record for decision memories.
+  if (input.kind === 'decision' && eml.decisions) {
+    eml.decisions.fromMemory(memory);
+  }
+
+  // Persist the structured failure side-record for failure memories.
+  if (input.kind === 'failure' && eml.failures) {
+    eml.failures.fromMemory(memory);
+  }
+
+  // Append the audit/source event (drives extraction reinforcement downstream).
+  eml.eventStore.append({
+    type: 'memory.asserted',
+    source: 'agent',
+    sourceRef: input.idempotencyKey ?? memory.id,
+    repositoryId: input.repositoryId,
+    payload: { memoryId: memory.id, kind: input.kind, title: input.title },
+    occurredAt: eml.now().toISOString(),
+  });
+
+  // Best-effort embedding (degrades to no-op without a provider).
+  if (eml.embedQuery && eml.memoryVectors) {
+    try {
+      const text = [memory.title, memory.summary, memory.body].filter(Boolean).join('\n');
+      const vector = await eml.embedQuery(text);
+      if (vector && vector.length > 0) {
+        const embeddingId = `emb_${randomUUID()}`;
+        await eml.memoryVectors.upsert([
+          { id: embeddingId, memoryId: memory.id, repositoryId: memory.repositoryId, kind: memory.kind, vector },
+        ]);
+        eml.memoryRepo.update(memory.id, { embeddingId });
+      }
+    } catch {
+      // embedding is best-effort; never block the write
+    }
+  }
+
+  return { id: memory.id };
+}
+
+export interface MemoryRecallResult {
+  memory: Record<string, unknown> | null;
+  provenance?: unknown[];
+  results?: Record<string, unknown>[];
+}
+
+export function memoryRecall(args: unknown, eml: EmlServices): MemoryRecallResult {
+  requireEnabled(eml);
+  const parsed = MemoryRecallInputSchema.safeParse(args);
+  if (!parsed.success) throw validationFrom(parsed.error);
+  const input = parsed.data;
+
+  if (input.id) {
+    const memory = eml.memoryRepo.find(input.id);
+    if (!memory || memory.repositoryId !== input.repositoryId) {
+      return { memory: null };
+    }
+    return {
+      memory: { ...toMemoryView(memory), body: memory.body },
+      provenance: eml.memoryRepo.listProvenance(memory.id),
+    };
+  }
+
+  if (input.entityRef) {
+    const rows = eml.db
+      .prepare(
+        `SELECT m.id FROM entity_links el
+         JOIN memory_objects m ON m.id = el.memory_id
+         WHERE el.target_ref = ? AND m.repository_id = ? AND m.superseded_by IS NULL
+         LIMIT ?`
+      )
+      .all(input.entityRef, input.repositoryId, input.limit) as Array<{ id: string }>;
+    const results = rows
+      .map((r) => eml.memoryRepo.find(r.id))
+      .filter((m): m is MemoryObject => m !== null)
+      .map((m) => toMemoryView(m));
+    return { memory: null, results };
+  }
+
+  return { memory: null, results: [] };
+}
+
+export interface MemorySearchResult {
+  results: Record<string, unknown>[];
+}
+
+export async function memorySearch(args: unknown, eml: EmlServices): Promise<MemorySearchResult> {
+  requireEnabled(eml);
+  const parsed = MemorySearchInputSchema.safeParse(args);
+  if (!parsed.success) throw validationFrom(parsed.error);
+  const input = parsed.data;
+
+  const candidates = await gatherCandidates({
+    query: input.query,
+    repositoryId: input.repositoryId,
+    limit: input.limit,
+    repo: eml.memoryRepo,
+    vectors: eml.memoryVectors,
+    embedQuery: eml.embedQuery,
+    graph: eml.graph,
+  });
+
+  const memories = candidates.ids
+    .map((id) => eml.memoryRepo.find(id))
+    .filter((m): m is MemoryObject => m !== null)
+    .filter((m) => (input.kind ? m.kind === input.kind : true));
+
+  const rankOpts: RankOptions = eml.goalBiasOf ? { goalBiasOf: eml.goalBiasOf } : {};
+  const ranked = rankMemories(memories, candidates.lists, eml.now(), rankOpts);
+  return {
+    results: ranked.slice(0, input.limit).map((r) => toMemoryView(r.memory, r.score)),
+  };
+}
+
+export interface WhyWasThisChosenResult {
+  results: Record<string, unknown>[];
+}
+
+export function whyWasThisChosen(args: unknown, eml: EmlServices): WhyWasThisChosenResult {
+  requireEnabled(eml);
+  const parsed = WhyWasThisChosenInputSchema.safeParse(args);
+  if (!parsed.success) throw validationFrom(parsed.error);
+  const input = parsed.data;
+  if (!eml.decisions) return { results: [] };
+
+  const decisions = eml.decisions.whyWasThisChosen({
+    repositoryId: input.repositoryId,
+    topic: input.topic,
+    entityRef: input.entityRef,
+    limit: input.limit,
+  });
+
+  return {
+    results: decisions.map((d) => ({
+      ...toMemoryView(d.memory),
+      decision: d.decision,
+      rationale: d.rationale,
+      alternatives: d.alternatives,
+      tradeoffs: d.tradeoffs,
+      decisionDate: d.decisionDate,
+      author: d.author,
+      affectedSystems: d.affectedSystems,
+      status: d.status,
+    })),
+  };
+}
+
+export interface HaveWeTriedThisResult {
+  results: Record<string, unknown>[];
+}
+
+export async function haveWeTriedThis(args: unknown, eml: EmlServices): Promise<HaveWeTriedThisResult> {
+  requireEnabled(eml);
+  const parsed = HaveWeTriedThisInputSchema.safeParse(args);
+  if (!parsed.success) throw validationFrom(parsed.error);
+  const input = parsed.data;
+  if (!eml.failures) return { results: [] };
+
+  const candidates = await gatherCandidates({
+    query: input.description,
+    repositoryId: input.repositoryId,
+    limit: input.limit,
+    repo: eml.memoryRepo,
+    vectors: eml.memoryVectors,
+    embedQuery: eml.embedQuery,
+    graph: eml.graph,
+  });
+
+  const memories = candidates.ids
+    .map((id) => eml.memoryRepo.find(id))
+    .filter((m): m is MemoryObject => m !== null)
+    .filter((m) => m.kind === 'failure');
+
+  const ranked = rankMemories(memories, candidates.lists, eml.now());
+
+  const results: Record<string, unknown>[] = [];
+  for (const r of ranked.slice(0, input.limit)) {
+    const failure = eml.failures.get(r.memory.id);
+    if (!failure) continue;
+    results.push({
+      ...toMemoryView(r.memory, r.score),
+      failureType: failure.failureType,
+      whatFailed: failure.whatFailed,
+      whyFailed: failure.whyFailed,
+      lessons: failure.lessons,
+      rootCause: failure.rootCause,
+      incidentRef: failure.incidentRef,
+    });
+  }
+  return { results };
+}
+
+export interface WhoKnowsResult {
+  results: Record<string, unknown>[];
+}
+
+export function whoKnows(args: unknown, eml: EmlServices): WhoKnowsResult {
+  requireEnabled(eml);
+  const parsed = WhoKnowsInputSchema.safeParse(args);
+  if (!parsed.success) throw validationFrom(parsed.error);
+  const input = parsed.data;
+
+  // Repository must be indexed for ownership queries.
+  if (!eml.storage.getRepository(input.repositoryId)) {
+    throw new RepositoryNotIndexedError(input.repositoryId);
+  }
+  if (!eml.ownership) return { results: [] };
+
+  const owners = eml.ownership.rankOwners(input.entityRef, {
+    limit: input.limit,
+    useGraphProximity: true,
+  });
+  return {
+    results: owners.map((o) => ({
+      personId: o.personId,
+      displayName: o.displayName,
+      score: o.score,
+      signalCount: o.signalCount,
+      lastActivityAt: o.lastActivityAt,
+    })),
+  };
+}
+
+/** Alias surface for `ownership_for` (same ranking, full breakdown). */
+export function ownershipFor(args: unknown, eml: EmlServices): WhoKnowsResult {
+  return whoKnows(args, eml);
+}
+
+function loadScopedMemory(eml: EmlServices, id: string, repositoryId: string): MemoryObject {
+  const memory = eml.memoryRepo.find(id);
+  if (!memory || memory.repositoryId !== repositoryId) {
+    throw new MemoryNotFoundError(id);
+  }
+  return memory;
+}
+
+export function verifyMemory(args: unknown, eml: EmlServices): Record<string, unknown> {
+  requireEnabled(eml);
+  const parsed = MemoryIdActionInputSchema.safeParse(args);
+  if (!parsed.success) throw validationFrom(parsed.error);
+  const input = parsed.data;
+  loadScopedMemory(eml, input.id, input.repositoryId);
+  if (!eml.freshness) return { id: input.id };
+  const updated = eml.freshness.verify(input.id);
+  return toMemoryView(updated);
+}
+
+export function reinforceMemory(args: unknown, eml: EmlServices): Record<string, unknown> {
+  requireEnabled(eml);
+  const parsed = MemoryIdActionInputSchema.safeParse(args);
+  if (!parsed.success) throw validationFrom(parsed.error);
+  const input = parsed.data;
+  loadScopedMemory(eml, input.id, input.repositoryId);
+  if (!eml.freshness) return { id: input.id };
+  const updated = eml.freshness.reinforce(input.id);
+  return toMemoryView(updated);
+}
+
+export function trackIntent(args: unknown, eml: EmlServices): Record<string, unknown> {
+  requireEnabled(eml);
+  const parsed = TrackIntentInputSchema.safeParse(args);
+  if (!parsed.success) throw validationFrom(parsed.error);
+  const input = parsed.data;
+  if (!eml.intents) throw new EmlDisabledError();
+  const { memory, intent } = eml.intents.track({
+    repositoryId: input.repositoryId,
+    goal: input.goal,
+    category: input.category,
+    priority: input.priority,
+    targetDate: input.targetDate ?? null,
+  });
+  return { id: memory.id, ...intent };
+}
+
+export function listActiveGoals(args: unknown, eml: EmlServices): { results: Record<string, unknown>[] } {
+  requireEnabled(eml);
+  const parsed = ListActiveGoalsInputSchema.safeParse(args);
+  if (!parsed.success) throw validationFrom(parsed.error);
+  const input = parsed.data;
+  if (!eml.intents) return { results: [] };
+  return { results: eml.intents.listActive(input.repositoryId, input.limit) as unknown as Record<string, unknown>[] };
+}
+
+export function showEvolution(args: unknown, eml: EmlServices): Record<string, unknown> {
+  requireEnabled(eml);
+  const parsed = ShowEvolutionInputSchema.safeParse(args);
+  if (!parsed.success) throw validationFrom(parsed.error);
+  const input = parsed.data;
+  if (!eml.timeline) return { entries: [], total: 0 };
+  return eml.timeline.showEvolution({
+    repositoryId: input.repositoryId,
+    entityRef: input.entityRef,
+    topic: input.topic,
+    limit: input.limit,
+    offset: input.offset,
+  }) as unknown as Record<string, unknown>;
+}
+
+export function findKnowledgeGaps(args: unknown, eml: EmlServices): Record<string, unknown> {
+  requireEnabled(eml);
+  const parsed = FindKnowledgeGapsInputSchema.safeParse(args);
+  if (!parsed.success) throw validationFrom(parsed.error);
+  const input = parsed.data;
+  if (!eml.gaps) return { gaps: [], total: 0 };
+  const gaps = eml.gaps.findKnowledgeGaps(input.repositoryId, { limit: input.limit });
+  return { gaps, total: gaps.length } as unknown as Record<string, unknown>;
+}
+
+export function detectDrift(args: unknown, eml: EmlServices): Record<string, unknown> {
+  requireEnabled(eml);
+  const parsed = DetectDriftInputSchema.safeParse(args);
+  if (!parsed.success) throw validationFrom(parsed.error);
+  if (!eml.drift) return { violations: [], total: 0 };
+  const violations = eml.drift.detectDrift(parsed.data.repositoryId);
+  return { violations, total: violations.length } as unknown as Record<string, unknown>;
+}
+
+export function addArchitectureRule(args: unknown, eml: EmlServices): Record<string, unknown> {
+  requireEnabled(eml);
+  const parsed = AddArchitectureRuleInputSchema.safeParse(args);
+  if (!parsed.success) {
+    throw new ArchitectureRuleValidationError(
+      parsed.error.issues.map((i) => `${i.path.join('.')}: ${i.message}`).join('; ')
+    );
+  }
+  if (!eml.drift) throw new EmlDisabledError();
+  const rule = eml.drift.addRule(parsed.data);
+  return rule as unknown as Record<string, unknown>;
+}
+
+export function simulateImpact(args: unknown, eml: EmlServices): Record<string, unknown> {
+  requireEnabled(eml);
+  const parsed = SimulateImpactInputSchema.safeParse(args);
+  if (!parsed.success) throw validationFrom(parsed.error);
+  if (!eml.impactSim) throw new EmlDisabledError();
+  const result = eml.impactSim.simulate(parsed.data);
+  return result as unknown as Record<string, unknown>;
+}
+
+export function flagContradiction(args: unknown, eml: EmlServices): Record<string, unknown> {
+  requireEnabled(eml);
+  const parsed = FlagContradictionInputSchema.safeParse(args);
+  if (!parsed.success) throw validationFrom(parsed.error);
+  const input = parsed.data;
+  loadScopedMemory(eml, input.memoryA, input.repositoryId);
+  loadScopedMemory(eml, input.memoryB, input.repositoryId);
+  if (!eml.contradictions) return { recorded: false };
+  const record = eml.contradictions.flag(input.memoryA, input.memoryB, input.kind);
+  return record ? { recorded: true, ...record } : { recorded: false };
+}

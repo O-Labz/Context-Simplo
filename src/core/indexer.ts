@@ -126,18 +126,28 @@ export class Indexer extends EventEmitter {
       this.pendingReferences = [];
 
       const BATCH_SIZE = 50;
+      // Bounded worker pool: cap concurrent file parsing so a large repo cannot
+      // spawn unbounded async work. Storage/graph writes inside indexFile remain
+      // effectively serialized by better-sqlite3's synchronous API.
+      const concurrency = Math.max(1, Math.min(options.maxConcurrency ?? 4, 16));
       for (let i = 0; i < files.length; i += BATCH_SIZE) {
         const batch = files.slice(i, i + BATCH_SIZE);
-        for (const filePath of batch) {
-          try {
-            await this.indexFile(filePath, repositoryId, options.incremental || false);
-            job.filesProcessed++;
-            this.emit('job:progress', job);
-          } catch (error) {
-            job.filesFailed++;
-            this.emit('file:error', filePath, error as Error);
+        let cursor = 0;
+        const worker = async (): Promise<void> => {
+          while (cursor < batch.length) {
+            const filePath = batch[cursor++];
+            if (filePath === undefined) break;
+            try {
+              await this.indexFile(filePath, repositoryId, options.incremental || false);
+              job.filesProcessed++;
+              this.emit('job:progress', job);
+            } catch (error) {
+              job.filesFailed++;
+              this.emit('file:error', filePath, error as Error);
+            }
           }
-        }
+        };
+        await Promise.all(Array.from({ length: Math.min(concurrency, batch.length) }, () => worker()));
         if (global.gc) {
           global.gc();
         }
