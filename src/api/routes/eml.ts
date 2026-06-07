@@ -6,9 +6,16 @@
  * return 200-with-error. When EML is disabled every route returns 503.
  */
 
-import type { FastifyInstance, FastifyReply } from 'fastify';
+import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { ZodError } from 'zod';
 import { EmlError } from '../../core/errors.js';
+import {
+  MAX_WEBHOOK_BYTES,
+  verifyGithubSignature,
+  verifyGitlabToken,
+  mapGithubEvent,
+  mapGitlabEvent,
+} from '../../eml/ingest/webhook.js';
 import type { EmlServices } from '../../eml/mcp/handlers.js';
 import {
   memoryRemember,
@@ -203,4 +210,59 @@ export async function registerEmlRoutes(
       }
     }
   );
+
+  // Webhook receivers run in an encapsulated scope so we can capture the raw
+  // request body (required for HMAC verification) without affecting the JSON
+  // parser used by the rest of the API.
+  await fastify.register(async (webhookScope) => {
+    webhookScope.addContentTypeParser(
+      'application/json',
+      { parseAs: 'buffer' },
+      (_req, body, done) => done(null, body)
+    );
+
+    const rawBuffer = (request: FastifyRequest): Buffer => {
+      const body = request.body;
+      if (Buffer.isBuffer(body)) return body;
+      if (typeof body === 'string') return Buffer.from(body);
+      return Buffer.from(JSON.stringify(body ?? {}));
+    };
+
+    webhookScope.post('/api/eml/webhooks/github', async (request, reply) => {
+      const eml = getEml(reply);
+      if (!eml) return reply;
+      try {
+        const raw = rawBuffer(request);
+        if (raw.length > MAX_WEBHOOK_BYTES) {
+          return reply.code(413).send({ error: 'payload_too_large', message: 'Webhook body exceeds 1MB' });
+        }
+        const secret = eml.vcs?.webhookSecret ?? '';
+        verifyGithubSignature(secret, raw, request.headers['x-hub-signature-256'] as string | undefined);
+        const eventName = request.headers['x-github-event'] as string | undefined;
+        const events = mapGithubEvent(eventName, JSON.parse(raw.toString('utf8')));
+        for (const e of events) eml.eventStore.append(e);
+        return reply.code(202).send({ accepted: events.length });
+      } catch (error) {
+        return sendEmlError(reply, error);
+      }
+    });
+
+    webhookScope.post('/api/eml/webhooks/gitlab', async (request, reply) => {
+      const eml = getEml(reply);
+      if (!eml) return reply;
+      try {
+        const raw = rawBuffer(request);
+        if (raw.length > MAX_WEBHOOK_BYTES) {
+          return reply.code(413).send({ error: 'payload_too_large', message: 'Webhook body exceeds 1MB' });
+        }
+        const secret = eml.vcs?.webhookSecret ?? '';
+        verifyGitlabToken(secret, request.headers['x-gitlab-token'] as string | undefined);
+        const events = mapGitlabEvent(JSON.parse(raw.toString('utf8')));
+        for (const e of events) eml.eventStore.append(e);
+        return reply.code(202).send({ accepted: events.length });
+      } catch (error) {
+        return sendEmlError(reply, error);
+      }
+    });
+  });
 }

@@ -52,6 +52,12 @@ export interface EmlServices {
   decisions?: DecisionEngine;
   failures?: FailureEngine;
   ownership?: OwnershipEngine;
+  vcs?: {
+    webhookSecret?: string;
+    githubToken?: string;
+    gitlabToken?: string;
+    gitlabHost?: string;
+  };
   embedQuery?: QueryEmbedder;
   now: () => Date;
   /** Returns a 0..1 goal bias for a memory (wired by the intent engine). */
