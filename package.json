@@ -79,6 +79,7 @@
     "ignore": "^6.0.2",
     "inquirer": "^12.3.0",
     "ora": "^8.1.1",
+    "simple-git": "^3.36.0",
     "zod": "^3.24.1"
   },
   "devDependencies": {
