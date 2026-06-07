@@ -91,7 +91,7 @@ Prefer OpenAI? Swap the `LLM_*` variables:
 
 Want no AI in the loop at all? Start it with `-e LLM_PROVIDER=none`. You lose semantic search, but everything structural (call graphs, impact analysis, dead code, complexity) and the decision, ownership, drift, and impact-simulation memory all still work without ever calling a model.
 
-Turn the engineering memory layer on with `-e EML_ENABLED=true`.
+The engineering memory layer is on by default. Turn it off with `-e EML_ENABLED=false`.
 
 ## Good to know
 

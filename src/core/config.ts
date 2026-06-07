@@ -41,7 +41,7 @@ const DEFAULT_CONFIG = {
   embeddingBatchSize: 20,
   graphMemoryLimitMb: 512,
   responseMode: 'compact' as ResponseMode,
-  emlEnabled: false,
+  emlEnabled: true,
   emlExtraction: 'fallback' as EmlExtractionMode,
   emlWorkerConcurrency: 4,
   emlGraphHotCacheMb: 128,
