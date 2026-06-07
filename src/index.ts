@@ -154,6 +154,7 @@ async function main() {
   const { IntentEngine } = await import('./eml/engines/intent.js');
   const { TimelineEngine } = await import('./eml/engines/timeline.js');
   const { GapsEngine } = await import('./eml/engines/gaps.js');
+  const { DriftEngine } = await import('./eml/engines/drift.js');
   const emlDb = storage.getDatabase();
   const emlEventStore = new EventStore(emlDb);
   const emlEventBus = config.emlEnabled.value
@@ -199,6 +200,7 @@ async function main() {
     gaps: new GapsEngine(emlDb, {
       ownership: new OwnershipEngine(emlDb, emlGraph, { eventStore: emlEventStore, now: emlNow }),
     }),
+    drift: new DriftEngine(emlDb, { eventStore: emlEventStore }),
     vcs: {
       webhookSecret: config.emlWebhookSecret.value,
       githubToken: config.githubToken.value,
