@@ -234,6 +234,8 @@ export class MCPServer {
         return emlHandlers.verifyMemory(args, this.requireEml());
       case 'reinforce_memory':
         return emlHandlers.reinforceMemory(args, this.requireEml());
+      case 'flag_contradiction':
+        return emlHandlers.flagContradiction(args, this.requireEml());
       default:
         throw new ValidationError(`Unknown tool: ${name}`);
     }

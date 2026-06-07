@@ -129,6 +129,10 @@ export async function resolveExtraction(
       eml.failures.fromMemory(memory);
     }
 
+    if (eml.contradictions) {
+      eml.contradictions.detectForMemory(memory);
+    }
+
     await embedAndLink(memory, eml);
     summary.created.push(memory.id);
   }
