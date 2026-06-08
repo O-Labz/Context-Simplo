@@ -18,6 +18,7 @@ import { Indexer } from './core/indexer.js';
 import { MCPServer } from './mcp/server.js';
 import { FileWatcher } from './core/watcher.js';
 import { ShutdownManager } from './core/shutdown.js';
+import { sanitizeErrorForLogging } from './core/errors.js';
 import { createEmbeddingProvider } from './llm/provider.js';
 import { EmbeddingQueue } from './core/embedding-queue.js';
 import { ConfigManager } from './core/config-manager.js';
@@ -137,69 +138,108 @@ async function main() {
   const { OwnershipEngine } = await import('./eml/engines/ownership.js');
   const { FreshnessEngine } = await import('./eml/engines/freshness.js');
   const { ContradictionEngine } = await import('./eml/engines/contradiction.js');
-  const { IntentEngine } = await import('./eml/engines/intent.js');
-  const { TimelineEngine } = await import('./eml/engines/timeline.js');
-  const { GapsEngine } = await import('./eml/engines/gaps.js');
-  const { DriftEngine } = await import('./eml/engines/drift.js');
-  const { ImpactSimEngine } = await import('./eml/engines/impact-sim.js');
-  const emlDb = storage.getDatabase();
-  const emlEventStore = new EventStore(emlDb);
-  const emlEventBus = config.emlEnabled.value
-    ? new EventBus(emlEventStore, { concurrency: config.emlWorkerConcurrency.value })
-    : undefined;
-  const emlMemoryVectors = new MemoryVectorStore(lanceDbPath);
-  await emlMemoryVectors.initialize();
-  const emlEmbedQuery =
-    config.llmProvider.value !== 'none' && embeddingProvider
-      ? async (q: string): Promise<number[] | null> => {
-          try {
-            const vectors = await embeddingProvider.embed([q]);
-            return vectors[0] ?? null;
-          } catch {
-            return null;
-          }
-        }
+  let eml: import('./eml/mcp/handlers.js').EmlServices;
+  let emlEventBus: any = undefined;
+  let emlMemoryVectors: any = undefined;
+  let emlEventStore: any = undefined;
+  let emlDb: any = undefined;
+  try {
+    const { IntentEngine } = await import('./eml/engines/intent.js');
+    const { TimelineEngine } = await import('./eml/engines/timeline.js');
+    const { GapsEngine } = await import('./eml/engines/gaps.js');
+    const { DriftEngine } = await import('./eml/engines/drift.js');
+    const { ImpactSimEngine } = await import('./eml/engines/impact-sim.js');
+    emlDb = storage.getDatabase();
+    emlEventStore = new EventStore(emlDb);
+    emlEventBus = config.emlEnabled.value
+      ? new EventBus(emlEventStore, { concurrency: config.emlWorkerConcurrency.value })
       : undefined;
-  const emlMemoryRepo = new MemoryRepo(emlDb);
-  const emlNow = (): Date => new Date();
-  const emlGraph = new SqliteGraphStore(emlDb, { cache: new HotCache(config.emlGraphHotCacheMb.value) });
-  const emlIntents = new IntentEngine(emlDb, emlMemoryRepo);
-  const emlOwnership = new OwnershipEngine(emlDb, emlGraph, { eventStore: emlEventStore, now: emlNow });
-  const emlDrift = new DriftEngine(emlDb, { eventStore: emlEventStore });
-  const eml: import('./eml/mcp/handlers.js').EmlServices = {
-    enabled: config.emlEnabled.value,
-    extraction: config.emlExtraction.value,
-    db: emlDb,
-    storage,
-    memoryRepo: emlMemoryRepo,
-    memoryVectors: emlMemoryVectors,
-    graph: emlGraph,
-    eventStore: emlEventStore,
-    eventBus: emlEventBus,
-    decisions: new DecisionEngine(emlDb, emlMemoryRepo, emlNow),
-    failures: new FailureEngine(emlDb, emlMemoryRepo),
-    ownership: emlOwnership,
-    freshness: new FreshnessEngine(emlMemoryRepo, { eventStore: emlEventStore, now: emlNow }),
-    contradictions: new ContradictionEngine(emlDb, emlGraph, emlMemoryRepo, {
+    emlMemoryVectors = new MemoryVectorStore(lanceDbPath);
+    await emlMemoryVectors.initialize();
+    const emlEmbedQuery =
+      config.llmProvider.value !== 'none' && embeddingProvider
+        ? async (q: string): Promise<number[] | null> => {
+            try {
+              const vectors = await embeddingProvider.embed([q]);
+              return vectors[0] ?? null;
+            } catch {
+              return null;
+            }
+          }
+        : undefined;
+    const emlMemoryRepo = new MemoryRepo(emlDb);
+    const emlNow = (): Date => new Date();
+    const emlGraph = new SqliteGraphStore(emlDb, { cache: new HotCache(config.emlGraphHotCacheMb.value) });
+    const emlIntents = new IntentEngine(emlDb, emlMemoryRepo);
+    const emlOwnership = new OwnershipEngine(emlDb, emlGraph, { eventStore: emlEventStore, now: emlNow });
+    const emlDrift = new DriftEngine(emlDb, { eventStore: emlEventStore });
+    eml = {
+      enabled: config.emlEnabled.value,
+      extraction: config.emlExtraction.value,
+      db: emlDb,
+      storage,
+      memoryRepo: emlMemoryRepo,
+      memoryVectors: emlMemoryVectors,
+      graph: emlGraph,
       eventStore: emlEventStore,
+      eventBus: emlEventBus,
+      decisions: new DecisionEngine(emlDb, emlMemoryRepo, emlNow),
+      failures: new FailureEngine(emlDb, emlMemoryRepo),
+      ownership: emlOwnership,
+      freshness: new FreshnessEngine(emlMemoryRepo, { eventStore: emlEventStore, now: emlNow }),
+      contradictions: new ContradictionEngine(emlDb, emlGraph, emlMemoryRepo, {
+        eventStore: emlEventStore,
+        now: emlNow,
+      }),
+      intents: emlIntents,
+      timeline: new TimelineEngine(emlDb, emlMemoryRepo),
+      gaps: new GapsEngine(emlDb, { ownership: emlOwnership }),
+      drift: emlDrift,
+      impactSim: new ImpactSimEngine(emlDb, { ownership: emlOwnership, drift: emlDrift }),
+      vcs: {
+        webhookSecret: config.emlWebhookSecret.value,
+        githubToken: config.githubToken.value,
+        gitlabToken: config.gitlabToken.value,
+        gitlabHost: config.gitlabHost.value,
+      },
+      goalBiasOf: (memory) => emlIntents.goalBiasOf(memory),
+      embedQuery: emlEmbedQuery,
       now: emlNow,
-    }),
-    intents: emlIntents,
-    timeline: new TimelineEngine(emlDb, emlMemoryRepo),
-    gaps: new GapsEngine(emlDb, { ownership: emlOwnership }),
-    drift: emlDrift,
-    impactSim: new ImpactSimEngine(emlDb, { ownership: emlOwnership, drift: emlDrift }),
-    vcs: {
-      webhookSecret: config.emlWebhookSecret.value,
-      githubToken: config.githubToken.value,
-      gitlabToken: config.gitlabToken.value,
-      gitlabHost: config.gitlabHost.value,
-    },
-    goalBiasOf: (memory) => emlIntents.goalBiasOf(memory),
-    embedQuery: emlEmbedQuery,
-    now: emlNow,
-  };
-  console.log(`EML services ready (enabled: ${eml.enabled}, extraction: ${eml.extraction})`);
+    };
+    console.log(`EML services ready (enabled: ${eml.enabled}, extraction: ${eml.extraction})`);
+  } catch (error) {
+    console.warn('boot.eml_degraded', sanitizeErrorForLogging(error as Error));
+    eml = {
+      enabled: false,
+      extraction: 'off',
+      db: storage.getDatabase(),
+      storage,
+      memoryRepo: null as any,
+      memoryVectors: null as any,
+      graph: null as any,
+      eventStore: null as any,
+      eventBus: undefined,
+      decisions: null as any,
+      failures: null as any,
+      ownership: null as any,
+      freshness: null as any,
+      contradictions: null as any,
+      intents: null as any,
+      timeline: null as any,
+      gaps: null as any,
+      drift: null as any,
+      impactSim: null as any,
+      vcs: {
+        webhookSecret: config.emlWebhookSecret.value,
+        githubToken: config.githubToken.value,
+        gitlabToken: config.gitlabToken.value,
+        gitlabHost: config.gitlabHost.value,
+      },
+      goalBiasOf: () => 0,
+      embedQuery: undefined,
+      now: () => new Date(),
+    };
+  }
 
   const { SymbolicSearch } = await import('./search/symbolic.js');
   const symbolicSearch = new SymbolicSearch(storage);
@@ -310,52 +350,56 @@ async function main() {
   console.log(`WebSocket clients: ${broadcaster.getClientCount()}`);
 
   if (emlEventBus) {
-    emlEventBus.on('eml:event_processed', (payload: unknown) => {
-      broadcaster.broadcast('eml:event_processed', payload);
-    });
+    try {
+      emlEventBus.on('eml:event_processed', (payload: unknown) => {
+        broadcaster.broadcast('eml:event_processed', payload);
+      });
 
-    // Subscribe the extraction pipeline: each ingested event is gated, then
-    // routed to the LLM or deterministic fallback extractor and resolved.
-    const { processEventForExtraction } = await import('./eml/extract/resolve.js');
-    const { createChatClient } = await import('./eml/extract/llm-extractor.js');
-    const chatClient =
-      config.emlExtraction.value === 'llm'
-        ? createChatClient(config.llmProvider.value, {
-            apiKey: config.llmApiKey.value,
-            baseUrl: config.llmBaseUrl.value,
-          })
-        : null;
-    emlEventBus.subscribe(async (event) => {
-      await processEventForExtraction(event, eml, { chatClient });
-    });
+      // Subscribe the extraction pipeline: each ingested event is gated, then
+      // routed to the LLM or deterministic fallback extractor and resolved.
+      const { processEventForExtraction } = await import('./eml/extract/resolve.js');
+      const { createChatClient } = await import('./eml/extract/llm-extractor.js');
+      const chatClient =
+        config.emlExtraction.value === 'llm'
+          ? createChatClient(config.llmProvider.value, {
+              apiKey: config.llmApiKey.value,
+              baseUrl: config.llmBaseUrl.value,
+            })
+          : null;
+      emlEventBus.subscribe(async (event: any) => {
+        await processEventForExtraction(event, eml, { chatClient });
+      });
 
-    // Observe the latest commit delta + authorship after each indexing job.
-    const { DiffObserver, createSimpleGitRunner } = await import('./eml/ingest/diff.js');
-    const { GitIngest } = await import('./eml/ingest/git.js');
-    const diffObserver = new DiffObserver(emlEventStore);
-    const gitIngest = new GitIngest(emlDb, emlEventStore);
-    indexer.on('job:complete', (job) => {
-      void (async () => {
-        try {
-          const repo = storage.getRepository(job.repositoryId);
-          if (!repo) return;
-          const runner = await createSimpleGitRunner(repo.path);
-          await diffObserver.observe(runner, job.repositoryId, 'HEAD~1', 'HEAD', {
-            authorship: gitIngest,
-          });
-        } catch (err) {
-          // Best-effort: shallow repos / no prior commit / non-git dirs are fine.
-          // Surface the reason so a missing `git` binary (e.g. in a container
-          // without git installed) is visible instead of silently swallowed.
-          console.warn(
-            `eml.diff.observe skipped for ${job.repositoryId}: ${(err as Error).message}`
-          );
-        }
-      })();
-    });
+      // Observe the latest commit delta + authorship after each indexing job.
+      const { DiffObserver, createSimpleGitRunner } = await import('./eml/ingest/diff.js');
+      const { GitIngest } = await import('./eml/ingest/git.js');
+      const diffObserver = new DiffObserver(emlEventStore);
+      const gitIngest = new GitIngest(emlDb, emlEventStore);
+      indexer.on('job:complete', (job) => {
+        void (async () => {
+          try {
+            const repo = storage.getRepository(job.repositoryId);
+            if (!repo) return;
+            const runner = await createSimpleGitRunner(repo.path);
+            await diffObserver.observe(runner, job.repositoryId, 'HEAD~1', 'HEAD', {
+              authorship: gitIngest,
+            });
+          } catch (err) {
+            // Best-effort: shallow repos / no prior commit / non-git dirs are fine.
+            // Surface the reason so a missing `git` binary (e.g. in a container
+            // without git installed) is visible instead of silently swallowed.
+            console.warn(
+              `eml.diff.observe skipped for ${job.repositoryId}: ${(err as Error).message}`
+            );
+          }
+        })();
+      });
 
-    emlEventBus.start();
-    console.log('EML event bus started');
+      emlEventBus.start();
+      console.log('EML event bus started');
+    } catch (error) {
+      console.warn('boot.eml_bus_degraded', sanitizeErrorForLogging(error as Error));
+    }
   }
 
   const shutdownManager = new ShutdownManager(10000);
