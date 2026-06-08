@@ -14,7 +14,7 @@ import { loadConfig } from './core/config.js';
 import { SqliteStorageProvider } from './store/sqlite.js';
 import { ParsePool } from './core/parse-pool.js';
 import { LanceDBVectorStore } from './store/lance.js';
-import { CodeGraph } from './core/graph.js';
+import { StorageBackedGraph } from './core/graph-store.js';
 import { Indexer } from './core/indexer.js';
 import { MCPServer } from './mcp/server.js';
 import { FileWatcher } from './core/watcher.js';
@@ -85,16 +85,8 @@ async function main() {
   await vectorStore.initialize(lanceConnection);
   console.log('LanceDB vector store initialized');
 
-  const graph = new CodeGraph(config.graphMemoryLimitMb.value);
-  console.log(`Graph engine ready (memory limit: ${config.graphMemoryLimitMb.value}MB)`);
-
-  console.log('Hydrating graph from storage...');
-  const allNodes = storage.getAllNodes();
-  const allEdges = storage.getEdges();
-  
-  await graph.bulkLoad(allNodes, allEdges);
-  
-  console.log(`Graph hydrated: ${allNodes.length} nodes, ${allEdges.length} edges`);
+  const graph = new StorageBackedGraph(storage, { hotCacheMb: config.graphHotCacheMb.value });
+  console.log(`Graph store ready (cache: ${config.graphHotCacheMb.value}MB)`);
 
   const embeddingProvider = await createEmbeddingProvider(config.llmProvider.value, {
     apiKey: config.llmApiKey.value,

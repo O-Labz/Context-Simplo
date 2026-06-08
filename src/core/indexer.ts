@@ -31,7 +31,7 @@ import { readdir, stat, readFile } from 'fs/promises';
 import { resolve, relative, basename, dirname, join } from 'path';
 import { createHash } from 'crypto';
 import { parseFile } from './parser.js';
-import type { CodeGraph } from './graph.js';
+import type { CodeGraphApi } from './graph.js';
 import type { StorageProvider } from '../store/provider.js';
 import type {
   FileMetadata,
@@ -73,7 +73,7 @@ export class Indexer extends EventEmitter {
 
   constructor(
     public storage: StorageProvider,
-    public graph: CodeGraph,
+    public graph: CodeGraphApi,
     private workspaceRoot: string = '/workspace',
     private embeddingQueue?: EmbeddingQueue,
     private vectorStore?: LanceDBVectorStore,
@@ -247,7 +247,9 @@ export class Indexer extends EventEmitter {
         parsed = await parseFile(relativePath, repositoryId, this.workspaceRoot);
       }
 
-      // Update graph with mutex protection (outside transaction)
+      // Single source of truth: StorageBackedGraph writes to SQLite automatically
+      // The graph operations below persist nodes/edges to storage, so we only need
+      // to update file metadata and pending references in the transaction
       await this.graph.removeNodesInFile(relativePath);
       
       for (const node of parsed.nodes) {
@@ -263,11 +265,8 @@ export class Indexer extends EventEmitter {
         }
       }
 
-      // Update database in transaction
+      // Update file metadata and pending references in transaction
       this.storage.transaction(() => {
-        this.storage.deleteNodesInFile(relativePath);
-        this.storage.upsertNodes(parsed.nodes);
-        this.storage.upsertEdges(edges);
 
         this.pendingReferences.push({
           calls: parsed.calls,

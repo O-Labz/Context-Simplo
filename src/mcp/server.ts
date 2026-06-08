@@ -31,7 +31,7 @@ import type { IncomingMessage, ServerResponse } from 'node:http';
 import { TOOL_DEFINITIONS, TOOL_DEFINITIONS_COMPACT } from './tools.js';
 import { formatMCPResponse } from './formatter.js';
 import type { ResponseMode } from '../core/types.js';
-import type { CodeGraph } from '../core/graph.js';
+import type { CodeGraphApi } from '../core/graph.js';
 import type { StorageProvider } from '../store/provider.js';
 import type { Indexer } from '../core/indexer.js';
 import { SymbolicSearch } from '../search/symbolic.js';
@@ -48,7 +48,7 @@ import { EmlDisabledError } from '../core/errors.js';
 
 export interface MCPServerOptions {
   storage: StorageProvider;
-  graph: CodeGraph;
+  graph: CodeGraphApi;
   indexer: Indexer;
   workspaceRoot: string;
   vectorStore?: LanceDBVectorStore;
@@ -71,7 +71,7 @@ export interface MCPMetrics {
 export class MCPServer {
   private server: Server;
   private storage: StorageProvider;
-  private graph: CodeGraph;
+  private graph: CodeGraphApi;
   private indexer: Indexer;
   private symbolicSearch: SymbolicSearch;
   private vectorSearch?: VectorSearch;

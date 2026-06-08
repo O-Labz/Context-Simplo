@@ -17,11 +17,11 @@
 
 import type { FastifyInstance } from 'fastify';
 import type { StorageProvider } from '../../store/provider.js';
-import type { CodeGraph } from '../../core/graph.js';
+import type { CodeGraphApi } from '../../core/graph.js';
 
 export interface MetricsRouteOptions {
   storage: StorageProvider;
-  graph: CodeGraph;
+  graph: CodeGraphApi;
   watcher?: any;
   embeddingQueue?: any;
   vectorStore?: any;

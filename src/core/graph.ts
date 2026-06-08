@@ -48,7 +48,46 @@ export interface ArchitectureSummary {
   packageStructure: Record<string, number>;
 }
 
-export class CodeGraph {
+/**
+ * Common interface for graph implementations (CodeGraph and StorageBackedGraph)
+ * This ensures both implementations can be used interchangeably by consumers.
+ */
+export interface CodeGraphApi {
+  // Read methods
+  getNode(nodeId: string): CodeNode | null;
+  findByName(name: string, filter?: NodeFilter): CodeNode[];
+  findByPattern(pattern: string, filter?: NodeFilter): CodeNode[];
+  getNodesInFile(filePath: string): CodeNode[];
+  getAllNodes(filter?: NodeFilter): CodeNode[];
+  getCallers(nodeId: string, edgeKinds?: EdgeKind[]): CodeNode[];
+  getCallees(nodeId: string, edgeKinds?: EdgeKind[]): CodeNode[];
+  findShortestPath(sourceId: string, targetId: string): CodeNode[] | null;
+  analyzeImpact(nodeId: string, maxDepth?: number): ImpactAnalysisResult;
+  computeCentrality(): Map<string, number>;
+  getCentrality(nodeId: string): number;
+  findDeadCode(repositoryId?: string): CodeNode[];
+  explainArchitecture(repositoryId: string, detailLevel?: number): ArchitectureSummary;
+  getStats(): {
+    nodeCount: number;
+    edgeCount: number;
+    fileCount: number;
+    languageBreakdown: Record<string, number>;
+  };
+  getMemoryFootprint(): number;
+  getAllEdges(): GraphEdge[];
+  serialize(): string;
+  
+  // Write methods
+  addNode(node: CodeNode): Promise<void>;
+  addEdge(edge: GraphEdge): Promise<void>;
+  bulkLoad(nodes: CodeNode[], edges: GraphEdge[]): Promise<void>;
+  removeNode(nodeId: string): Promise<void>;
+  removeNodesInFile(filePath: string): Promise<void>;
+  deserialize(data: string): Promise<void>;
+  clear(): void;
+}
+
+export class CodeGraph implements CodeGraphApi {
   private graph: DirectedGraph;
   private nameIndex: Map<string, Set<string>>;
   private fileIndex: Map<string, Set<string>>;

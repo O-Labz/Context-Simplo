@@ -14,7 +14,7 @@ import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import DirectedGraph from 'graphology';
 import forceAtlas2 from 'graphology-layout-forceatlas2';
-import type { CodeGraph } from '../../core/graph.js';
+import type { CodeGraphApi } from '../../core/graph.js';
 
 const GraphQuerySchema = z.object({
   maxNodes: z.number().int().min(1).max(10000).default(1000),
@@ -23,7 +23,7 @@ const GraphQuerySchema = z.object({
 });
 
 export interface GraphRouteOptions {
-  graph: CodeGraph;
+  graph: CodeGraphApi;
 }
 
 /**

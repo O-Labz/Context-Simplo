@@ -20,6 +20,7 @@ import type {
   NodeFilter 
 } from './types.js';
 import { GraphError, NotFoundError } from './errors.js';
+import type { CodeGraphApi, ImpactAnalysisResult, ArchitectureSummary } from './graph.js';
 
 // Traversal limits from EML (reused for consistency)
 export const MAX_TRAVERSE_DEPTH = 12;
@@ -40,21 +41,7 @@ interface CacheEntry {
   accessedAt: number;
 }
 
-export interface ImpactAnalysisResult {
-  affectedNodes: CodeNode[];
-  affectedFiles: Set<string>;
-  depth: number;
-  confidence: number;
-}
-
-export interface ArchitectureSummary {
-  entryPoints: CodeNode[];
-  modules: Map<string, CodeNode[]>;
-  keyAbstractions: CodeNode[];
-  packageStructure: Record<string, number>;
-}
-
-export class StorageBackedGraph {
+export class StorageBackedGraph implements CodeGraphApi {
   private readonly storage: StorageProvider;
   private readonly maxCacheEntries: number;
   private readonly nodeCache = new Map<string, CachedNode>();
@@ -606,9 +593,106 @@ export class StorageBackedGraph {
     }
   }
 
-  // Invalidate cache entries (will be used by write methods in Phase 12)
-  // private invalidateCache(): void {
-  //   this.nodeCache.clear();
-  //   this.queryCache.clear();
-  // }
+  // ============================================================================
+  // WRITE METHODS (Phase 12)
+  // ============================================================================
+
+  async addNode(node: CodeNode): Promise<void> {
+    // Write to storage
+    this.storage.upsertNodes([node]);
+    
+    // Cache the new node
+    this.cacheNode(node);
+    
+    // Invalidate related queries that might be affected
+    this.invalidateQueryCache();
+  }
+
+  async addEdge(edge: GraphEdge): Promise<void> {
+    // Write to storage
+    this.storage.upsertEdges([edge]);
+    
+    // Invalidate cache since edge affects traversal results
+    this.invalidateQueryCache();
+  }
+
+  async bulkLoad(nodes: CodeNode[], edges: GraphEdge[]): Promise<void> {
+    // Write all nodes and edges to storage
+    if (nodes.length > 0) {
+      this.storage.upsertNodes(nodes);
+      
+      // Cache hot nodes
+      for (const node of nodes) {
+        this.cacheNode(node);
+      }
+    }
+    
+    if (edges.length > 0) {
+      this.storage.upsertEdges(edges);
+    }
+    
+    // Clear all caches to ensure consistency
+    this.invalidateAllCaches();
+  }
+
+  async removeNode(nodeId: string): Promise<void> {
+    // Remove from storage
+    this.storage.deleteNode(nodeId);
+    this.storage.deleteEdgesForNode(nodeId);
+    
+    // Remove from caches
+    this.nodeCache.delete(nodeId);
+    this.invalidateQueryCache();
+  }
+
+  async removeNodesInFile(filePath: string): Promise<void> {
+    // Remove from storage
+    this.storage.deleteNodesInFile(filePath);
+    
+    // Clear caches (could be more surgical but this is safe)
+    this.invalidateAllCaches();
+  }
+
+  // ============================================================================
+  // CACHE INVALIDATION
+  // ============================================================================
+
+  private invalidateQueryCache(): void {
+    this.queryCache.clear();
+  }
+
+  private invalidateAllCaches(): void {
+    this.nodeCache.clear();
+    this.queryCache.clear();
+  }
+
+  // ============================================================================
+  // ADDITIONAL METHODS FOR API COMPATIBILITY
+  // ============================================================================
+
+  getAllEdges(): GraphEdge[] {
+    return this.storage.getEdges();
+  }
+
+  serialize(): string {
+    // For StorageBackedGraph, serialization is the SQLite database itself
+    // Return a marker indicating this is storage-backed
+    return JSON.stringify({
+      type: 'StorageBackedGraph',
+      timestamp: new Date().toISOString(),
+      nodeCount: this.storage.countNodes(),
+      edgeCount: this.storage.getStats().edgeCount,
+    });
+  }
+
+  async deserialize(_data: string): Promise<void> {
+    // For StorageBackedGraph, deserialization is not needed since data lives in SQLite
+    // This is a no-op for compatibility
+    console.log('StorageBackedGraph.deserialize called - no action needed (data in SQLite)');
+  }
+
+  clear(): void {
+    // Clear caches but don't clear the storage (that would delete all data!)
+    this.invalidateAllCaches();
+  }
 }

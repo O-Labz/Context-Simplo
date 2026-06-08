@@ -19,7 +19,7 @@ import { z } from 'zod';
 import path from 'node:path';
 import type { StorageProvider } from '../../store/provider.js';
 import { IndexQueueFullError, MemoryPressureError } from '../../core/errors.js';
-import type { CodeGraph } from '../../core/graph.js';
+import type { CodeGraphApi } from '../../core/graph.js';
 import type { WebSocketBroadcaster } from '../websocket.js';
 import { WebSocketEvents } from '../websocket.js';
 import { isSubpath } from '../../core/path-utils.js';
@@ -31,7 +31,7 @@ const IndexRepositorySchema = z.object({
 
 export interface RepositoryRouteOptions {
   storage: StorageProvider;
-  graph: CodeGraph;
+  graph: CodeGraphApi;
   broadcaster: WebSocketBroadcaster;
   workspaceRoot: string;
   indexer?: any;

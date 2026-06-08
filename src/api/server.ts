@@ -8,7 +8,7 @@ import Fastify from 'fastify';
 import fastifyStatic from '@fastify/static';
 import fastifyWebsocket from '@fastify/websocket';
 import { basename } from 'path';
-import type { CodeGraph } from '../core/graph.js';
+import type { CodeGraphApi } from '../core/graph.js';
 import type { StorageProvider } from '../store/provider.js';
 import {
   WebSocketBroadcaster,
@@ -29,7 +29,7 @@ import type { EmlServices } from '../eml/mcp/handlers.js';
 
 export interface APIServerOptions {
   storage: StorageProvider;
-  graph: CodeGraph;
+  graph: CodeGraphApi;
   dashboardPath: string;
   workspaceRoot: string;
   mountRoot?: string;
