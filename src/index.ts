@@ -76,8 +76,10 @@ async function main() {
   await storage.initialize();
   console.log('SQLite storage initialized');
 
+  const { connect } = await import('@lancedb/lancedb');
+  const lanceConnection = await connect(lanceDbPath);
   const vectorStore = new LanceDBVectorStore(lanceDbPath);
-  await vectorStore.initialize();
+  await vectorStore.initialize(lanceConnection);
   console.log('LanceDB vector store initialized');
 
   const graph = new CodeGraph(config.graphMemoryLimitMb.value);
@@ -155,7 +157,7 @@ async function main() {
       ? new EventBus(emlEventStore, { concurrency: config.emlWorkerConcurrency.value })
       : undefined;
     emlMemoryVectors = new MemoryVectorStore(lanceDbPath);
-    await emlMemoryVectors.initialize();
+    await emlMemoryVectors.initialize(lanceConnection);
     const emlEmbedQuery =
       config.llmProvider.value !== 'none' && embeddingProvider
         ? async (q: string): Promise<number[] | null> => {
@@ -415,6 +417,7 @@ async function main() {
   shutdownManager.register('MCP server', () => mcpServer.close(), 80);
   shutdownManager.register('Vector store', () => vectorStore.close(), 70);
   shutdownManager.register('SQLite storage', () => storage.close(), 60);
+  shutdownManager.register('LanceDB connection', () => lanceConnection.close(), 55);
 
   if (config.autoIndex.value) {
     console.log('Auto-indexing /workspace...');
