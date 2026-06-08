@@ -30,7 +30,7 @@
 import { readdir, stat, readFile } from 'fs/promises';
 import { resolve, relative, basename, dirname, join } from 'path';
 import { createHash } from 'crypto';
-import { parseFile } from './parser.js';
+import { parseFile, type ParsedFile } from './parser.js';
 import type { CodeGraphApi } from './graph.js';
 import type { StorageProvider } from '../store/provider.js';
 import type {
@@ -222,17 +222,17 @@ export class Indexer extends EventEmitter {
 
     this.storage.upsertFile(fileMetadata);
 
-    let parsed;
+    let parsed: ParsedFile;
     try {
       if (this.parsePool) {
         // Use worker pool for parsing
-        parsed = await this.parsePool.parse({
+        const workerResult = await this.parsePool.parse({
           filePath: relativePath,
           repositoryId,
           workspaceRoot: this.workspaceRoot,
         });
         
-        if (parsed === null) {
+        if (workerResult === null) {
           // Worker reported error or security violation - mark file as skipped
           fileMetadata.status = 'error';
           fileMetadata.lastError = 'parse worker skipped';
@@ -242,6 +242,7 @@ export class Indexer extends EventEmitter {
           this.emit('file:error', relativePath, new Error('parse worker skipped'));
           return;
         }
+        parsed = workerResult;
       } else {
         // Use in-process parsing (fallback when pool size is 0)
         parsed = await parseFile(relativePath, repositoryId, this.workspaceRoot);
