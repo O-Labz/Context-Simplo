@@ -12,6 +12,7 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 import { loadConfig } from './core/config.js';
 import { SqliteStorageProvider } from './store/sqlite.js';
+import { ParsePool } from './core/parse-pool.js';
 import { LanceDBVectorStore } from './store/lance.js';
 import { CodeGraph } from './core/graph.js';
 import { Indexer } from './core/indexer.js';
@@ -134,7 +135,21 @@ async function main() {
   });
   console.log(`Memory guard ready (soft: ${config.graphMemorySoftPct.value}%, hard: ${config.graphMemoryHardPct.value}%, limit: ${heapLimitMb}MB)`);
 
-  const indexer = new Indexer(storage, graph, workspaceRoot, embeddingQueue, vectorStore, memoryGuard);
+  // Initialize parse pool if enabled
+  let parsePool: ParsePool | undefined;
+  if (config.parseWorkerPoolSize.value > 0) {
+    parsePool = new ParsePool({
+      size: config.parseWorkerPoolSize.value,
+      recycleAfter: config.parseWorkerRecycleAfter.value,
+      workerHeapMb: config.workerHeapMb.value,
+      workerPath: resolve(__dirname, 'core/parse-worker.js'),
+    });
+    console.log(`Parse pool ready (size: ${config.parseWorkerPoolSize.value}, recycle after: ${config.parseWorkerRecycleAfter.value}, heap: ${config.workerHeapMb.value}MB)`);
+  } else {
+    console.log('Parse pool disabled (PARSE_WORKER_POOL_SIZE=0)');
+  }
+
+  const indexer = new Indexer(storage, graph, workspaceRoot, embeddingQueue, vectorStore, memoryGuard, parsePool);
   console.log('Indexer ready');
 
   const indexQueue = new IndexQueue({
@@ -438,6 +453,9 @@ async function main() {
   shutdownManager.register('Vector store', () => vectorStore.close(), 70);
   shutdownManager.register('SQLite storage', () => storage.close(), 60);
   shutdownManager.register('LanceDB connection', () => lanceConnection.close(), 55);
+  if (parsePool) {
+    shutdownManager.register('Parse pool', () => parsePool.terminate(), 92);
+  }
 
   if (config.autoIndex.value) {
     console.log('Auto-indexing /workspace...');

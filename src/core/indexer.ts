@@ -45,6 +45,7 @@ import { ContextIgnore } from '../security/ignore.js';
 import type { EmbeddingQueue } from './embedding-queue.js';
 import { chunkCodeForEmbedding } from '../llm/chunker.js';
 import type { LanceDBVectorStore } from '../store/lance.js';
+import type { ParsePool } from './parse-pool.js';
 
 export interface IndexerOptions {
   respectIgnore?: boolean;
@@ -76,7 +77,8 @@ export class Indexer extends EventEmitter {
     private workspaceRoot: string = '/workspace',
     private embeddingQueue?: EmbeddingQueue,
     private vectorStore?: LanceDBVectorStore,
-    private memoryGuard?: any
+    private memoryGuard?: any,
+    private parsePool?: ParsePool
   ) {
     super();
     this.contextIgnore = new ContextIgnore(workspaceRoot);
@@ -220,8 +222,30 @@ export class Indexer extends EventEmitter {
 
     this.storage.upsertFile(fileMetadata);
 
+    let parsed;
     try {
-      const parsed = await parseFile(relativePath, repositoryId, this.workspaceRoot);
+      if (this.parsePool) {
+        // Use worker pool for parsing
+        parsed = await this.parsePool.parse({
+          filePath: relativePath,
+          repositoryId,
+          workspaceRoot: this.workspaceRoot,
+        });
+        
+        if (parsed === null) {
+          // Worker reported error or security violation - mark file as skipped
+          fileMetadata.status = 'error';
+          fileMetadata.lastError = 'parse worker skipped';
+          fileMetadata.retryCount++;
+          fileMetadata.updatedAt = new Date();
+          this.storage.upsertFile(fileMetadata);
+          this.emit('file:error', relativePath, new Error('parse worker skipped'));
+          return;
+        }
+      } else {
+        // Use in-process parsing (fallback when pool size is 0)
+        parsed = await parseFile(relativePath, repositoryId, this.workspaceRoot);
+      }
 
       // Update graph with mutex protection (outside transaction)
       await this.graph.removeNodesInFile(relativePath);
