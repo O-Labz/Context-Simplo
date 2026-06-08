@@ -86,21 +86,7 @@ async function main() {
   const allNodes = storage.getAllNodes();
   const allEdges = storage.getEdges();
   
-  for (const node of allNodes) {
-    try {
-      await graph.addNode(node);
-    } catch (error) {
-      console.warn(`Failed to restore node ${node.id}:`, (error as Error).message);
-    }
-  }
-  
-  for (const edge of allEdges) {
-    try {
-      await graph.addEdge(edge);
-    } catch (error) {
-      console.warn(`Failed to restore edge ${edge.id}:`, (error as Error).message);
-    }
-  }
+  await graph.bulkLoad(allNodes, allEdges);
   
   console.log(`Graph hydrated: ${allNodes.length} nodes, ${allEdges.length} edges`);
 

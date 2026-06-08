@@ -42,6 +42,49 @@ describe('CodeGraph', () => {
     createdAt: new Date(),
   });
 
+  describe('bulkLoad', () => {
+    it('should load multiple nodes and edges in a single operation', async () => {
+      const nodes = [
+        createTestNode('1', 'testFunc1'),
+        createTestNode('2', 'testFunc2'),
+        createTestNode('3', 'testFunc3'),
+      ];
+      const edges = [
+        createTestEdge('e1', '1', '2'),
+        createTestEdge('e2', '2', '3'),
+      ];
+
+      await graph.bulkLoad(nodes, edges);
+
+      const stats = graph.getStats();
+      expect(stats.nodeCount).toBe(3);
+      expect(stats.edgeCount).toBe(2);
+
+      // Verify nodes are accessible
+      expect(graph.getNode('1')).toBeTruthy();
+      expect(graph.getNode('2')).toBeTruthy();
+      expect(graph.getNode('3')).toBeTruthy();
+    });
+
+    it('should skip edges with missing endpoints', async () => {
+      const nodes = [
+        createTestNode('1', 'testFunc1'),
+        createTestNode('2', 'testFunc2'),
+      ];
+      const edges = [
+        createTestEdge('e1', '1', '2'), // Valid
+        createTestEdge('e2', '1', '3'), // Invalid - node 3 doesn't exist
+        createTestEdge('e3', '4', '2'), // Invalid - node 4 doesn't exist
+      ];
+
+      await graph.bulkLoad(nodes, edges);
+
+      const stats = graph.getStats();
+      expect(stats.nodeCount).toBe(2);
+      expect(stats.edgeCount).toBe(1); // Only the valid edge should be added
+    });
+  });
+
   describe('addNode', () => {
     it('should add a node to the graph', async () => {
       const node = createTestNode('1', 'testFunc');

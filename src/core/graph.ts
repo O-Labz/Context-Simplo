@@ -141,6 +141,57 @@ export class CodeGraph {
     }
   }
 
+  async bulkLoad(nodes: CodeNode[], edges: GraphEdge[]): Promise<void> {
+    const release = await this.acquireMutationLock();
+    try {
+      // Check memory limit before insertion
+      this.checkMemoryLimit();
+
+      // Clear existing indexes and cache
+      this.nameIndex.clear();
+      this.fileIndex.clear();
+      this.centralityCache = null;
+
+      // Add all nodes first
+      for (const node of nodes) {
+        const lean = { ...node, docstring: undefined, snippet: undefined };
+        if (this.graph.hasNode(node.id)) {
+          this.graph.updateNode(node.id, () => lean);
+        } else {
+          this.graph.addNode(node.id, lean);
+        }
+
+        // Update name index
+        if (!this.nameIndex.has(node.name)) {
+          this.nameIndex.set(node.name, new Set());
+        }
+        this.nameIndex.get(node.name)!.add(node.id);
+
+        // Update file index
+        if (!this.fileIndex.has(node.filePath)) {
+          this.fileIndex.set(node.filePath, new Set());
+        }
+        this.fileIndex.get(node.filePath)!.add(node.id);
+      }
+
+      // Add all edges, skipping edges whose endpoints are missing
+      for (const edge of edges) {
+        if (!this.graph.hasNode(edge.sourceId) || !this.graph.hasNode(edge.targetId)) {
+          console.warn(`Skipping edge ${edge.id}: missing endpoint`);
+          continue;
+        }
+
+        if (this.graph.hasEdge(edge.id)) {
+          this.graph.replaceEdgeAttributes(edge.id, edge);
+        } else {
+          this.graph.addEdgeWithKey(edge.id, edge.sourceId, edge.targetId, edge);
+        }
+      }
+    } finally {
+      release();
+    }
+  }
+
   getNode(nodeId: string): CodeNode | null {
     if (!this.graph.hasNode(nodeId)) {
       return null;
