@@ -141,7 +141,7 @@ export class ParsePool {
         this.recycleWorkerIfNeeded(poolWorker);
         resolve(response.parsed);
       } else {
-        // Worker reported an error (security or parse)
+        // Worker reported a parse error
         console.warn(`index.file.skipped`, {
           filePath: request.filePath,
           reason: response.kind,
