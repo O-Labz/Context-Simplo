@@ -49,6 +49,15 @@ const DEFAULT_CONFIG = {
   gitlabToken: undefined as string | undefined,
   gitlabHost: 'https://gitlab.com',
   emlWebhookSecret: undefined as string | undefined,
+  parseWorkerPoolSize: 2,
+  parseWorkerRecycleAfter: 200,
+  workerHeapMb: 512,
+  indexMaxConcurrentJobs: 1,
+  indexQueueMaxDepth: 16,
+  graphHotCacheMb: 256,
+  graphMemorySoftPct: 75,
+  graphMemoryHardPct: 90,
+  graphMaxNodes: 2000000,
 } as const;
 
 const ENV_VAR_MAP = {
@@ -72,6 +81,15 @@ const ENV_VAR_MAP = {
   gitlabToken: 'GITLAB_TOKEN',
   gitlabHost: 'GITLAB_HOST',
   emlWebhookSecret: 'EML_WEBHOOK_SECRET',
+  parseWorkerPoolSize: 'PARSE_WORKER_POOL_SIZE',
+  parseWorkerRecycleAfter: 'PARSE_WORKER_RECYCLE_AFTER',
+  workerHeapMb: 'WORKER_HEAP_MB',
+  indexMaxConcurrentJobs: 'INDEX_MAX_CONCURRENT_JOBS',
+  indexQueueMaxDepth: 'INDEX_QUEUE_MAX_DEPTH',
+  graphHotCacheMb: 'GRAPH_HOT_CACHE_MB',
+  graphMemorySoftPct: 'GRAPH_MEMORY_SOFT_PCT',
+  graphMemoryHardPct: 'GRAPH_MEMORY_HARD_PCT',
+  graphMaxNodes: 'GRAPH_MAX_NODES',
 } as const;
 
 const EML_EXTRACTION_MODES: readonly EmlExtractionMode[] = ['llm', 'fallback', 'off'];
@@ -223,6 +241,42 @@ export function loadConfig(dashboardConfig?: DashboardConfig): AppConfig {
     'emlWebhookSecret',
     process.env[ENV_VAR_MAP.emlWebhookSecret]
   ) as string | undefined;
+  const envParseWorkerPoolSize = parseEnvValue(
+    'parseWorkerPoolSize',
+    process.env[ENV_VAR_MAP.parseWorkerPoolSize]
+  ) as number | undefined;
+  const envParseWorkerRecycleAfter = parseEnvValue(
+    'parseWorkerRecycleAfter',
+    process.env[ENV_VAR_MAP.parseWorkerRecycleAfter]
+  ) as number | undefined;
+  const envWorkerHeapMb = parseEnvValue(
+    'workerHeapMb',
+    process.env[ENV_VAR_MAP.workerHeapMb]
+  ) as number | undefined;
+  const envIndexMaxConcurrentJobs = parseEnvValue(
+    'indexMaxConcurrentJobs',
+    process.env[ENV_VAR_MAP.indexMaxConcurrentJobs]
+  ) as number | undefined;
+  const envIndexQueueMaxDepth = parseEnvValue(
+    'indexQueueMaxDepth',
+    process.env[ENV_VAR_MAP.indexQueueMaxDepth]
+  ) as number | undefined;
+  const envGraphHotCacheMb = parseEnvValue(
+    'graphHotCacheMb',
+    process.env[ENV_VAR_MAP.graphHotCacheMb]
+  ) as number | undefined;
+  const envGraphMemorySoftPct = parseEnvValue(
+    'graphMemorySoftPct',
+    process.env[ENV_VAR_MAP.graphMemorySoftPct]
+  ) as number | undefined;
+  const envGraphMemoryHardPct = parseEnvValue(
+    'graphMemoryHardPct',
+    process.env[ENV_VAR_MAP.graphMemoryHardPct]
+  ) as number | undefined;
+  const envGraphMaxNodes = parseEnvValue(
+    'graphMaxNodes',
+    process.env[ENV_VAR_MAP.graphMaxNodes]
+  ) as number | undefined;
 
   const envEmlExtractionRaw = process.env[ENV_VAR_MAP.emlExtraction];
   let envEmlExtraction: EmlExtractionMode | undefined;
@@ -239,6 +293,19 @@ export function loadConfig(dashboardConfig?: DashboardConfig): AppConfig {
   validateUrl(envLlmBaseUrl, 'llmBaseUrl');
   validateUrl(dashboardConfig?.llmBaseUrl, 'llmBaseUrl');
   validateUrl(envGitlabHost, 'gitlabHost');
+
+  // Validate percentage ranges
+  const softPct = envGraphMemorySoftPct ?? DEFAULT_CONFIG.graphMemorySoftPct;
+  const hardPct = envGraphMemoryHardPct ?? DEFAULT_CONFIG.graphMemoryHardPct;
+  if (softPct < 1 || softPct > 99) {
+    throw new ConfigError('graphMemorySoftPct', 'must be between 1 and 99');
+  }
+  if (hardPct < 1 || hardPct > 99) {
+    throw new ConfigError('graphMemoryHardPct', 'must be between 1 and 99');
+  }
+  if (softPct >= hardPct) {
+    throw new ConfigError('graphMemoryHardPct', 'must be greater than soft pct');
+  }
 
   const llmProvider = createConfigValue(
     'llmProvider',
@@ -352,6 +419,60 @@ export function loadConfig(dashboardConfig?: DashboardConfig): AppConfig {
     undefined,
     DEFAULT_CONFIG.emlWebhookSecret
   );
+  const parseWorkerPoolSize = createConfigValue(
+    'parseWorkerPoolSize',
+    envParseWorkerPoolSize,
+    undefined,
+    DEFAULT_CONFIG.parseWorkerPoolSize
+  );
+  const parseWorkerRecycleAfter = createConfigValue(
+    'parseWorkerRecycleAfter',
+    envParseWorkerRecycleAfter,
+    undefined,
+    DEFAULT_CONFIG.parseWorkerRecycleAfter
+  );
+  const workerHeapMb = createConfigValue(
+    'workerHeapMb',
+    envWorkerHeapMb,
+    undefined,
+    DEFAULT_CONFIG.workerHeapMb
+  );
+  const indexMaxConcurrentJobs = createConfigValue(
+    'indexMaxConcurrentJobs',
+    envIndexMaxConcurrentJobs,
+    undefined,
+    DEFAULT_CONFIG.indexMaxConcurrentJobs
+  );
+  const indexQueueMaxDepth = createConfigValue(
+    'indexQueueMaxDepth',
+    envIndexQueueMaxDepth,
+    undefined,
+    DEFAULT_CONFIG.indexQueueMaxDepth
+  );
+  const graphHotCacheMb = createConfigValue(
+    'graphHotCacheMb',
+    envGraphHotCacheMb,
+    undefined,
+    DEFAULT_CONFIG.graphHotCacheMb
+  );
+  const graphMemorySoftPct = createConfigValue(
+    'graphMemorySoftPct',
+    envGraphMemorySoftPct,
+    undefined,
+    DEFAULT_CONFIG.graphMemorySoftPct
+  );
+  const graphMemoryHardPct = createConfigValue(
+    'graphMemoryHardPct',
+    envGraphMemoryHardPct,
+    undefined,
+    DEFAULT_CONFIG.graphMemoryHardPct
+  );
+  const graphMaxNodes = createConfigValue(
+    'graphMaxNodes',
+    envGraphMaxNodes,
+    undefined,
+    DEFAULT_CONFIG.graphMaxNodes
+  );
 
   if (llmProvider.value === 'openai' && !llmApiKey.value) {
     throw new ConfigError(
@@ -388,6 +509,15 @@ export function loadConfig(dashboardConfig?: DashboardConfig): AppConfig {
     gitlabToken,
     gitlabHost,
     emlWebhookSecret,
+    parseWorkerPoolSize,
+    parseWorkerRecycleAfter,
+    workerHeapMb,
+    indexMaxConcurrentJobs,
+    indexQueueMaxDepth,
+    graphHotCacheMb,
+    graphMemorySoftPct,
+    graphMemoryHardPct,
+    graphMaxNodes,
   };
 }
 

@@ -6,7 +6,8 @@ describe('Config', () => {
 
   beforeEach(() => {
     Object.keys(process.env).forEach((key) => {
-      if (key.startsWith('LLM_') || key.startsWith('CONTEXT_SIMPLO_') || key.startsWith('EMBEDDING_')) {
+      if (key.startsWith('LLM_') || key.startsWith('CONTEXT_SIMPLO_') || key.startsWith('EMBEDDING_') || 
+          key.startsWith('PARSE_') || key.startsWith('INDEX_') || key.startsWith('GRAPH_') || key.startsWith('WORKER_')) {
         delete process.env[key];
       }
     });
@@ -104,6 +105,47 @@ describe('Config', () => {
       process.env.LLM_PROVIDER = 'openai';
 
       expect(() => loadConfig()).toThrow('LLM_API_KEY is required');
+    });
+
+    it('should load new config fields with defaults', () => {
+      const config = loadConfig();
+
+      expect(config.parseWorkerPoolSize.value).toBe(2);
+      expect(config.parseWorkerRecycleAfter.value).toBe(200);
+      expect(config.workerHeapMb.value).toBe(512);
+      expect(config.indexMaxConcurrentJobs.value).toBe(1);
+      expect(config.indexQueueMaxDepth.value).toBe(16);
+      expect(config.graphHotCacheMb.value).toBe(256);
+      expect(config.graphMemorySoftPct.value).toBe(75);
+      expect(config.graphMemoryHardPct.value).toBe(90);
+      expect(config.graphMaxNodes.value).toBe(2000000);
+    });
+
+    it('should parse new config fields from env vars', () => {
+      process.env.PARSE_WORKER_POOL_SIZE = '4';
+      process.env.INDEX_MAX_CONCURRENT_JOBS = '2';
+      process.env.GRAPH_HOT_CACHE_MB = '512';
+
+      const config = loadConfig();
+
+      expect(config.parseWorkerPoolSize.value).toBe(4);
+      expect(config.indexMaxConcurrentJobs.value).toBe(2);
+      expect(config.graphHotCacheMb.value).toBe(512);
+    });
+
+    it('should validate percentage ranges', () => {
+      process.env.GRAPH_MEMORY_SOFT_PCT = '0';
+      expect(() => loadConfig()).toThrow('must be between 1 and 99');
+
+      process.env.GRAPH_MEMORY_SOFT_PCT = '100';
+      expect(() => loadConfig()).toThrow('must be between 1 and 99');
+    });
+
+    it('should validate soft < hard percentage', () => {
+      process.env.GRAPH_MEMORY_SOFT_PCT = '90';
+      process.env.GRAPH_MEMORY_HARD_PCT = '85';
+
+      expect(() => loadConfig()).toThrow('must be greater than soft pct');
     });
   });
 
