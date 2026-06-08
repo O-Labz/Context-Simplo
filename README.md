@@ -109,6 +109,18 @@ Want no AI in the loop at all? Start it with `-e LLM_PROVIDER=none`. You lose se
 
 The engineering memory layer is on by default. Turn it off with `-e EML_ENABLED=false`.
 
+## Tuning
+
+Control resource usage with:
+
+```bash
+  -e PARSE_WORKER_POOL_SIZE=2     # Parse workers (set 0 to disable)
+  -e INDEX_MAX_CONCURRENT_JOBS=1  # Concurrent indexing jobs  
+  -e GRAPH_HOT_CACHE_MB=256       # Graph cache size
+```
+
+For container limits, use `docker run --memory=4g --cpus=4`.
+
 ## Good to know
 
 - Mounting your home directory at `/host` lets you switch between projects from the dashboard without restarting the container.

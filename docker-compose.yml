@@ -3,6 +3,8 @@ services:
     image: context-simplo:latest
     build: .
     container_name: context-simplo
+    mem_limit: ${SIMPLO_MEM_LIMIT:-4g}
+    cpus: ${SIMPLO_CPUS:-4}
     ports:
       - "3001:3001"   # Web dashboard + API + MCP Streamable HTTP endpoint
     volumes:
@@ -19,13 +21,28 @@ services:
       - CONTEXT_SIMPLO_WATCH=true
       - CONTEXT_SIMPLO_LOG_LEVEL=info
       - CONTEXT_SIMPLO_RESPONSE_MODE=${CONTEXT_SIMPLO_RESPONSE_MODE:-compact}
-      - NODE_OPTIONS=--max-old-space-size=8192
+      - NODE_OPTIONS=--max-old-space-size=${NODE_HEAP_MB:-2560} --expose-gc
+      - PARSE_WORKER_POOL_SIZE=${PARSE_WORKER_POOL_SIZE:-2}
+      - PARSE_WORKER_RECYCLE_AFTER=${PARSE_WORKER_RECYCLE_AFTER:-200}
+      - WORKER_HEAP_MB=${WORKER_HEAP_MB:-512}
+      - INDEX_MAX_CONCURRENT_JOBS=${INDEX_MAX_CONCURRENT_JOBS:-1}
+      - INDEX_QUEUE_MAX_DEPTH=${INDEX_QUEUE_MAX_DEPTH:-16}
+      - GRAPH_HOT_CACHE_MB=${GRAPH_HOT_CACHE_MB:-256}
+      - GRAPH_MEMORY_SOFT_PCT=${GRAPH_MEMORY_SOFT_PCT:-75}
+      - GRAPH_MEMORY_HARD_PCT=${GRAPH_MEMORY_HARD_PCT:-90}
+      - GRAPH_MAX_NODES=${GRAPH_MAX_NODES:-2000000}
       # Graph engine in-memory budget. Code hard-caps this at 4096MB (see src/core/graph.ts).
       # - GRAPH_MEMORY_LIMIT_MB=${GRAPH_MEMORY_LIMIT_MB:-4096}
       # Mount root for browsing (defaults to /host for dynamic workspace switching)
       - MOUNT_ROOT=${MOUNT_ROOT:-/host}
       # Initial workspace within the mount (defaults to /workspace for backward compat)
       - INITIAL_WORKSPACE=${INITIAL_WORKSPACE:-/workspace}
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3001/api/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 120s
     extra_hosts:
       - "host.docker.internal:host-gateway"   # Required for Linux, harmless on macOS/Windows
     stdin_open: true
