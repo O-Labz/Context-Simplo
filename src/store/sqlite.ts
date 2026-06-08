@@ -75,6 +75,7 @@ export class SqliteStorageProvider implements StorageProvider {
     const migrationFiles = [
       { version: 1, file: '001_initial.sql', description: 'Complete initial schema with FTS5 and triggers' },
       { version: 2, file: '002_eml.sql', description: 'Engineering Memory Layer schema' },
+      { version: 3, file: '003_graph_indexes.sql', description: 'graph lookup indexes' },
     ];
 
     for (const migration of migrationFiles) {
@@ -345,6 +346,79 @@ export class SqliteStorageProvider implements StorageProvider {
       .all(filePath) as any[];
 
     return rows.map((row) => this.mapNode(row));
+  }
+
+  getNodesByName(name: string, filter?: NodeFilter): CodeNode[] {
+    let sql = `SELECT id, name, qualified_name, kind, file_path, line_start, line_end, 
+               column_start, column_end, visibility, is_exported, docstring, complexity, 
+               repository_id, language, created_at, updated_at FROM nodes WHERE name = ?`;
+    const params: any[] = [name];
+
+    if (filter?.repositoryId) {
+      sql += ' AND repository_id = ?';
+      params.push(filter.repositoryId);
+    }
+
+    if (filter?.kind) {
+      sql += ' AND kind = ?';
+      params.push(filter.kind);
+    }
+
+    if (filter?.language) {
+      sql += ' AND language = ?';
+      params.push(filter.language);
+    }
+
+    if (filter?.filePath) {
+      sql += ' AND file_path LIKE ?';
+      params.push(`%${filter.filePath}%`);
+    }
+
+    if (filter?.visibility) {
+      sql += ' AND visibility = ?';
+      params.push(filter.visibility);
+    }
+
+    const rows = this.db.prepare(sql).all(...params) as any[];
+    return rows.map((row) => this.mapNode(row));
+  }
+
+  countNodes(filter?: NodeFilter): number {
+    let sql = 'SELECT COUNT(*) as count FROM nodes WHERE 1=1';
+    const params: any[] = [];
+
+    if (filter?.kind) {
+      sql += ' AND kind = ?';
+      params.push(filter.kind);
+    }
+
+    if (filter?.language) {
+      sql += ' AND language = ?';
+      params.push(filter.language);
+    }
+
+    if (filter?.repositoryId) {
+      sql += ' AND repository_id = ?';
+      params.push(filter.repositoryId);
+    }
+
+    if (filter?.filePath) {
+      sql += ' AND file_path LIKE ?';
+      params.push(`%${filter.filePath}%`);
+    }
+
+    if (filter?.visibility) {
+      sql += ' AND visibility = ?';
+      params.push(filter.visibility);
+    }
+
+    if (filter?.namePattern) {
+      sql += ' AND (name LIKE ? OR qualified_name LIKE ?)';
+      params.push(`%${filter.namePattern}%`, `%${filter.namePattern}%`);
+    }
+
+    const row = this.db.prepare(sql).get(...params) as { count: number };
+    return row.count;
   }
 
   upsertNodes(nodes: CodeNode[]): void {

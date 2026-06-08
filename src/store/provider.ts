@@ -38,6 +38,8 @@ export interface StorageProvider {
   getNodes(filter: NodeFilter): CodeNode[];
   getAllNodes(): CodeNode[];
   getNodesInFile(filePath: string): CodeNode[];
+  getNodesByName(name: string, filter?: NodeFilter): CodeNode[];
+  countNodes(filter?: NodeFilter): number;
   upsertNodes(nodes: CodeNode[]): void;
   deleteNode(id: string): void;
   deleteNodesInFile(filePath: string): void;
