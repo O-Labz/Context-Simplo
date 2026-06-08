@@ -32,6 +32,7 @@ export interface HandlerContext {
   workspaceRoot: string;
   watcher?: FileWatcher;
   vectorStore?: LanceDBVectorStore;
+  indexQueue?: any;
 }
 
 export async function indexRepository(
@@ -46,10 +47,15 @@ export async function indexRepository(
     throw new Error('Path traversal detected: repository path must be within workspace root');
   }
 
-  const job = await context.indexer.indexRepository(absolutePath, {
+  const job = await (context.indexQueue?.run(() =>
+    context.indexer.indexRepository(absolutePath, {
+      incremental: input.incremental || false,
+      respectIgnore: true,
+    })
+  ) ?? context.indexer.indexRepository(absolutePath, {
     incremental: input.incremental || false,
     respectIgnore: true,
-  });
+  }));
 
   // Auto-start file watcher so changes are picked up immediately
   let watching = false;

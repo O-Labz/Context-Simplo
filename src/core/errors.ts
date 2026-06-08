@@ -100,6 +100,16 @@ export class NotFoundError extends ContextSimploError {
   }
 }
 
+export class IndexQueueFullError extends ContextSimploError {
+  readonly code = 'INDEX_QUEUE_FULL';
+  readonly retryAfterSeconds: number;
+
+  constructor(retryAfterSeconds: number = 30) {
+    super('Index queue is full, retry later');
+    this.retryAfterSeconds = retryAfterSeconds;
+  }
+}
+
 export class MCPProtocolError extends ContextSimploError {
   readonly code = 'MCP_PROTOCOL_ERROR';
   readonly mcpErrorCode: number;

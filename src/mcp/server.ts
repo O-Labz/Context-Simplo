@@ -56,6 +56,7 @@ export interface MCPServerOptions {
   watcher?: FileWatcher;
   responseMode?: ResponseMode;
   eml?: EmlServices;
+  indexQueue?: any;
 }
 
 export interface MCPMetrics {
@@ -80,6 +81,7 @@ export class MCPServer {
   private vectorStore?: LanceDBVectorStore;
   private responseMode: ResponseMode;
   private eml?: EmlServices;
+  private indexQueue?: any;
   private metrics: MCPMetrics = {
     totalRequests: 0,
     requestsPerMinute: 0,
@@ -100,6 +102,7 @@ export class MCPServer {
     this.watcher = options.watcher;
     this.vectorStore = options.vectorStore;
     this.eml = options.eml;
+    this.indexQueue = options.indexQueue;
 
     if (options.vectorStore && options.embeddingProvider) {
       this.vectorSearch = new VectorSearch(options.vectorStore, options.embeddingProvider);
@@ -175,6 +178,7 @@ export class MCPServer {
       workspaceRoot: this.workspaceRoot,
       watcher: this.watcher,
       vectorStore: this.vectorStore,
+      indexQueue: this.indexQueue,
     };
 
     switch (name) {

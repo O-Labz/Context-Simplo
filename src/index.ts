@@ -19,6 +19,7 @@ import { MCPServer } from './mcp/server.js';
 import { FileWatcher } from './core/watcher.js';
 import { ShutdownManager } from './core/shutdown.js';
 import { sanitizeErrorForLogging } from './core/errors.js';
+import { IndexQueue } from './core/index-queue.js';
 import { createEmbeddingProvider } from './llm/provider.js';
 import { EmbeddingQueue } from './core/embedding-queue.js';
 import { ConfigManager } from './core/config-manager.js';
@@ -125,6 +126,12 @@ async function main() {
 
   const indexer = new Indexer(storage, graph, workspaceRoot, embeddingQueue, vectorStore);
   console.log('Indexer ready');
+
+  const indexQueue = new IndexQueue({
+    maxConcurrent: config.indexMaxConcurrentJobs.value,
+    maxDepth: config.indexQueueMaxDepth.value,
+  });
+  console.log(`Index queue ready (max concurrent: ${config.indexMaxConcurrentJobs.value}, max depth: ${config.indexQueueMaxDepth.value})`);
 
   // --- Engineering Memory Layer (EML) bootstrap ---
   // Always construct the services bundle so REST/MCP surfaces exist and report
@@ -269,6 +276,7 @@ async function main() {
     watcher,
     responseMode: config.responseMode.value,
     eml,
+    indexQueue,
   });
 
   const configManager = new ConfigManager({
@@ -343,6 +351,7 @@ async function main() {
       mcpServer,
       configManager,
       eml,
+      indexQueue,
     })
   );
 
