@@ -18,7 +18,8 @@ import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import path from 'node:path';
 import type { StorageProvider } from '../../store/provider.js';
-import type { CodeGraph } from '../../core/graph.js';
+import { IndexQueueFullError, MemoryPressureError } from '../../core/errors.js';
+import type { CodeGraphApi } from '../../core/graph.js';
 import type { WebSocketBroadcaster } from '../websocket.js';
 import { WebSocketEvents } from '../websocket.js';
 import { isSubpath } from '../../core/path-utils.js';
@@ -30,12 +31,13 @@ const IndexRepositorySchema = z.object({
 
 export interface RepositoryRouteOptions {
   storage: StorageProvider;
-  graph: CodeGraph;
+  graph: CodeGraphApi;
   broadcaster: WebSocketBroadcaster;
   workspaceRoot: string;
   indexer?: any;
   watcher?: any;
   vectorStore?: any;
+  indexQueue?: any;
 }
 
 /**
@@ -115,34 +117,69 @@ export async function registerRepositoryRoutes(
         status: 'starting',
       });
 
-      // Run indexing in background
-      setImmediate(async () => {
-        try {
-          const job = await options.indexer.indexRepository(absolutePath, {
+      // Run indexing in background, but handle queue admission errors immediately
+      try {
+        const indexingPromise = options.indexQueue?.run(() =>
+          options.indexer.indexRepository(absolutePath, {
             incremental: input.incremental,
             respectIgnore: true,
-          });
+          })
+        ) ?? options.indexer.indexRepository(absolutePath, {
+          incremental: input.incremental,
+          respectIgnore: true,
+        });
 
-          options.broadcaster.broadcast(WebSocketEvents.INDEX_COMPLETE, {
-            repositoryId: job.repositoryId,
-            path: input.path,
-            filesProcessed: job.filesProcessed,
-            nodesCreated: job.nodesCreated,
-            edgesCreated: job.edgesCreated,
-          });
-        } catch (error) {
-          options.broadcaster.broadcast(WebSocketEvents.INDEX_ERROR, {
-            path: input.path,
-            error: error instanceof Error ? error.message : 'Unknown error',
-          });
+        // Handle completion in background
+        setImmediate(async () => {
+          try {
+            const job = await indexingPromise;
+            options.broadcaster.broadcast(WebSocketEvents.INDEX_COMPLETE, {
+              repositoryId: job.repositoryId,
+              path: input.path,
+              filesProcessed: job.filesProcessed,
+              nodesCreated: job.nodesCreated,
+              edgesCreated: job.edgesCreated,
+            });
+          } catch (error) {
+            options.broadcaster.broadcast(WebSocketEvents.INDEX_ERROR, {
+              path: input.path,
+              error: error instanceof Error ? error.message : 'Unknown error',
+            });
+          }
+        });
+
+        return {
+          success: true,
+          path: input.path,
+          message: 'Indexing started',
+        };
+      } catch (error) {
+        if (error instanceof IndexQueueFullError) {
+          return reply
+            .status(429)
+            .header('Retry-After', String(error.retryAfterSeconds))
+            .send({
+              error: {
+                code: error.code,
+                message: 'indexing busy, retry later',
+                retryAfterSeconds: error.retryAfterSeconds,
+              },
+            });
         }
-      });
-
-      return {
-        success: true,
-        path: input.path,
-        message: 'Indexing started',
-      };
+        if (error instanceof MemoryPressureError) {
+          return reply
+            .status(503)
+            .header('Retry-After', String(error.retryAfterSeconds))
+            .send({
+              error: {
+                code: error.code,
+                message: 'server under memory pressure, retry later',
+                retryAfterSeconds: error.retryAfterSeconds,
+              },
+            });
+        }
+        throw error; // Re-throw other errors to be handled by outer catch
+      }
     } catch (error) {
       return reply.status(500).send({
         error: 'Indexing failed',
@@ -247,13 +284,22 @@ export async function registerRepositoryRoutes(
           status: 'reindexing',
         });
 
-        // Run re-indexing in background
-        setImmediate(async () => {
-          try {
-            const job = await options.indexer.indexRepository(repo.path, {
+        // Run re-indexing in background, but handle queue admission errors immediately
+        try {
+          const indexingPromise = options.indexQueue?.run(() =>
+            options.indexer.indexRepository(repo.path, {
               incremental: false,
               respectIgnore: true,
-            });
+            })
+          ) ?? options.indexer.indexRepository(repo.path, {
+            incremental: false,
+            respectIgnore: true,
+          });
+
+          // Handle completion in background
+          setImmediate(async () => {
+            try {
+              const job = await indexingPromise;
 
             options.broadcaster.broadcast(WebSocketEvents.INDEX_COMPLETE, {
               repositoryId: job.repositoryId,
@@ -270,11 +316,38 @@ export async function registerRepositoryRoutes(
           }
         });
 
-        return {
-          success: true,
-          repositoryId: id,
-          message: 'Re-indexing started',
-        };
+          return {
+            success: true,
+            repositoryId: id,
+            message: 'Re-indexing started',
+          };
+        } catch (error) {
+          if (error instanceof IndexQueueFullError) {
+            return reply
+              .status(429)
+              .header('Retry-After', String(error.retryAfterSeconds))
+              .send({
+                error: {
+                  code: error.code,
+                  message: 'indexing busy, retry later',
+                  retryAfterSeconds: error.retryAfterSeconds,
+                },
+              });
+          }
+          if (error instanceof MemoryPressureError) {
+            return reply
+              .status(503)
+              .header('Retry-After', String(error.retryAfterSeconds))
+              .send({
+                error: {
+                  code: error.code,
+                  message: 'server under memory pressure, retry later',
+                  retryAfterSeconds: error.retryAfterSeconds,
+                },
+              });
+          }
+          throw error; // Re-throw other errors to be handled by outer catch
+        }
       } catch (error) {
         return reply.status(500).send({
           error: 'Re-indexing failed',

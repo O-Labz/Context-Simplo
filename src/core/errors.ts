@@ -100,6 +100,34 @@ export class NotFoundError extends ContextSimploError {
   }
 }
 
+export class IndexQueueFullError extends ContextSimploError {
+  readonly code = 'INDEX_QUEUE_FULL';
+  readonly retryAfterSeconds: number;
+
+  constructor(retryAfterSeconds: number = 30) {
+    super('Index queue is full, retry later');
+    this.retryAfterSeconds = retryAfterSeconds;
+  }
+}
+
+export class MemoryPressureError extends ContextSimploError {
+  readonly code = 'MEMORY_PRESSURE';
+  readonly retryAfterSeconds: number;
+
+  constructor(retryAfterSeconds: number = 30) {
+    super('Server under memory pressure, retry later');
+    this.retryAfterSeconds = retryAfterSeconds;
+  }
+}
+
+export class IndexWorkerError extends ContextSimploError {
+  readonly code = 'INDEX_WORKER_ERROR';
+
+  constructor(workerId: string, reason: string, cause?: Error) {
+    super(`Index worker ${workerId} failed: ${reason}`, cause);
+  }
+}
+
 export class MCPProtocolError extends ContextSimploError {
   readonly code = 'MCP_PROTOCOL_ERROR';
   readonly mcpErrorCode: number;

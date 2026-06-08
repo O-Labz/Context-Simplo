@@ -328,6 +328,51 @@ export const AppConfigSchema = z.object({
     source: ConfigSourceSchema,
     isLocked: z.boolean(),
   }),
+  parseWorkerPoolSize: z.object({
+    value: z.number().int().nonnegative(),
+    source: ConfigSourceSchema,
+    isLocked: z.boolean(),
+  }),
+  parseWorkerRecycleAfter: z.object({
+    value: z.number().int().positive(),
+    source: ConfigSourceSchema,
+    isLocked: z.boolean(),
+  }),
+  workerHeapMb: z.object({
+    value: z.number().int().positive(),
+    source: ConfigSourceSchema,
+    isLocked: z.boolean(),
+  }),
+  indexMaxConcurrentJobs: z.object({
+    value: z.number().int().positive(),
+    source: ConfigSourceSchema,
+    isLocked: z.boolean(),
+  }),
+  indexQueueMaxDepth: z.object({
+    value: z.number().int().positive(),
+    source: ConfigSourceSchema,
+    isLocked: z.boolean(),
+  }),
+  graphHotCacheMb: z.object({
+    value: z.number().int().positive(),
+    source: ConfigSourceSchema,
+    isLocked: z.boolean(),
+  }),
+  graphMemorySoftPct: z.object({
+    value: z.number().int().min(1).max(99),
+    source: ConfigSourceSchema,
+    isLocked: z.boolean(),
+  }),
+  graphMemoryHardPct: z.object({
+    value: z.number().int().min(1).max(99),
+    source: ConfigSourceSchema,
+    isLocked: z.boolean(),
+  }),
+  graphMaxNodes: z.object({
+    value: z.number().int().positive(),
+    source: ConfigSourceSchema,
+    isLocked: z.boolean(),
+  }),
 });
 
 export type AppConfig = z.infer<typeof AppConfigSchema>;

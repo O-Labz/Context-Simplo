@@ -31,9 +31,13 @@ export class LanceDBVectorStore {
     this.dbPath = dbPath;
   }
 
-  async initialize(): Promise<void> {
+  async initialize(connection?: Connection): Promise<void> {
     try {
-      this.connection = await connect(this.dbPath);
+      if (connection) {
+        this.connection = connection;
+      } else {
+        this.connection = await connect(this.dbPath);
+      }
     } catch (error) {
       throw new StoreError('initialize', 'Failed to connect to LanceDB', error as Error);
     }
@@ -235,6 +239,7 @@ export class LanceDBVectorStore {
 
   async close(): Promise<void> {
     this.tables.clear();
+    // Only drop reference, don't close shared connection
     this.connection = null;
   }
 }

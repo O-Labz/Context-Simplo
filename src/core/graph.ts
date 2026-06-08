@@ -48,7 +48,46 @@ export interface ArchitectureSummary {
   packageStructure: Record<string, number>;
 }
 
-export class CodeGraph {
+/**
+ * Common interface for graph implementations (CodeGraph and StorageBackedGraph)
+ * This ensures both implementations can be used interchangeably by consumers.
+ */
+export interface CodeGraphApi {
+  // Read methods
+  getNode(nodeId: string): CodeNode | null;
+  findByName(name: string, filter?: NodeFilter): CodeNode[];
+  findByPattern(pattern: string, filter?: NodeFilter): CodeNode[];
+  getNodesInFile(filePath: string): CodeNode[];
+  getAllNodes(filter?: NodeFilter): CodeNode[];
+  getCallers(nodeId: string, edgeKinds?: EdgeKind[]): CodeNode[];
+  getCallees(nodeId: string, edgeKinds?: EdgeKind[]): CodeNode[];
+  findShortestPath(sourceId: string, targetId: string): CodeNode[] | null;
+  analyzeImpact(nodeId: string, maxDepth?: number): ImpactAnalysisResult;
+  computeCentrality(): Map<string, number>;
+  getCentrality(nodeId: string): number;
+  findDeadCode(repositoryId?: string): CodeNode[];
+  explainArchitecture(repositoryId: string, detailLevel?: number): ArchitectureSummary;
+  getStats(): {
+    nodeCount: number;
+    edgeCount: number;
+    fileCount: number;
+    languageBreakdown: Record<string, number>;
+  };
+  getMemoryFootprint(): number;
+  getAllEdges(): GraphEdge[];
+  serialize(): string;
+  
+  // Write methods
+  addNode(node: CodeNode): Promise<void>;
+  addEdge(edge: GraphEdge): Promise<void>;
+  bulkLoad(nodes: CodeNode[], edges: GraphEdge[]): Promise<void>;
+  removeNode(nodeId: string): Promise<void>;
+  removeNodesInFile(filePath: string): Promise<void>;
+  deserialize(data: string): Promise<void>;
+  clear(): void;
+}
+
+export class CodeGraph implements CodeGraphApi {
   private graph: DirectedGraph;
   private nameIndex: Map<string, Set<string>>;
   private fileIndex: Map<string, Set<string>>;
@@ -136,6 +175,57 @@ export class CodeGraph {
       }
 
       this.centralityCache = null;
+    } finally {
+      release();
+    }
+  }
+
+  async bulkLoad(nodes: CodeNode[], edges: GraphEdge[]): Promise<void> {
+    const release = await this.acquireMutationLock();
+    try {
+      // Check memory limit before insertion
+      this.checkMemoryLimit();
+
+      // Clear existing indexes and cache
+      this.nameIndex.clear();
+      this.fileIndex.clear();
+      this.centralityCache = null;
+
+      // Add all nodes first
+      for (const node of nodes) {
+        const lean = { ...node, docstring: undefined, snippet: undefined };
+        if (this.graph.hasNode(node.id)) {
+          this.graph.updateNode(node.id, () => lean);
+        } else {
+          this.graph.addNode(node.id, lean);
+        }
+
+        // Update name index
+        if (!this.nameIndex.has(node.name)) {
+          this.nameIndex.set(node.name, new Set());
+        }
+        this.nameIndex.get(node.name)!.add(node.id);
+
+        // Update file index
+        if (!this.fileIndex.has(node.filePath)) {
+          this.fileIndex.set(node.filePath, new Set());
+        }
+        this.fileIndex.get(node.filePath)!.add(node.id);
+      }
+
+      // Add all edges, skipping edges whose endpoints are missing
+      for (const edge of edges) {
+        if (!this.graph.hasNode(edge.sourceId) || !this.graph.hasNode(edge.targetId)) {
+          console.warn(`Skipping edge ${edge.id}: missing endpoint`);
+          continue;
+        }
+
+        if (this.graph.hasEdge(edge.id)) {
+          this.graph.replaceEdgeAttributes(edge.id, edge);
+        } else {
+          this.graph.addEdgeWithKey(edge.id, edge.sourceId, edge.targetId, edge);
+        }
+      }
     } finally {
       release();
     }

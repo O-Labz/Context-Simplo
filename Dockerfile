@@ -70,13 +70,13 @@ ENV NODE_ENV=production
 ENV DATA_DIR=/data
 ENV WORKSPACE_ROOT=/workspace
 ENV MOUNT_ROOT=/host
-ENV NODE_OPTIONS=--max-old-space-size=8192
+ENV NODE_OPTIONS="--max-old-space-size=2560 --expose-gc"
 
 # Expose port
 EXPOSE 3001
 
 # Health check
-HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
+HEALTHCHECK --interval=30s --timeout=10s --start-period=120s --retries=3 \
   CMD curl -f http://localhost:3001/api/health || exit 1
 
 # Volume mounts

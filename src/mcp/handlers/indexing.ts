@@ -12,7 +12,7 @@ import {
   DeleteRepositoryInputSchema,
 } from '../tools.js';
 import path from 'node:path';
-import type { CodeGraph } from '../../core/graph.js';
+import type { CodeGraphApi } from '../../core/graph.js';
 import type { StorageProvider } from '../../store/provider.js';
 import type { Indexer } from '../../core/indexer.js';
 import type { SymbolicSearch } from '../../search/symbolic.js';
@@ -24,7 +24,7 @@ import { isSubpath } from '../../core/path-utils.js';
 
 export interface HandlerContext {
   storage: StorageProvider;
-  graph: CodeGraph;
+  graph: CodeGraphApi;
   indexer: Indexer;
   symbolicSearch: SymbolicSearch;
   vectorSearch?: VectorSearch;
@@ -32,6 +32,7 @@ export interface HandlerContext {
   workspaceRoot: string;
   watcher?: FileWatcher;
   vectorStore?: LanceDBVectorStore;
+  indexQueue?: any;
 }
 
 export async function indexRepository(
@@ -46,10 +47,15 @@ export async function indexRepository(
     throw new Error('Path traversal detected: repository path must be within workspace root');
   }
 
-  const job = await context.indexer.indexRepository(absolutePath, {
+  const job = await (context.indexQueue?.run(() =>
+    context.indexer.indexRepository(absolutePath, {
+      incremental: input.incremental || false,
+      respectIgnore: true,
+    })
+  ) ?? context.indexer.indexRepository(absolutePath, {
     incremental: input.incremental || false,
     respectIgnore: true,
-  });
+  }));
 
   // Auto-start file watcher so changes are picked up immediately
   let watching = false;

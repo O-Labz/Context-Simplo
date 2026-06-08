@@ -31,7 +31,7 @@ import type { IncomingMessage, ServerResponse } from 'node:http';
 import { TOOL_DEFINITIONS, TOOL_DEFINITIONS_COMPACT } from './tools.js';
 import { formatMCPResponse } from './formatter.js';
 import type { ResponseMode } from '../core/types.js';
-import type { CodeGraph } from '../core/graph.js';
+import type { CodeGraphApi } from '../core/graph.js';
 import type { StorageProvider } from '../store/provider.js';
 import type { Indexer } from '../core/indexer.js';
 import { SymbolicSearch } from '../search/symbolic.js';
@@ -48,7 +48,7 @@ import { EmlDisabledError } from '../core/errors.js';
 
 export interface MCPServerOptions {
   storage: StorageProvider;
-  graph: CodeGraph;
+  graph: CodeGraphApi;
   indexer: Indexer;
   workspaceRoot: string;
   vectorStore?: LanceDBVectorStore;
@@ -56,6 +56,7 @@ export interface MCPServerOptions {
   watcher?: FileWatcher;
   responseMode?: ResponseMode;
   eml?: EmlServices;
+  indexQueue?: any;
 }
 
 export interface MCPMetrics {
@@ -70,7 +71,7 @@ export interface MCPMetrics {
 export class MCPServer {
   private server: Server;
   private storage: StorageProvider;
-  private graph: CodeGraph;
+  private graph: CodeGraphApi;
   private indexer: Indexer;
   private symbolicSearch: SymbolicSearch;
   private vectorSearch?: VectorSearch;
@@ -80,6 +81,7 @@ export class MCPServer {
   private vectorStore?: LanceDBVectorStore;
   private responseMode: ResponseMode;
   private eml?: EmlServices;
+  private indexQueue?: any;
   private metrics: MCPMetrics = {
     totalRequests: 0,
     requestsPerMinute: 0,
@@ -100,6 +102,7 @@ export class MCPServer {
     this.watcher = options.watcher;
     this.vectorStore = options.vectorStore;
     this.eml = options.eml;
+    this.indexQueue = options.indexQueue;
 
     if (options.vectorStore && options.embeddingProvider) {
       this.vectorSearch = new VectorSearch(options.vectorStore, options.embeddingProvider);
@@ -175,6 +178,7 @@ export class MCPServer {
       workspaceRoot: this.workspaceRoot,
       watcher: this.watcher,
       vectorStore: this.vectorStore,
+      indexQueue: this.indexQueue,
     };
 
     switch (name) {

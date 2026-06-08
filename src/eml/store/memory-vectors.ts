@@ -36,9 +36,13 @@ export class MemoryVectorStore {
     this.dbPath = dbPath;
   }
 
-  async initialize(): Promise<void> {
+  async initialize(connection?: Connection): Promise<void> {
     try {
-      this.connection = await connect(this.dbPath);
+      if (connection) {
+        this.connection = connection;
+      } else {
+        this.connection = await connect(this.dbPath);
+      }
     } catch (error) {
       throw new StoreError('initialize', 'Failed to connect to LanceDB (eml_memory)', error as Error);
     }
@@ -136,6 +140,7 @@ export class MemoryVectorStore {
 
   async close(): Promise<void> {
     this.table = null;
+    // Only drop reference, don't close shared connection
     this.connection = null;
   }
 }
