@@ -20,6 +20,8 @@ services:
       - CONTEXT_SIMPLO_LOG_LEVEL=info
       - CONTEXT_SIMPLO_RESPONSE_MODE=${CONTEXT_SIMPLO_RESPONSE_MODE:-compact}
       - NODE_OPTIONS=--max-old-space-size=8192
+      # Graph engine in-memory budget. Code hard-caps this at 4096MB (see src/core/graph.ts).
+      - GRAPH_MEMORY_LIMIT_MB=${GRAPH_MEMORY_LIMIT_MB:-4096}
       # Mount root for browsing (defaults to /host for dynamic workspace switching)
       - MOUNT_ROOT=${MOUNT_ROOT:-/host}
       # Initial workspace within the mount (defaults to /workspace for backward compat)
