@@ -120,6 +120,14 @@ export class MemoryPressureError extends ContextSimploError {
   }
 }
 
+export class IndexWorkerError extends ContextSimploError {
+  readonly code = 'INDEX_WORKER_ERROR';
+
+  constructor(workerId: string, reason: string, cause?: Error) {
+    super(`Index worker ${workerId} failed: ${reason}`, cause);
+  }
+}
+
 export class MCPProtocolError extends ContextSimploError {
   readonly code = 'MCP_PROTOCOL_ERROR';
   readonly mcpErrorCode: number;
