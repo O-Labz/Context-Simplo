@@ -11,7 +11,7 @@ import { mkdtemp, rm } from 'fs/promises';
 import { tmpdir } from 'os';
 import { SqliteStorageProvider } from '../../src/store/sqlite.js';
 import { StorageBackedGraph } from '../../src/core/graph-store.js';
-import type { CodeNode, NodeFilter, RepositoryInfo } from '../../src/core/types.js';
+import type { CodeNode, GraphEdge, NodeFilter, RepositoryInfo } from '../../src/core/types.js';
 
 describe('StorageBackedGraph Read Methods', () => {
   let storage: SqliteStorageProvider;
@@ -253,6 +253,212 @@ describe('StorageBackedGraph Read Methods', () => {
     expect(() => {
       graph.findByPattern('[invalid');
     }).toThrow();
+  });
+
+  const createTestEdges = (): GraphEdge[] => [
+    {
+      id: 'edge1',
+      sourceId: 'node1', // testFunction calls helper
+      targetId: 'node3',
+      kind: 'calls',
+      confidence: 0.9,
+      repositoryId: 'test-repo',
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    },
+    {
+      id: 'edge2', 
+      sourceId: 'node2', // TestClass calls testFunction
+      targetId: 'node1',
+      kind: 'calls',
+      confidence: 0.8,
+      repositoryId: 'test-repo',
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    },
+  ];
+
+  it('should implement getCallers and getCallees', async () => {
+    // Setup data with edges
+    storage.upsertRepository(createTestRepo());
+    const testNodes = createTestNodes();
+    const testEdges = createTestEdges();
+    storage.upsertNodes(testNodes);
+    storage.upsertEdges(testEdges);
+
+    // Test getCallers - who calls testFunction (node1)?
+    const callers = graph.getCallers('node1'); // TestClass calls testFunction
+    expect(callers).toHaveLength(1);
+    expect(callers[0].id).toBe('node2'); // TestClass
+
+    // Test getCallees - who does testFunction (node1) call?
+    const callees = graph.getCallees('node1'); // testFunction calls helper
+    expect(callees).toHaveLength(1);
+    expect(callees[0].id).toBe('node3'); // helper
+
+    // Test with specific edge kinds
+    const callCallers = graph.getCallers('node1', ['calls']);
+    expect(callCallers).toHaveLength(1);
+
+    // Test non-existent node
+    expect(() => {
+      graph.getCallers('nonexistent');
+    }).toThrow();
+  });
+
+  it('should implement findShortestPath', async () => {
+    // Setup data with edges
+    storage.upsertRepository(createTestRepo());
+    const testNodes = createTestNodes();
+    const testEdges = createTestEdges();
+    storage.upsertNodes(testNodes);
+    storage.upsertEdges(testEdges);
+
+    // Test shortest path: node2 -> node1 -> node3
+    const path = graph.findShortestPath('node2', 'node3');
+    expect(path).toBeTruthy();
+    expect(path!.length).toBeGreaterThanOrEqual(2);
+    expect(path![0].id).toBe('node2'); // TestClass
+    
+    // Test non-existent path
+    const noPath = graph.findShortestPath('node3', 'node2'); // No reverse path
+    expect(noPath).toBeNull();
+
+    // Test same source and target
+    const samePath = graph.findShortestPath('node1', 'node1');
+    expect(samePath).toBeTruthy();
+
+    // Test non-existent nodes
+    expect(() => {
+      graph.findShortestPath('nonexistent', 'node1');
+    }).toThrow();
+  });
+
+  it('should implement analyzeImpact', async () => {
+    // Setup data with edges
+    storage.upsertRepository(createTestRepo());
+    const testNodes = createTestNodes();
+    const testEdges = createTestEdges();
+    storage.upsertNodes(testNodes);
+    storage.upsertEdges(testEdges);
+
+    // Analyze impact of node3 (helper) - should find node1 and node2 that depend on it
+    const impact = graph.analyzeImpact('node3');
+    expect(impact.affectedNodes.length).toBeGreaterThanOrEqual(1);
+    expect(impact.affectedFiles.size).toBeGreaterThanOrEqual(1);
+    expect(impact.depth).toBeGreaterThanOrEqual(0);
+    expect(impact.confidence).toBeGreaterThan(0);
+
+    // Test with max depth
+    const limitedImpact = graph.analyzeImpact('node3', 1);
+    expect(limitedImpact.depth).toBeLessThanOrEqual(1);
+
+    // Test non-existent node
+    expect(() => {
+      graph.analyzeImpact('nonexistent');
+    }).toThrow();
+  });
+
+  it('should implement computeCentrality and getCentrality', async () => {
+    // Setup data with edges
+    storage.upsertRepository(createTestRepo());
+    const testNodes = createTestNodes();
+    const testEdges = createTestEdges();
+    storage.upsertNodes(testNodes);
+    storage.upsertEdges(testEdges);
+
+    // Test computeCentrality
+    const centrality = graph.computeCentrality();
+    expect(centrality.size).toBeGreaterThan(0);
+    
+    // node1 should have higher centrality (has both incoming and outgoing edges)
+    const node1Centrality = centrality.get('node1');
+    expect(node1Centrality).toBeGreaterThan(0);
+
+    // Test getCentrality
+    const node1CentralityDirect = graph.getCentrality('node1');
+    expect(node1CentralityDirect).toBe(node1Centrality);
+
+    // Test node with no edges
+    const node0Centrality = graph.getCentrality('nonexistent');
+    expect(node0Centrality).toBe(0);
+  });
+
+  it('should implement findDeadCode', async () => {
+    // Setup data - add a node with no incoming edges and not exported
+    storage.upsertRepository(createTestRepo());
+    const testNodes = createTestNodes();
+    
+    // Add a dead function (no callers, not exported)
+    const deadNode: CodeNode = {
+      id: 'dead1',
+      name: 'unusedFunction',
+      qualifiedName: 'module.unusedFunction',
+      kind: 'function',
+      filePath: '/test/file1.js',
+      lineStart: 100,
+      lineEnd: 110,
+      repositoryId: 'test-repo',
+      language: 'javascript',
+      isExported: false, // Not exported
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    };
+    
+    storage.upsertNodes([...testNodes, deadNode]);
+    // Don't add edges to deadNode - it should be detected as dead code
+
+    const deadCode = graph.findDeadCode('test-repo');
+    expect(deadCode.some(node => node.id === 'dead1')).toBe(true);
+
+    // Test without repository filter
+    const allDeadCode = graph.findDeadCode();
+    expect(allDeadCode.length).toBeGreaterThanOrEqual(deadCode.length);
+  });
+
+  it('should implement explainArchitecture', async () => {
+    // Setup data
+    storage.upsertRepository(createTestRepo());
+    const testNodes = createTestNodes();
+    const testEdges = createTestEdges();
+    storage.upsertNodes(testNodes);
+    storage.upsertEdges(testEdges);
+
+    // Test architecture analysis
+    const arch = graph.explainArchitecture('test-repo');
+    expect(arch.entryPoints).toBeDefined();
+    expect(arch.modules).toBeDefined();
+    expect(arch.keyAbstractions).toBeDefined();
+    expect(arch.packageStructure).toBeDefined();
+
+    // Test with detail level
+    const detailedArch = graph.explainArchitecture('test-repo', 2);
+    expect(detailedArch.entryPoints.length).toBeGreaterThanOrEqual(0);
+    
+    // Package structure should reflect file paths
+    expect(Object.keys(arch.packageStructure).length).toBeGreaterThan(0);
+  });
+
+  it('should cache traversal results for performance', async () => {
+    // Setup data
+    storage.upsertRepository(createTestRepo());
+    const testNodes = createTestNodes();
+    const testEdges = createTestEdges();
+    storage.upsertNodes(testNodes);
+    storage.upsertEdges(testEdges);
+
+    // Call methods multiple times - should hit cache
+    const callers1 = graph.getCallers('node1');
+    const callers2 = graph.getCallers('node1');
+    expect(callers1).toEqual(callers2);
+
+    const impact1 = graph.analyzeImpact('node3');
+    const impact2 = graph.analyzeImpact('node3');
+    expect(impact1).toEqual(impact2);
+
+    // Memory footprint should reflect caching
+    const footprint = graph.getMemoryFootprint();
+    expect(footprint).toBeGreaterThan(0);
   });
 
   it('should cache query results separately from node cache', async () => {

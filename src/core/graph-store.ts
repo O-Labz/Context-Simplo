@@ -15,9 +15,11 @@
 import type { StorageProvider } from '../store/provider.js';
 import type { 
   CodeNode, 
+  GraphEdge,
+  EdgeKind,
   NodeFilter 
 } from './types.js';
-import { GraphError } from './errors.js';
+import { GraphError, NotFoundError } from './errors.js';
 
 // Traversal limits from EML (reused for consistency)
 export const MAX_TRAVERSE_DEPTH = 12;
@@ -225,6 +227,311 @@ export class StorageBackedGraph {
     const nodeCacheSize = this.nodeCache.size * APPROX_BYTES_PER_NODE;
     const queryCacheSize = this.queryCache.size * 1024; // Rough estimate for query results
     return nodeCacheSize + queryCacheSize;
+  }
+
+  // ============================================================================
+  // TRAVERSAL AND ANALYSIS METHODS (Phase 11)
+  // ============================================================================
+
+  getCallers(nodeId: string, edgeKinds: EdgeKind[] = ['calls']): CodeNode[] {
+    const cacheKey = `callers:${nodeId}:${edgeKinds.join(',')}`;
+    
+    // Check query cache
+    const cached = this.getCachedQuery(cacheKey);
+    if (cached) {
+      return cached;
+    }
+
+    // Check if node exists
+    if (!this.getNode(nodeId)) {
+      throw new NotFoundError('Node', nodeId);
+    }
+
+    // Get edges where this node is the target
+    const inEdges: GraphEdge[] = this.storage.getEdges(undefined, nodeId);
+    const callers: CodeNode[] = [];
+
+    for (const edge of inEdges) {
+      if (edgeKinds.includes(edge.kind)) {
+        const caller = this.getNode(edge.sourceId);
+        if (caller) {
+          callers.push(caller);
+          this.cacheNode(caller);
+        }
+      }
+    }
+
+    this.cacheQuery(cacheKey, callers);
+    return callers;
+  }
+
+  getCallees(nodeId: string, edgeKinds: EdgeKind[] = ['calls']): CodeNode[] {
+    const cacheKey = `callees:${nodeId}:${edgeKinds.join(',')}`;
+    
+    // Check query cache
+    const cached = this.getCachedQuery(cacheKey);
+    if (cached) {
+      return cached;
+    }
+
+    // Check if node exists
+    if (!this.getNode(nodeId)) {
+      throw new NotFoundError('Node', nodeId);
+    }
+
+    // Get edges where this node is the source
+    const outEdges = this.storage.getEdges(nodeId);
+    const callees: CodeNode[] = [];
+
+    for (const edge of outEdges) {
+      if (edgeKinds.includes(edge.kind)) {
+        const callee = this.getNode(edge.targetId);
+        if (callee) {
+          callees.push(callee);
+          this.cacheNode(callee);
+        }
+      }
+    }
+
+    this.cacheQuery(cacheKey, callees);
+    return callees;
+  }
+
+  findShortestPath(sourceId: string, targetId: string): CodeNode[] | null {
+    const cacheKey = `path:${sourceId}:${targetId}`;
+    
+    // Check query cache
+    const cached = this.getCachedQuery(cacheKey);
+    if (cached) {
+      return cached;
+    }
+
+    // Check if both nodes exist
+    if (!this.getNode(sourceId)) {
+      throw new NotFoundError('Node', sourceId);
+    }
+    if (!this.getNode(targetId)) {
+      throw new NotFoundError('Node', targetId);
+    }
+
+    // Use SQLite recursive CTE for shortest path (adapted from EML)
+    const sql = `
+      WITH RECURSIVE paths(id, depth, path) AS (
+        SELECT ?, 0, '>' || ? || '>'
+        UNION ALL
+        SELECT e.target_id, paths.depth + 1, paths.path || e.target_id || '>'
+        FROM edges e
+        JOIN paths ON e.source_id = paths.id
+        WHERE paths.depth < ? AND paths.path NOT LIKE '%>' || e.target_id || '>%'
+      )
+      SELECT path FROM paths WHERE id = ? ORDER BY depth LIMIT 1`;
+
+    const db = (this.storage as any).db; // Access underlying DB for CTE
+    const result = db
+      .prepare(sql)
+      .get(sourceId, sourceId, MAX_TRAVERSE_DEPTH, targetId) as { path: string } | undefined;
+
+    if (!result) {
+      this.cacheQuery(cacheKey, []);
+      return null;
+    }
+
+    // Parse path string to get node IDs
+    const pathIds = result.path
+      .split('>')
+      .filter(id => id.length > 0);
+    
+    const pathNodes: CodeNode[] = [];
+    for (const nodeId of pathIds) {
+      const node = this.getNode(nodeId);
+      if (node) {
+        pathNodes.push(node);
+        this.cacheNode(node);
+      }
+    }
+
+    this.cacheQuery(cacheKey, pathNodes);
+    return pathNodes.length > 0 ? pathNodes : null;
+  }
+
+  analyzeImpact(nodeId: string, maxDepth: number = 10): ImpactAnalysisResult {
+    const cacheKey = `impact:${nodeId}:${maxDepth}`;
+    
+    // Check if we have this cached (store in queryCache as JSON)
+    const cachedResult = this.queryCache.get(cacheKey);
+    if (cachedResult) {
+      // For impact analysis, we store the full result object in the cache
+      return (cachedResult as any).result as ImpactAnalysisResult;
+    }
+
+    // Check if node exists
+    if (!this.getNode(nodeId)) {
+      throw new NotFoundError('Node', nodeId);
+    }
+
+    const affected = new Set<string>();
+    const affectedFiles = new Set<string>();
+    const queue: Array<{ id: string; depth: number }> = [{ id: nodeId, depth: 0 }];
+    const visited = new Set<string>();
+
+    let maxDepthReached = 0;
+    let totalConfidence = 0;
+    let edgeCount = 0;
+
+    // BFS traversal to find all nodes that depend on this node
+    while (queue.length > 0) {
+      const current = queue.shift()!;
+
+      if (visited.has(current.id) || current.depth > maxDepth) {
+        continue;
+      }
+
+      visited.add(current.id);
+      affected.add(current.id);
+      maxDepthReached = Math.max(maxDepthReached, current.depth);
+
+      const node = this.getNode(current.id);
+      if (node) {
+        affectedFiles.add(node.filePath);
+        this.cacheNode(node);
+      }
+
+      // Get incoming edges (nodes that depend on current node)
+      const inEdges = this.storage.getEdges(undefined, current.id);
+      for (const edge of inEdges) {
+        totalConfidence += edge.confidence;
+        edgeCount++;
+
+        if (!visited.has(edge.sourceId)) {
+          queue.push({ id: edge.sourceId, depth: current.depth + 1 });
+        }
+      }
+    }
+
+    const affectedNodes = Array.from(affected)
+      .map((id) => this.getNode(id))
+      .filter((node): node is CodeNode => node !== null);
+
+    const avgConfidence = edgeCount > 0 ? totalConfidence / edgeCount : 1.0;
+
+    const result: ImpactAnalysisResult = {
+      affectedNodes,
+      affectedFiles,
+      depth: maxDepthReached,
+      confidence: avgConfidence,
+    };
+
+    // Cache the result (store as special object)
+    this.queryCache.set(cacheKey, {
+      key: cacheKey,
+      nodes: affectedNodes, // For consistency with cache interface
+      accessedAt: Date.now(),
+      result, // Store the full result
+    } as any);
+
+    return result;
+  }
+
+  computeCentrality(): Map<string, number> {
+    // Use a simple degree-based centrality implementation
+    // For better performance, could use SQL queries for degree calculation
+    const centrality = new Map<string, number>();
+    
+    // Count degree for each node using edge queries
+    // This could be optimized with a single SQL GROUP BY query
+    const allNodes = this.storage.getAllNodes();
+    
+    for (const node of allNodes) {
+      const inEdges = this.storage.getEdges(undefined, node.id);
+      const outEdges = this.storage.getEdges(node.id);
+      const degree = inEdges.length + outEdges.length;
+      centrality.set(node.id, degree);
+    }
+
+    return centrality;
+  }
+
+  getCentrality(nodeId: string): number {
+    // For StorageBackedGraph, compute on demand rather than caching globally
+    const inEdges = this.storage.getEdges(undefined, nodeId);
+    const outEdges = this.storage.getEdges(nodeId);
+    return inEdges.length + outEdges.length;
+  }
+
+  findDeadCode(repositoryId?: string): CodeNode[] {
+    const cacheKey = `deadcode:${repositoryId || 'all'}`;
+    
+    // Check query cache
+    const cached = this.getCachedQuery(cacheKey);
+    if (cached) {
+      return cached;
+    }
+
+    // Get nodes with filter, bounded to MAX_TRAVERSE_ROWS
+    const filter: NodeFilter = {};
+    if (repositoryId) {
+      filter.repositoryId = repositoryId;
+    }
+    
+    const allNodes = this.storage.getNodes(filter).slice(0, MAX_TRAVERSE_ROWS);
+    const deadNodes: CodeNode[] = [];
+
+    for (const node of allNodes) {
+      if (node.kind === 'function' || node.kind === 'method' || node.kind === 'class') {
+        // Check if node has any incoming edges (callers)
+        const inEdges = this.storage.getEdges(undefined, node.id);
+        if (inEdges.length === 0 && !node.isExported) {
+          deadNodes.push(node);
+          this.cacheNode(node);
+        }
+      }
+    }
+
+    this.cacheQuery(cacheKey, deadNodes);
+    return deadNodes;
+  }
+
+  explainArchitecture(repositoryId: string, detailLevel: number = 1): ArchitectureSummary {
+    // For architecture analysis, we compute fresh since it's complex
+    // and not frequently called (no caching for now)
+    const allNodes = this.getAllNodes({ repositoryId });
+
+    const entryPoints = allNodes.filter(
+      (node) => node.isExported && (node.kind === 'function' || node.kind === 'class')
+    );
+
+    const modules = new Map<string, CodeNode[]>();
+    for (const node of allNodes) {
+      const dir = node.filePath.split('/').slice(0, -1).join('/') || '.';
+      if (!modules.has(dir)) {
+        modules.set(dir, []);
+      }
+      modules.get(dir)!.push(node);
+    }
+
+    // Get centrality for all nodes (expensive but needed for key abstractions)
+    const centrality = this.computeCentrality();
+    const sortedByCentrality = allNodes
+      .map((node) => ({ node, centrality: centrality.get(node.id) || 0 }))
+      .sort((a, b) => b.centrality - a.centrality)
+      .slice(0, 20)
+      .map((item) => item.node);
+
+    const keyAbstractions = sortedByCentrality.filter(
+      (node) => node.kind === 'class' || node.kind === 'interface'
+    );
+
+    const packageStructure: Record<string, number> = {};
+    for (const [dir, nodes] of modules.entries()) {
+      packageStructure[dir] = nodes.length;
+    }
+
+    return {
+      entryPoints: detailLevel >= 2 ? entryPoints : entryPoints.slice(0, 10),
+      modules: detailLevel >= 3 ? modules : new Map(Array.from(modules.entries()).slice(0, 10)),
+      keyAbstractions: detailLevel >= 2 ? keyAbstractions : keyAbstractions.slice(0, 5),
+      packageStructure,
+    };
   }
 
   // ============================================================================
