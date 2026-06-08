@@ -110,6 +110,16 @@ export class IndexQueueFullError extends ContextSimploError {
   }
 }
 
+export class MemoryPressureError extends ContextSimploError {
+  readonly code = 'MEMORY_PRESSURE';
+  readonly retryAfterSeconds: number;
+
+  constructor(retryAfterSeconds: number = 30) {
+    super('Server under memory pressure, retry later');
+    this.retryAfterSeconds = retryAfterSeconds;
+  }
+}
+
 export class MCPProtocolError extends ContextSimploError {
   readonly code = 'MCP_PROTOCOL_ERROR';
   readonly mcpErrorCode: number;

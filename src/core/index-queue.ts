@@ -17,6 +17,7 @@ import { IndexQueueFullError } from './errors.js';
 export interface IndexQueueOptions {
   maxConcurrent: number;
   maxDepth: number;
+  memoryGuard?: any;
 }
 
 interface QueuedJob<T> {
@@ -35,13 +36,20 @@ export class IndexQueue {
   private maxDepth: number;
   private inFlight = 0;
   private queue: QueuedJob<unknown>[] = [];
+  private memoryGuard?: any;
 
   constructor(options: IndexQueueOptions) {
     this.maxConcurrent = options.maxConcurrent;
     this.maxDepth = options.maxDepth;
+    this.memoryGuard = options.memoryGuard;
   }
 
   async run<T>(job: () => Promise<T>): Promise<T> {
+    // Check memory pressure before admission
+    if (this.memoryGuard) {
+      this.memoryGuard.assertAdmissible();
+    }
+
     // Check admission: reject if at capacity
     if (this.inFlight >= this.maxConcurrent && this.queue.length >= this.maxDepth) {
       throw new IndexQueueFullError();

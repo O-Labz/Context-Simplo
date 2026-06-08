@@ -75,7 +75,8 @@ export class Indexer extends EventEmitter {
     public graph: CodeGraph,
     private workspaceRoot: string = '/workspace',
     private embeddingQueue?: EmbeddingQueue,
-    private vectorStore?: LanceDBVectorStore
+    private vectorStore?: LanceDBVectorStore,
+    private memoryGuard?: any
   ) {
     super();
     this.contextIgnore = new ContextIgnore(workspaceRoot);
@@ -148,8 +149,8 @@ export class Indexer extends EventEmitter {
           }
         };
         await Promise.all(Array.from({ length: Math.min(concurrency, batch.length) }, () => worker()));
-        if (global.gc) {
-          global.gc();
+        if (this.memoryGuard) {
+          await this.memoryGuard.relieve();
         }
       }
 

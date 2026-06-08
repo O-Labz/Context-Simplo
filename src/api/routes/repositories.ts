@@ -18,7 +18,7 @@ import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import path from 'node:path';
 import type { StorageProvider } from '../../store/provider.js';
-import { IndexQueueFullError } from '../../core/errors.js';
+import { IndexQueueFullError, MemoryPressureError } from '../../core/errors.js';
 import type { CodeGraph } from '../../core/graph.js';
 import type { WebSocketBroadcaster } from '../websocket.js';
 import { WebSocketEvents } from '../websocket.js';
@@ -162,6 +162,18 @@ export async function registerRepositoryRoutes(
               error: {
                 code: error.code,
                 message: 'indexing busy, retry later',
+                retryAfterSeconds: error.retryAfterSeconds,
+              },
+            });
+        }
+        if (error instanceof MemoryPressureError) {
+          return reply
+            .status(503)
+            .header('Retry-After', String(error.retryAfterSeconds))
+            .send({
+              error: {
+                code: error.code,
+                message: 'server under memory pressure, retry later',
                 retryAfterSeconds: error.retryAfterSeconds,
               },
             });
@@ -318,6 +330,18 @@ export async function registerRepositoryRoutes(
                 error: {
                   code: error.code,
                   message: 'indexing busy, retry later',
+                  retryAfterSeconds: error.retryAfterSeconds,
+                },
+              });
+          }
+          if (error instanceof MemoryPressureError) {
+            return reply
+              .status(503)
+              .header('Retry-After', String(error.retryAfterSeconds))
+              .send({
+                error: {
+                  code: error.code,
+                  message: 'server under memory pressure, retry later',
                   retryAfterSeconds: error.retryAfterSeconds,
                 },
               });

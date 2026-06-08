@@ -20,6 +20,7 @@ import { FileWatcher } from './core/watcher.js';
 import { ShutdownManager } from './core/shutdown.js';
 import { sanitizeErrorForLogging } from './core/errors.js';
 import { IndexQueue } from './core/index-queue.js';
+import { MemoryGuard } from './core/memory-guard.js';
 import { createEmbeddingProvider } from './llm/provider.js';
 import { EmbeddingQueue } from './core/embedding-queue.js';
 import { ConfigManager } from './core/config-manager.js';
@@ -124,12 +125,22 @@ async function main() {
     console.log('Embedding queue ready');
   }
 
-  const indexer = new Indexer(storage, graph, workspaceRoot, embeddingQueue, vectorStore);
+  // Derive heap limit from NODE_HEAP_MB env var (used in NODE_OPTIONS)
+  const heapLimitMb = parseInt(process.env.NODE_HEAP_MB || '2560', 10);
+  const memoryGuard = new MemoryGuard({
+    softPct: config.graphMemorySoftPct.value,
+    hardPct: config.graphMemoryHardPct.value,
+    heapLimitMb,
+  });
+  console.log(`Memory guard ready (soft: ${config.graphMemorySoftPct.value}%, hard: ${config.graphMemoryHardPct.value}%, limit: ${heapLimitMb}MB)`);
+
+  const indexer = new Indexer(storage, graph, workspaceRoot, embeddingQueue, vectorStore, memoryGuard);
   console.log('Indexer ready');
 
   const indexQueue = new IndexQueue({
     maxConcurrent: config.indexMaxConcurrentJobs.value,
     maxDepth: config.indexQueueMaxDepth.value,
+    memoryGuard,
   });
   console.log(`Index queue ready (max concurrent: ${config.indexMaxConcurrentJobs.value}, max depth: ${config.indexQueueMaxDepth.value})`);
 
