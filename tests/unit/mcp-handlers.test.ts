@@ -39,12 +39,11 @@ describe('MCP Handlers', () => {
     await storage.initialize();
     
     const graph = new CodeGraph();
-    const indexer = new Indexer({
+    const indexer = new Indexer(
       storage,
       graph,
-      workspaceRoot,
-      maxConcurrency: 1,
-    });
+      workspaceRoot
+    );
     
     const symbolicSearch = new SymbolicSearch(storage);
 

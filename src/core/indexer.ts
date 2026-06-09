@@ -27,7 +27,7 @@
  * Security: Integrates with SecretScrubber before indexing.
  */
 
-import { readdir, stat, readFile } from 'fs/promises';
+import { readdir, stat } from 'fs/promises';
 import { resolve, relative, basename, dirname, join } from 'path';
 import { createHash } from 'crypto';
 import { parseFile, type ParsedFile } from './parser.js';
@@ -41,8 +41,6 @@ import type {
 import { ParseError } from './errors.js';
 import { EventEmitter } from 'events';
 import { ContextIgnore } from '../security/ignore.js';
-import type { EmbeddingQueue } from './embedding-queue.js';
-import type { LanceDBVectorStore } from '../store/lance.js';
 import type { ParsePool } from './parse-pool.js';
 
 export interface IndexerOptions {
@@ -73,8 +71,6 @@ export class Indexer extends EventEmitter {
     public storage: StorageProvider,
     public graph: CodeGraphApi,
     private workspaceRoot: string = '/workspace',
-    private embeddingQueue?: EmbeddingQueue,
-    private vectorStore?: LanceDBVectorStore,
     private memoryGuard?: any,
     private parsePool?: ParsePool
   ) {

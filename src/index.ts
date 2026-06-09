@@ -157,7 +157,7 @@ async function main() {
     console.log('Parse pool disabled (PARSE_WORKER_POOL_SIZE=0)');
   }
 
-  const indexer = new Indexer(storage, graph, workspaceRoot, embeddingQueue, vectorStore, memoryGuard, parsePool);
+  const indexer = new Indexer(storage, graph, workspaceRoot, memoryGuard, parsePool);
   console.log('Indexer ready');
 
   const indexQueue = new IndexQueue({

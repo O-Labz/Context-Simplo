@@ -101,7 +101,7 @@ program
           })
         : undefined;
 
-      const indexer = new Indexer(storage, graph, workspaceRoot, embeddingQueue, vectorStore);
+      const indexer = new Indexer(storage, graph, workspaceRoot);
       const watcher = new FileWatcher(indexer, { debounceMs: 200 });
 
       // Handle watcher errors gracefully
@@ -198,15 +198,11 @@ program
       const dataDir = resolve(options.dataDir);
       const absolutePath = resolve(repoPath);
 
-      const { loadConfig } = await import('../core/config.js');
       const { SqliteStorageProvider } = await import('../store/sqlite.js');
       const { LanceDBVectorStore } = await import('../store/lance.js');
       const { CodeGraph } = await import('../core/graph.js');
       const { Indexer } = await import('../core/indexer.js');
-      const { createEmbeddingProvider } = await import('../llm/provider.js');
-      const { EmbeddingQueue } = await import('../core/embedding-queue.js');
 
-      const config = loadConfig();
       const dbPath = resolve(dataDir, 'context-simplo.db');
       const lanceDbPath = resolve(dataDir, 'lancedb');
 
@@ -218,21 +214,7 @@ program
 
       const graph = new CodeGraph();
 
-      const embeddingProvider = await createEmbeddingProvider(config.llmProvider.value, {
-        apiKey: config.llmApiKey.value,
-        baseUrl: config.llmBaseUrl.value,
-        model: config.llmEmbeddingModel.value,
-      });
-
-      const embeddingQueue = config.llmProvider.value !== 'none'
-        ? new EmbeddingQueue(embeddingProvider, {
-            concurrency: config.embeddingConcurrency.value,
-            batchSize: config.embeddingBatchSize.value,
-            maxRetries: 3,
-          })
-        : undefined;
-
-      const indexer = new Indexer(storage, graph, process.cwd(), embeddingQueue, vectorStore);
+      const indexer = new Indexer(storage, graph, process.cwd());
 
       const job = await indexer.indexRepository(absolutePath, {
         incremental: options.incremental,
