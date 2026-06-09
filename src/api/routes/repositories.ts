@@ -38,6 +38,7 @@ export interface RepositoryRouteOptions {
   watcher?: any;
   vectorStore?: any;
   indexQueue?: any;
+  autoWatch?: boolean;
 }
 
 /**
@@ -140,6 +141,20 @@ export async function registerRepositoryRoutes(
               nodesCreated: job.nodesCreated,
               edgesCreated: job.edgesCreated,
             });
+
+            // Auto-watch after successful indexing if enabled
+            if (options.watcher && options.autoWatch) {
+              try {
+                const repo = options.storage.listRepositories().find(r => r.id === job.repositoryId);
+                if (repo && !repo.isWatched) {
+                  options.watcher.watch(repo.path, job.repositoryId);
+                  options.storage.updateRepositoryWatchStatus(job.repositoryId, true);
+                  console.log(`Auto-watch enabled for ${repo.name}`);
+                }
+              } catch (watchError) {
+                console.warn(`Failed to auto-watch repository ${job.repositoryId}:`, watchError);
+              }
+            }
           } catch (error) {
             options.broadcaster.broadcast(WebSocketEvents.INDEX_ERROR, {
               path: input.path,
@@ -308,6 +323,20 @@ export async function registerRepositoryRoutes(
               nodesCreated: job.nodesCreated,
               edgesCreated: job.edgesCreated,
             });
+
+            // Auto-watch after successful reindexing if enabled
+            if (options.watcher && options.autoWatch) {
+              try {
+                const repoAfter = options.storage.listRepositories().find(r => r.id === job.repositoryId);
+                if (repoAfter && !repoAfter.isWatched) {
+                  options.watcher.watch(repoAfter.path, job.repositoryId);
+                  options.storage.updateRepositoryWatchStatus(job.repositoryId, true);
+                  console.log(`Auto-watch enabled for ${repoAfter.name}`);
+                }
+              } catch (watchError) {
+                console.warn(`Failed to auto-watch repository ${job.repositoryId}:`, watchError);
+              }
+            }
           } catch (error) {
             options.broadcaster.broadcast(WebSocketEvents.INDEX_ERROR, {
               repositoryId: id,

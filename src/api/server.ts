@@ -50,6 +50,7 @@ export interface APIServerOptions {
   configManager?: any;
   eml?: EmlServices;
   indexQueue?: any;
+  config?: any;
 }
 
 export interface APIServer {
@@ -202,6 +203,7 @@ export async function createAPIServer(
     watcher: options.watcher,
     vectorStore: options.vectorStore,
     indexQueue: options.indexQueue,
+    autoWatch: options.config ? options.config.autoWatch.value : true,
   });
 
   await registerSearchRoutes(fastify, {
@@ -225,6 +227,7 @@ export async function createAPIServer(
     vectorStore: options.vectorStore,
     embeddingProvider: options.embeddingProvider,
     mcpServer: options.mcpServer,
+    indexQueue: options.indexQueue,
   });
 
   await registerMcpConfigRoutes(fastify, {

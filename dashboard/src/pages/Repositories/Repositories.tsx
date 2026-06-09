@@ -15,6 +15,15 @@ interface Repository {
   lastIndexedAt?: string;
 }
 
+interface IndexQueueStatus {
+  inFlight: number;
+  queued: number;
+  maxConcurrent: number;
+  maxDepth: number;
+  capacityUsed: number;
+  capacityTotal: number;
+}
+
 export default function Repositories() {
   const [repos, setRepos] = useState<Repository[]>([]);
   const [loading, setLoading] = useState(true);
@@ -30,15 +39,21 @@ export default function Repositories() {
   const [showWorkspaceDialog, setShowWorkspaceDialog] = useState(false);
   const [newWorkspacePath, setNewWorkspacePath] = useState('');
   const [changingWorkspace, setChangingWorkspace] = useState(false);
+  const [indexQueue, setIndexQueue] = useState<IndexQueueStatus | null>(null);
   const { toasts, push: toast, dismiss: dismissToast } = useToast();
 
   useEffect(() => {
     loadRepositories();
+    loadIndexQueue();
     fetch('/api/health')
       .then((r) => r.json())
       .then((d) => setWorkspaceRoot(d.workspaceRoot || ''))
       .catch((err) => console.warn('Failed to load workspace info:', err));
     loadConfig();
+
+    // Poll queue status every 2 seconds for real-time updates
+    const interval = setInterval(loadIndexQueue, 2000);
+    return () => clearInterval(interval);
   }, []);
 
   const loadConfig = async () => {
@@ -61,6 +76,16 @@ export default function Repositories() {
       console.error('Failed to load repositories:', error);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const loadIndexQueue = async () => {
+    try {
+      const response = await fetch('/api/metrics');
+      const data = await response.json();
+      setIndexQueue(data.indexQueue || null);
+    } catch (error) {
+      console.error('Failed to load index queue status:', error);
     }
   };
 
@@ -504,6 +529,161 @@ export default function Repositories() {
                 </div>
               </div>
             </div>
+          </div>
+        )}
+
+        {/* Indexing Queue Status Card */}
+        {indexQueue && (
+          <div className="md:col-span-12 bg-surface-container-low p-6 rounded-xl">
+            <div className="flex items-center justify-between mb-4">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 bg-tertiary-container flex items-center justify-center rounded-xl">
+                  <span className="material-symbols-outlined text-on-tertiary-container">
+                    {indexQueue.inFlight > 0 ? 'progress_activity' : 'task_alt'}
+                  </span>
+                </div>
+                <div>
+                  <h4 className="text-[0.875rem] font-bold text-on-surface">Indexing Queue</h4>
+                  <p className="text-[0.75rem] text-on-surface-variant">
+                    {indexQueue.inFlight === 0 && indexQueue.queued === 0
+                      ? 'No repositories currently indexing'
+                      : `${indexQueue.inFlight} indexing · ${indexQueue.queued} queued`}
+                  </p>
+                </div>
+              </div>
+              <div className="flex items-center gap-2">
+                {indexQueue.inFlight > 0 && (
+                  <span className="px-3 py-1.5 bg-green-500/10 text-green-600 text-xs font-semibold rounded-lg flex items-center gap-1.5">
+                    <span className="w-2 h-2 rounded-full bg-green-500 animate-pulse"></span>
+                    Active
+                  </span>
+                )}
+                <span className="text-[0.75rem] text-on-surface-variant">
+                  Capacity: {indexQueue.capacityUsed}/{indexQueue.capacityTotal}
+                </span>
+              </div>
+            </div>
+
+            {/* Progress Bar */}
+            <div className="mb-4">
+              <div className="flex justify-between text-xs text-on-surface-variant mb-2">
+                <span>Queue Usage</span>
+                <span>{Math.round((indexQueue.capacityUsed / indexQueue.capacityTotal) * 100)}%</span>
+              </div>
+              <div className="w-full bg-surface-container h-2.5 rounded-full overflow-hidden">
+                <div
+                  className="h-full rounded-full transition-all duration-500"
+                  style={{
+                    width: `${Math.min(100, (indexQueue.capacityUsed / indexQueue.capacityTotal) * 100)}%`,
+                    background: indexQueue.capacityUsed >= indexQueue.capacityTotal
+                      ? 'linear-gradient(90deg, var(--error), var(--error-dim))'
+                      : indexQueue.capacityUsed > indexQueue.capacityTotal * 0.7
+                      ? 'linear-gradient(90deg, #f59e0b, #d97706)'
+                      : 'linear-gradient(90deg, var(--tertiary), var(--tertiary-dim))',
+                  }}
+                />
+              </div>
+            </div>
+
+            {/* Stats Grid */}
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+              <div className="bg-surface-container-highest p-4 rounded-lg">
+                <div className="flex items-center gap-2 mb-2">
+                  <span className="material-symbols-outlined text-[16px] text-green-600">
+                    {indexQueue.inFlight > 0 ? 'sync' : 'check_circle'}
+                  </span>
+                  <span className="text-[0.6875rem] font-semibold uppercase tracking-wider text-outline">
+                    Active
+                  </span>
+                </div>
+                <span className={`text-2xl font-bold ${indexQueue.inFlight > 0 ? 'text-green-600' : 'text-on-surface'}`}>
+                  {indexQueue.inFlight}
+                </span>
+                <p className="text-[0.6875rem] text-on-surface-variant mt-1">
+                  Max: {indexQueue.maxConcurrent}
+                </p>
+              </div>
+
+              <div className="bg-surface-container-highest p-4 rounded-lg">
+                <div className="flex items-center gap-2 mb-2">
+                  <span className="material-symbols-outlined text-[16px] text-orange-500">
+                    schedule
+                  </span>
+                  <span className="text-[0.6875rem] font-semibold uppercase tracking-wider text-outline">
+                    Queued
+                  </span>
+                </div>
+                <span className={`text-2xl font-bold ${indexQueue.queued > 0 ? 'text-orange-500' : 'text-on-surface'}`}>
+                  {indexQueue.queued}
+                </span>
+                <p className="text-[0.6875rem] text-on-surface-variant mt-1">
+                  Max: {indexQueue.maxDepth}
+                </p>
+              </div>
+
+              <div className="bg-surface-container-highest p-4 rounded-lg">
+                <div className="flex items-center gap-2 mb-2">
+                  <span className="material-symbols-outlined text-[16px] text-tertiary">
+                    inventory_2
+                  </span>
+                  <span className="text-[0.6875rem] font-semibold uppercase tracking-wider text-outline">
+                    Available
+                  </span>
+                </div>
+                <span className="text-2xl font-bold text-on-surface">
+                  {indexQueue.capacityTotal - indexQueue.capacityUsed}
+                </span>
+                <p className="text-[0.6875rem] text-on-surface-variant mt-1">
+                  Slots free
+                </p>
+              </div>
+
+              <div className="bg-surface-container-highest p-4 rounded-lg">
+                <div className="flex items-center gap-2 mb-2">
+                  <span className="material-symbols-outlined text-[16px] text-on-surface-variant">
+                    info
+                  </span>
+                  <span className="text-[0.6875rem] font-semibold uppercase tracking-wider text-outline">
+                    Status
+                  </span>
+                </div>
+                <span className={`text-lg font-bold ${
+                  indexQueue.capacityUsed >= indexQueue.capacityTotal
+                    ? 'text-error'
+                    : indexQueue.capacityUsed > 0
+                    ? 'text-green-600'
+                    : 'text-on-surface'
+                }`}>
+                  {indexQueue.capacityUsed >= indexQueue.capacityTotal
+                    ? 'Full'
+                    : indexQueue.capacityUsed > 0
+                    ? 'Processing'
+                    : 'Idle'}
+                </span>
+                {indexQueue.capacityUsed >= indexQueue.capacityTotal && (
+                  <p className="text-[0.6875rem] text-error mt-1">
+                    New requests will be rejected
+                  </p>
+                )}
+              </div>
+            </div>
+
+            {/* Info Banner */}
+            {indexQueue.capacityUsed >= indexQueue.capacityTotal && (
+              <div className="mt-4 bg-error/10 border border-error/20 rounded-lg p-3 flex gap-3">
+                <span className="material-symbols-outlined text-error text-[18px] shrink-0">
+                  warning
+                </span>
+                <div className="text-xs">
+                  <p className="text-error font-semibold mb-1">Queue at capacity</p>
+                  <p className="text-on-surface-variant leading-relaxed">
+                    The indexing queue is full. New repository additions will return HTTP 429 
+                    until current jobs complete. Wait for active indexing to finish or increase 
+                    INDEX_QUEUE_MAX_DEPTH environment variable.
+                  </p>
+                </div>
+              </div>
+            )}
           </div>
         )}
 

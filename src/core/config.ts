@@ -36,6 +36,7 @@ const DEFAULT_CONFIG = {
   dataDir: '/data',
   autoIndex: true,
   watchEnabled: true,
+  autoWatch: true,
   logLevel: 'info' as const,
   embeddingConcurrency: 5,
   embeddingBatchSize: 20,
@@ -68,6 +69,7 @@ const ENV_VAR_MAP = {
   dataDir: 'CONTEXT_SIMPLO_DATA_DIR',
   autoIndex: 'CONTEXT_SIMPLO_AUTO_INDEX',
   watchEnabled: 'CONTEXT_SIMPLO_WATCH',
+  autoWatch: 'CONTEXT_SIMPLO_AUTO_WATCH',
   logLevel: 'CONTEXT_SIMPLO_LOG_LEVEL',
   embeddingConcurrency: 'EMBEDDING_CONCURRENCY',
   embeddingBatchSize: 'EMBEDDING_BATCH_SIZE',
@@ -103,6 +105,8 @@ export interface DashboardConfig {
   llmEmbeddingModel?: string;
   embeddingConcurrency?: number;
   embeddingBatchSize?: number;
+  autoIndex?: boolean;
+  autoWatch?: boolean;
 }
 
 function parseEnvValue(key: ConfigKey, envValue: string | undefined): unknown {
@@ -190,6 +194,9 @@ export function loadConfig(dashboardConfig?: DashboardConfig): AppConfig {
     | boolean
     | undefined;
   const envWatchEnabled = parseEnvValue('watchEnabled', process.env[ENV_VAR_MAP.watchEnabled]) as
+    | boolean
+    | undefined;
+  const envAutoWatch = parseEnvValue('autoWatch', process.env[ENV_VAR_MAP.autoWatch]) as
     | boolean
     | undefined;
   const envLogLevel = parseEnvValue('logLevel', process.env[ENV_VAR_MAP.logLevel]) as
@@ -356,6 +363,13 @@ export function loadConfig(dashboardConfig?: DashboardConfig): AppConfig {
     DEFAULT_CONFIG.watchEnabled
   );
 
+  const autoWatch = createConfigValue(
+    'autoWatch',
+    envAutoWatch,
+    dashboardConfig?.autoWatch,
+    DEFAULT_CONFIG.autoWatch
+  );
+
   const logLevel = createConfigValue(
     'logLevel',
     envLogLevel,
@@ -496,6 +510,7 @@ export function loadConfig(dashboardConfig?: DashboardConfig): AppConfig {
     dataDir,
     autoIndex,
     watchEnabled,
+    autoWatch,
     logLevel,
     embeddingConcurrency,
     embeddingBatchSize,
