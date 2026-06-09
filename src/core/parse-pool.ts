@@ -76,7 +76,7 @@ export class ParsePool {
 
     // Handle worker exit (crash or termination)
     worker.on('exit', (code) => {
-      if (code !== 0 && !this.isTerminated) {
+      if (code !== 0 && !this.isTerminated && !(poolWorker as any).recycling) {
         console.warn(`index.worker.crashed`, {
           workerId,
           exitCode: code,
@@ -105,6 +105,9 @@ export class ParsePool {
         parsedCount: poolWorker.parsedCount,
       });
 
+      // Mark worker for recycling so exit handler doesn't log it as a crash
+      (poolWorker as any).recycling = true;
+      
       // Terminate the old worker and create a new one
       poolWorker.worker.terminate();
       const index = this.workers.findIndex((w) => w.workerId === poolWorker.workerId);

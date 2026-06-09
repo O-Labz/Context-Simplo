@@ -27,6 +27,7 @@ export interface MetricsRouteOptions {
   vectorStore?: any;
   embeddingProvider?: any;
   mcpServer?: any;
+  indexQueue?: any;
 }
 
 /**
@@ -141,6 +142,23 @@ export async function registerMetricsRoutes(
         sqliteSize: dbStats.databaseSize,
         lancedbSize: options.vectorStore ? await options.vectorStore.getSize().catch(() => 0) : 0,
         totalDiskUsage: dbStats.databaseSize + (options.vectorStore ? await options.vectorStore.getSize().catch(() => 0) : 0),
+      },
+
+      // Index queue status
+      indexQueue: options.indexQueue ? {
+        inFlight: options.indexQueue.getStats().inFlight,
+        queued: options.indexQueue.getStats().queued,
+        maxConcurrent: options.indexQueue.maxConcurrent || 1,
+        maxDepth: options.indexQueue.maxDepth || 16,
+        capacityUsed: options.indexQueue.getStats().inFlight + options.indexQueue.getStats().queued,
+        capacityTotal: (options.indexQueue.maxConcurrent || 1) + (options.indexQueue.maxDepth || 16),
+      } : {
+        inFlight: 0,
+        queued: 0,
+        maxConcurrent: 1,
+        maxDepth: 16,
+        capacityUsed: 0,
+        capacityTotal: 17,
       },
 
       // Timestamp

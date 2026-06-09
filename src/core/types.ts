@@ -263,6 +263,11 @@ export const AppConfigSchema = z.object({
     source: ConfigSourceSchema,
     isLocked: z.boolean(),
   }),
+  autoWatch: z.object({
+    value: z.boolean(),
+    source: ConfigSourceSchema,
+    isLocked: z.boolean(),
+  }),
   logLevel: z.object({
     value: z.enum(['error', 'warn', 'info', 'debug']),
     source: ConfigSourceSchema,

@@ -370,6 +370,7 @@ async function main() {
       configManager,
       eml,
       indexQueue,
+      config,
     })
   );
 
