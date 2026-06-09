@@ -76,6 +76,7 @@ export class SqliteStorageProvider implements StorageProvider {
       { version: 1, file: '001_initial.sql', description: 'Complete initial schema with FTS5 and triggers' },
       { version: 2, file: '002_eml.sql', description: 'Engineering Memory Layer schema' },
       { version: 3, file: '003_graph_indexes.sql', description: 'graph lookup indexes' },
+      { version: 4, file: '004_embedding_status.sql', description: 'Add embedding_status for background backfill' },
     ];
 
     for (const migration of migrationFiles) {
@@ -201,7 +202,7 @@ export class SqliteStorageProvider implements StorageProvider {
     const row = this.db
       .prepare(
         `SELECT path, repository_id, hash, mtime, size, language, node_count, status, 
-         last_error, retry_count, indexed_at, created_at, updated_at FROM files WHERE path = ?`
+         embedding_status, last_error, retry_count, indexed_at, created_at, updated_at FROM files WHERE path = ?`
       )
       .get(path) as any;
 
@@ -213,10 +214,10 @@ export class SqliteStorageProvider implements StorageProvider {
   listFiles(repositoryId: string, status?: string): FileMetadata[] {
     const sql = status
       ? `SELECT path, repository_id, hash, mtime, size, language, node_count, status, 
-         last_error, retry_count, indexed_at, created_at, updated_at FROM files 
+         embedding_status, last_error, retry_count, indexed_at, created_at, updated_at FROM files 
          WHERE repository_id = ? AND status = ? ORDER BY path`
       : `SELECT path, repository_id, hash, mtime, size, language, node_count, status, 
-         last_error, retry_count, indexed_at, created_at, updated_at FROM files 
+         embedding_status, last_error, retry_count, indexed_at, created_at, updated_at FROM files 
          WHERE repository_id = ? ORDER BY path`;
 
     const rows = status
@@ -230,8 +231,8 @@ export class SqliteStorageProvider implements StorageProvider {
     this.db
       .prepare(
         `INSERT INTO files (path, repository_id, hash, mtime, size, language, node_count, status, 
-         last_error, retry_count, indexed_at, created_at, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+         embedding_status, last_error, retry_count, indexed_at, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
          ON CONFLICT(path) DO UPDATE SET
          repository_id = excluded.repository_id,
          hash = excluded.hash,
@@ -240,6 +241,7 @@ export class SqliteStorageProvider implements StorageProvider {
          language = excluded.language,
          node_count = excluded.node_count,
          status = excluded.status,
+         embedding_status = excluded.embedding_status,
          last_error = excluded.last_error,
          retry_count = excluded.retry_count,
          indexed_at = excluded.indexed_at,
@@ -254,6 +256,7 @@ export class SqliteStorageProvider implements StorageProvider {
         file.language || null,
         file.nodeCount,
         file.status,
+        file.embeddingStatus || null,
         file.lastError || null,
         file.retryCount,
         file.indexedAt?.toISOString() || null,
@@ -268,6 +271,29 @@ export class SqliteStorageProvider implements StorageProvider {
 
   deleteFilesInRepository(repositoryId: string): void {
     this.db.prepare('DELETE FROM files WHERE repository_id = ?').run(repositoryId);
+  }
+
+  listPendingEmbeddingFiles(limit: number): FileMetadata[] {
+    const rows = this.db
+      .prepare(
+        `SELECT path, repository_id, hash, mtime, size, language, node_count, status, 
+         embedding_status, last_error, retry_count, indexed_at, created_at, updated_at 
+         FROM files 
+         WHERE embedding_status = 'pending' AND status = 'indexed'
+         ORDER BY indexed_at ASC
+         LIMIT ?`
+      )
+      .all(limit) as any[];
+
+    return rows.map((row) => this.mapFile(row));
+  }
+
+  updateFileEmbeddingStatus(path: string, status: 'pending' | 'done' | 'error'): void {
+    this.db
+      .prepare(
+        `UPDATE files SET embedding_status = ?, updated_at = datetime('now') WHERE path = ?`
+      )
+      .run(status, path);
   }
 
   getNode(id: string): CodeNode | null {
@@ -725,6 +751,7 @@ export class SqliteStorageProvider implements StorageProvider {
       language: row.language,
       nodeCount: row.node_count,
       status: row.status,
+      embeddingStatus: row.embedding_status || undefined,
       lastError: row.last_error,
       retryCount: row.retry_count,
       indexedAt: row.indexed_at ? new Date(row.indexed_at) : undefined,

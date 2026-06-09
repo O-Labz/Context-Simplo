@@ -40,10 +40,8 @@ import type {
 } from './types.js';
 import { ParseError } from './errors.js';
 import { EventEmitter } from 'events';
-import { scrubSecrets } from '../security/scrubber.js';
 import { ContextIgnore } from '../security/ignore.js';
 import type { EmbeddingQueue } from './embedding-queue.js';
-import { chunkCodeForEmbedding } from '../llm/chunker.js';
 import type { LanceDBVectorStore } from '../store/lance.js';
 import type { ParsePool } from './parse-pool.js';
 
@@ -248,27 +246,20 @@ export class Indexer extends EventEmitter {
         parsed = await parseFile(relativePath, repositoryId, this.workspaceRoot);
       }
 
-      // Single source of truth: StorageBackedGraph writes to SQLite automatically
-      // The graph operations below persist nodes/edges to storage, so we only need
-      // to update file metadata and pending references in the transaction
+      // Batch all graph writes in a single transaction for atomicity + performance
       await this.graph.removeNodesInFile(relativePath);
       
-      for (const node of parsed.nodes) {
-        await this.graph.addNode(node);
-      }
+      await this.storage.transaction(async () => {
+        // Bulk persist nodes (so resolveEdges' findByName lookups see them)
+        await this.graph.bulkLoad(parsed.nodes, []);
+        
+        // Resolve edges now that nodes are persisted
+        const edges = this.resolveEdges(parsed, repositoryId);
+        
+        // Bulk persist edges (single cache invalidation)
+        await this.graph.bulkLoad([], edges);
 
-      const edges = this.resolveEdges(parsed, repositoryId);
-      for (const edge of edges) {
-        try {
-          await this.graph.addEdge(edge);
-        } catch {
-          // Edge target may not exist yet (forward reference), skip
-        }
-      }
-
-      // Update file metadata and pending references in transaction
-      this.storage.transaction(() => {
-
+        // Track pending forward references
         this.pendingReferences.push({
           calls: parsed.calls,
           imports: parsed.imports,
@@ -277,6 +268,7 @@ export class Indexer extends EventEmitter {
           filePath: parsed.filePath,
         });
 
+        // Update file metadata
         fileMetadata.hash = parsed.hash;
         fileMetadata.language = parsed.language;
         fileMetadata.nodeCount = parsed.nodes.length;
@@ -285,30 +277,9 @@ export class Indexer extends EventEmitter {
         fileMetadata.indexedAt = new Date();
         fileMetadata.updatedAt = new Date();
 
+        fileMetadata.embeddingStatus = 'pending';
         this.storage.upsertFile(fileMetadata);
       });
-
-    if (this.embeddingQueue && this.vectorStore) {
-      try {
-        const fileContent = await readFile(filePath, 'utf-8');
-        const { scrubbed } = scrubSecrets(fileContent);
-        const chunks = chunkCodeForEmbedding(parsed, scrubbed);
-
-        if (chunks.length > 0) {
-          const texts = chunks.map((chunk) => chunk.content);
-          const embeddings = await this.embeddingQueue.embed(texts);
-
-          const chunksWithEmbeddings = chunks.map((chunk, i) => ({
-            ...chunk,
-            embedding: embeddings[i],
-          }));
-
-          await this.vectorStore.upsertChunks(chunksWithEmbeddings);
-        }
-      } catch (error) {
-        console.warn(`Failed to generate embeddings for ${relativePath}:`, error);
-      }
-    }
 
     this.emit('file:complete', relativePath, parsed.nodes.length);
     } catch (error) {
@@ -350,6 +321,8 @@ export class Indexer extends EventEmitter {
         const targets = this.graph.findByName(call.calleeName);
         for (const target of targets) {
           if (target.repositoryId !== repositoryId) continue;
+          if (!this.graph.getNode(call.callerNodeId)) continue;
+          
           const edgeId = this.generateEdgeId(call.callerNodeId, target.id, 'calls');
           const edge: GraphEdge = {
             id: edgeId,
@@ -361,14 +334,8 @@ export class Indexer extends EventEmitter {
             createdAt: now,
             updatedAt: now,
           };
-          try {
-            if (!this.graph.getNode(call.callerNodeId)) continue;
-            await this.graph.addEdge(edge);
-            newEdges.push(edge);
-            created++;
-          } catch {
-            // Already exists or source/target missing
-          }
+          newEdges.push(edge);
+          created++;
         }
       }
 
@@ -376,6 +343,8 @@ export class Indexer extends EventEmitter {
         const parents = this.graph.findByName(inh.parentName);
         for (const parent of parents) {
           if (parent.repositoryId !== repositoryId) continue;
+          if (!this.graph.getNode(inh.childNodeId)) continue;
+          
           const edgeId = this.generateEdgeId(inh.childNodeId, parent.id, inh.kind);
           const edge: GraphEdge = {
             id: edgeId,
@@ -387,14 +356,8 @@ export class Indexer extends EventEmitter {
             createdAt: now,
             updatedAt: now,
           };
-          try {
-            if (!this.graph.getNode(inh.childNodeId)) continue;
-            await this.graph.addEdge(edge);
-            newEdges.push(edge);
-            created++;
-          } catch {
-            // Already exists or source/target missing
-          }
+          newEdges.push(edge);
+          created++;
         }
       }
 
@@ -434,13 +397,8 @@ export class Indexer extends EventEmitter {
               createdAt: now,
               updatedAt: now,
             };
-            try {
-              await this.graph.addEdge(edge);
-              newEdges.push(edge);
-              created++;
-            } catch {
-              // Already exists
-            }
+            newEdges.push(edge);
+            created++;
           }
         }
       }

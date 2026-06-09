@@ -76,6 +76,7 @@ ollama pull nomic-embed-text
 
 docker run -d \
   --name context-simplo \
+  --restart unless-stopped \
   -p 3001:3001 \
   -v "$HOME":/host:ro \
   -v context-simplo-data:/data \
@@ -84,6 +85,7 @@ docker run -d \
   -e LLM_PROVIDER=ollama \
   -e LLM_BASE_URL=http://host.docker.internal:11434 \
   -e LLM_EMBEDDING_MODEL=nomic-embed-text \
+  -e GRAPH_MEMORY_LIMIT_MB=4096 \
   ohopson/context-simplo:latest
 ```
 

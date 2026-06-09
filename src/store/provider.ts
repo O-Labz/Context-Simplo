@@ -33,6 +33,8 @@ export interface StorageProvider {
   upsertFile(file: FileMetadata): void;
   deleteFile(path: string): void;
   deleteFilesInRepository(repositoryId: string): void;
+  listPendingEmbeddingFiles(limit: number): FileMetadata[];
+  updateFileEmbeddingStatus(path: string, status: 'pending' | 'done' | 'error'): void;
 
   getNode(id: string): CodeNode | null;
   getNodes(filter: NodeFilter): CodeNode[];

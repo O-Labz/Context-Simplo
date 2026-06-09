@@ -89,6 +89,7 @@ export const FileMetadataSchema = z.object({
   language: z.string().optional(),
   nodeCount: z.number().int().nonnegative(),
   status: z.enum(['pending', 'indexing', 'indexed', 'error']),
+  embeddingStatus: z.enum(['pending', 'done', 'error']).optional(),
   lastError: z.string().optional(),
   retryCount: z.number().int().nonnegative(),
   indexedAt: z.date().optional(),
