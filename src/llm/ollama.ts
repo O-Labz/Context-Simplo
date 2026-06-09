@@ -7,7 +7,7 @@
  * - Auto-detects available models
  * - Handles model pull prompts
  * - Health check via tags endpoint
- * - Single text per request (Ollama limitation)
+ * - Batch embeddings via /api/embed (with fallback to /api/embeddings for older Ollama)
  */
 
 import type { EmbeddingProvider } from './provider.js';
@@ -56,6 +56,65 @@ export class OllamaEmbeddingProvider implements EmbeddingProvider {
   }
 
   async embed(texts: string[]): Promise<number[][]> {
+    if (texts.length === 0) return [];
+
+    // Try batch endpoint first (Ollama 0.1.17+)
+    try {
+      const response = await fetch(`${this.baseUrl}/api/embed`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          model: this.model,
+          input: texts,
+        }),
+      });
+
+      // Fall back to per-text endpoint for older Ollama versions
+      if (response.status === 404) {
+        console.log(`Ollama batch endpoint not available, falling back to per-text /api/embeddings`);
+        return this.embedPerText(texts);
+      }
+
+      if (!response.ok) {
+        const error = await response.text();
+        throw new LLMError('ollama', `Batch embed API error: ${error}`, true);
+      }
+
+      const data = (await response.json()) as { embeddings: number[][] };
+      if (!data.embeddings || !Array.isArray(data.embeddings)) {
+        throw new LLMError('ollama', `Model "${this.model}" returned no embeddings — it may not support embedding generation`, false);
+      }
+
+      if (data.embeddings.length !== texts.length) {
+        throw new LLMError('ollama', `Expected ${texts.length} embeddings but got ${data.embeddings.length}`, false);
+      }
+
+      // Auto-detect dimensions from first embedding
+      if (this.detectedDims === null && data.embeddings.length > 0) {
+        this.detectedDims = data.embeddings[0]!.length;
+        if (this.dims === 0) {
+          this.dims = this.detectedDims;
+          console.log(`Auto-detected embedding dimensions for ${this.model}: ${this.dims}`);
+        } else if (this.dims !== this.detectedDims) {
+          console.warn(`Dimension mismatch for ${this.model}: expected ${this.dims}, got ${this.detectedDims}. Using actual: ${this.detectedDims}`);
+          this.dims = this.detectedDims;
+        }
+      }
+
+      return data.embeddings;
+    } catch (error) {
+      if (error instanceof LLMError) throw error;
+      throw new LLMError('ollama', (error as Error).message, true, error as Error);
+    }
+  }
+
+  /**
+   * Fallback for older Ollama versions without batch endpoint.
+   * Makes one HTTP request per text.
+   */
+  private async embedPerText(texts: string[]): Promise<number[][]> {
     const embeddings: number[][] = [];
 
     for (const text of texts) {
@@ -73,7 +132,7 @@ export class OllamaEmbeddingProvider implements EmbeddingProvider {
 
         if (!response.ok) {
           const error = await response.text();
-          throw new LLMError('ollama', `API error: ${error}`, true);
+          throw new LLMError('ollama', `Per-text embed API error: ${error}`, true);
         }
 
         const data = (await response.json()) as { embedding: number[] };

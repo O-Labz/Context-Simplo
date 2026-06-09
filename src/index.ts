@@ -24,6 +24,7 @@ import { IndexQueue } from './core/index-queue.js';
 import { MemoryGuard } from './core/memory-guard.js';
 import { createEmbeddingProvider } from './llm/provider.js';
 import { EmbeddingQueue } from './core/embedding-queue.js';
+import { EmbeddingBackfiller } from './core/embedding-backfill.js';
 import { ConfigManager } from './core/config-manager.js';
 
 // Global error handlers to prevent crashes
@@ -111,11 +112,26 @@ async function main() {
         concurrency: config.embeddingConcurrency.value,
         batchSize: config.embeddingBatchSize.value,
         maxRetries: 3,
+        maxQueueDepth: 1000,
       })
     : undefined;
 
   if (embeddingQueue) {
     console.log('Embedding queue ready');
+  }
+
+  // Initialize embedding backfiller if embedding is enabled
+  const embeddingBackfiller = (embeddingQueue && vectorStore)
+    ? new EmbeddingBackfiller(storage, embeddingQueue, vectorStore, {
+        concurrency: 10,
+        batchSize: 50,
+        pollIntervalMs: 5000,
+        workspaceRoot,
+      })
+    : undefined;
+
+  if (embeddingBackfiller) {
+    console.log('Embedding backfiller ready');
   }
 
   // Derive heap limit from NODE_HEAP_MB env var (used in NODE_OPTIONS)
@@ -375,6 +391,12 @@ async function main() {
   );
 
   const listenHost = process.env.HOST || (existsSync('/.dockerenv') ? '0.0.0.0' : '127.0.0.1');
+  
+  // Start embedding backfiller before API server
+  if (embeddingBackfiller) {
+    embeddingBackfiller.start();
+  }
+  
   await apiServer.listen({ port: 3001, host: listenHost });
   console.log('API server started on port 3001');
   console.log(`WebSocket clients: ${broadcaster.getClientCount()}`);
@@ -436,6 +458,9 @@ async function main() {
   if (emlEventBus) {
     shutdownManager.register('EML event bus', () => emlEventBus.stop(), 95);
   }
+  if (embeddingBackfiller) {
+    shutdownManager.register('Embedding backfiller', () => embeddingBackfiller.stop(), 93);
+  }
   shutdownManager.register('EML vector store', () => emlMemoryVectors.close(), 65);
   shutdownManager.register('File watcher', () => watcher.close(), 100);
   if (embeddingQueue) {
@@ -451,21 +476,26 @@ async function main() {
   }
 
   if (config.autoIndex.value) {
-    console.log('Auto-indexing /workspace...');
+    console.log('Restoring previously-added repositories...');
     try {
-      const job = await indexer.indexRepository(workspaceRoot, {
-        incremental: false,
-        respectIgnore: true,
-      });
-      console.log(`Indexing complete: ${job.filesProcessed} files, ${job.nodesCreated} nodes`);
-    } catch (error) {
-      console.error('Auto-indexing failed:', error);
-    }
-  }
+      const repos = storage.listRepositories();
+      console.log(`Found ${repos.length} previously-added repositories`);
 
-  if (config.watchEnabled.value) {
-    watcher.watch(workspaceRoot, 'default-repo');
-    console.log('File watching enabled');
+      for (const repo of repos) {
+        console.log(`Restoring repository: ${repo.name} (${repo.path})`);
+
+        await indexer.resumeIncompleteIndexing(repo.id);
+
+        if (repo.isWatched && config.watchEnabled.value) {
+          watcher.watch(repo.path, repo.id);
+          console.log(`  Watcher restored for ${repo.name}`);
+        }
+      }
+
+      console.log('Repository restoration complete');
+    } catch (error) {
+      console.error('Repository restoration failed:', error);
+    }
   }
 
   console.log('Context-Simplo ready!');

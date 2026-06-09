@@ -31,6 +31,7 @@ export interface EmbeddingQueueOptions {
   concurrency: number;
   batchSize: number;
   maxRetries: number;
+  maxQueueDepth?: number;
 }
 
 export interface EmbeddingJob {
@@ -59,6 +60,7 @@ export class EmbeddingQueue extends EventEmitter {
   private concurrency: number;
   private maxRetries: number;
   private batchSize: number;
+  private maxQueueDepth: number;
   private draining = false;
 
   constructor(provider: EmbeddingProvider, options: EmbeddingQueueOptions) {
@@ -67,11 +69,17 @@ export class EmbeddingQueue extends EventEmitter {
     this.concurrency = options.concurrency;
     this.maxRetries = options.maxRetries;
     this.batchSize = Math.max(1, options.batchSize || 1);
+    this.maxQueueDepth = options.maxQueueDepth || Number.MAX_SAFE_INTEGER;
   }
 
   async embed(texts: string[]): Promise<number[][]> {
     if (this.draining) {
       throw new LLMError('queue', 'Queue is draining, not accepting new jobs', false);
+    }
+
+    // Backpressure: wait for queue to drain below maxQueueDepth
+    while (this.queue.length >= this.maxQueueDepth) {
+      await this.waitForDrain();
     }
 
     return new Promise((resolve, reject) => {
@@ -89,6 +97,19 @@ export class EmbeddingQueue extends EventEmitter {
     });
   }
 
+  private waitForDrain(): Promise<void> {
+    return new Promise((resolve) => {
+      const checkDrain = () => {
+        if (this.queue.length < this.maxQueueDepth) {
+          this.removeListener('drained', checkDrain);
+          resolve();
+        }
+      };
+      this.on('drained', checkDrain);
+      checkDrain();
+    });
+  }
+
   private async processQueue(): Promise<void> {
     while (this.inFlight < this.concurrency && this.queue.length > 0) {
       const job = this.queue.shift();
@@ -100,6 +121,7 @@ export class EmbeddingQueue extends EventEmitter {
       this.processJob(job).finally(() => {
         this.inFlight--;
         this.emit('progress', this.getStats());
+        this.emit('drained');
         this.processQueue();
       });
     }

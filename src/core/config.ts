@@ -28,14 +28,24 @@ import type {
   ResponseMode,
 } from './types.js';
 
+/**
+ * Default configuration values
+ *
+ * Key boot behavior config:
+ * - autoIndex: When true, resumes incomplete indexing for previously-added repos on boot.
+ *              Does NOT auto-index the mount root. Repos must be explicitly added via API/MCP.
+ * - watchEnabled: Gates per-repo watcher restore on boot. If true, restores watchers for
+ *                 repos where isWatched=true. Does NOT auto-watch the mount root.
+ * - autoWatch: Controls whether newly-added repos are automatically watched (via API/MCP).
+ */
 const DEFAULT_CONFIG = {
   llmProvider: 'none' as LLMProviderType,
   llmApiKey: undefined,
   llmBaseUrl: 'http://host.docker.internal:11434',
   llmEmbeddingModel: undefined,
   dataDir: '/data',
-  autoIndex: true,
-  watchEnabled: true,
+  autoIndex: true, // Resume incomplete indexing on boot for previously-added repos
+  watchEnabled: true, // Gate per-repo watcher restore on boot
   autoWatch: true,
   logLevel: 'info' as const,
   embeddingConcurrency: 5,
