@@ -138,12 +138,19 @@ export class WatchReindexQueue {
     }
 
     // Process incremental changes
+    const repos = this.indexer.storage.listRepositories();
+    const repo = repos.find(r => r.id === repositoryId);
+    if (!repo) {
+      console.error(`Repository ${repositoryId} not found for incremental reindex`);
+      return;
+    }
+
     for (const filePath of changes) {
       try {
-        await this.indexer.indexFile(filePath, repositoryId, true);
+        const absolutePath = `${repo.path}/${filePath}`;
+        await this.indexer.indexFile(absolutePath, repositoryId, true);
         // Resolve references for this file
-        const relativePath = filePath.replace(/^\//, '');
-        await this.indexer.resolveReferencesForFiles([relativePath], repositoryId);
+        await this.indexer.resolveReferencesForFiles([filePath], repositoryId);
       } catch (error) {
         console.error(`Error reindexing ${filePath}:`, error);
       }

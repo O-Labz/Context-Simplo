@@ -1,5 +1,7 @@
+import { useState, useEffect } from 'react';
 import { BrowserRouter, Routes, Route } from 'react-router-dom';
 import Navigation from './components/Navigation';
+import Login from './components/Login';
 import Setup from './pages/Setup';
 import Repositories from './pages/Repositories';
 import Explorer from './pages/Explorer';
@@ -8,8 +10,23 @@ import McpSetup from './pages/McpSetup';
 import Metrics from './pages/Metrics';
 import Memory from './pages/Memory/Memory';
 import { ErrorBoundary } from './components/ErrorBoundary';
+import { AuthService } from './lib/auth';
 
 function App() {
+  const [isAuthenticated, setIsAuthenticated] = useState(AuthService.isAuthenticated());
+
+  useEffect(() => {
+    // Subscribe to auth changes
+    const unsubscribe = AuthService.subscribe(() => {
+      setIsAuthenticated(AuthService.isAuthenticated());
+    });
+    return unsubscribe;
+  }, []);
+
+  if (!isAuthenticated) {
+    return <Login onLogin={() => setIsAuthenticated(true)} />;
+  }
+
   return (
     <ErrorBoundary>
       <BrowserRouter>

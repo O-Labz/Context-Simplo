@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useWebSocket } from '../../hooks/useWebSocket';
+import { authFetch } from '../../lib/auth';
 import './Setup.css';
 
 const PROVIDERS = [
@@ -49,7 +50,7 @@ export default function Setup() {
   }>({ type: null, message: '' });
 
   useEffect(() => {
-    fetch('/api/config')
+    authFetch('/api/config')
       .then(res => res.json())
       .then(data => {
         const cfg = data.config || {};
@@ -108,7 +109,7 @@ export default function Setup() {
     setTestResult(null);
 
     try {
-      const response = await fetch('/api/config/test-connection', {
+      const response = await authFetch('/api/config/test-connection', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ provider, apiKey, baseUrl, model }),
@@ -132,7 +133,7 @@ export default function Setup() {
     setSaving(true);
     setReloadStatus({ type: null, message: '' });
     try {
-      const response = await fetch('/api/config', {
+      const response = await authFetch('/api/config', {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({

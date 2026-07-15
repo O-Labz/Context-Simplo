@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
 import Graph from 'graphology';
 import Sigma from 'sigma';
+import { authFetch } from '../../lib/auth';
 import './Explorer.css';
 
 interface GraphNode {
@@ -70,7 +71,7 @@ export default function Explorer() {
   const [nodeError, setNodeError] = useState<string | null>(null);
 
   useEffect(() => {
-    fetch('/api/repositories')
+    authFetch('/api/repositories')
       .then(res => res.json())
       .then(data => {
         const repos = data.repositories || [];
@@ -99,7 +100,7 @@ export default function Explorer() {
     if (!selectedRepo) return;
     setNodeError(null);
     try {
-      const response = await fetch(`/api/graph/${selectedRepo}/node/${nodeId}`);
+      const response = await authFetch(`/api/graph/${selectedRepo}/node/${nodeId}`);
       if (!response.ok) {
         const errorData = await response.json().catch(() => null);
         setNodeError(errorData?.error || `Failed to load node (${response.status})`);
@@ -119,7 +120,7 @@ export default function Explorer() {
 
     setLoading(true);
 
-    fetch(`/api/graph/${selectedRepo}?maxNodes=500&includeEdges=true`)
+    authFetch(`/api/graph/${selectedRepo}?maxNodes=500&includeEdges=true`)
       .then(res => res.json())
       .then((data: GraphData) => {
         setRawData(data);

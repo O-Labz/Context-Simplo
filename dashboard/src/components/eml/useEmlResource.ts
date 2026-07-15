@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
+import { authFetch } from '../../lib/auth';
 
 export interface EmlResourceState<T> {
   data: T | null;
@@ -29,7 +30,7 @@ export function useEmlResource<T>(url: string | null): EmlResourceState<T> {
     setError(null);
     setDisabled(false);
     try {
-      const res = await fetch(url);
+      const res = await authFetch(url);
       if (res.status === 503) {
         setDisabled(true);
         setData(null);

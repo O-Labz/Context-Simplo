@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { authFetch } from '../../lib/auth';
 import './McpSetup.css';
 
 interface IdeConfig {
@@ -43,7 +44,7 @@ export default function McpSetup() {
 
   useEffect(() => {
     // Fetch configs from API
-    fetch('/api/mcp-config')
+    authFetch('/api/mcp-config')
       .then(res => res.json())
       .then(data => {
         setConfigs(data.configs || []);
@@ -109,6 +110,52 @@ export default function McpSetup() {
           </p>
         </div>
       </section>
+
+      {/* AUTH_TOKEN Warning Banner */}
+      <div className="mb-8 bg-gradient-to-r from-amber-500/10 to-orange-500/10 border-2 border-amber-500/30 rounded-2xl p-6 shadow-lg">
+        <div className="flex items-start gap-4">
+          <div className="shrink-0">
+            <div className="w-12 h-12 bg-amber-500/20 rounded-xl flex items-center justify-center">
+              <span className="material-symbols-outlined text-2xl text-amber-600">shield</span>
+            </div>
+          </div>
+          <div className="flex-1">
+            <h3 className="text-lg font-bold text-on-surface mb-2 flex items-center gap-2">
+              <span>Authentication Required</span>
+              <span className="px-2 py-1 bg-amber-500/20 text-amber-700 text-xs font-mono rounded">AUTH_TOKEN</span>
+            </h3>
+            <p className="text-[0.875rem] text-on-surface-variant mb-3">
+              All configurations below include <code className="px-1.5 py-0.5 bg-surface-container rounded font-mono text-xs">YOUR_AUTH_TOKEN_HERE</code> as a placeholder. You must replace it with your actual server token.
+            </p>
+            <div className="bg-surface-container-lowest rounded-xl p-4 border border-outline-variant/30">
+              <p className="text-[0.75rem] font-semibold uppercase tracking-wider text-tertiary mb-2">Get your token:</p>
+              <div className="space-y-2">
+                <div className="flex items-start gap-2">
+                  <span className="text-tertiary font-bold mt-0.5">1.</span>
+                  <div className="flex-1">
+                    <p className="text-[0.875rem] text-on-surface">If you started the container with the README command, retrieve your auto-generated token:</p>
+                    <code className="block mt-2 px-3 py-2 bg-surface-container rounded-lg text-xs font-mono text-tertiary border border-outline-variant/30">
+                      docker exec context-simplo printenv AUTH_TOKEN
+                    </code>
+                  </div>
+                </div>
+                <div className="flex items-start gap-2">
+                  <span className="text-tertiary font-bold mt-0.5">2.</span>
+                  <div className="flex-1">
+                    <p className="text-[0.875rem] text-on-surface">Or check the <code className="px-1.5 py-0.5 bg-surface-container rounded font-mono text-xs">AUTH_TOKEN</code> value you set when starting the Docker container.</p>
+                  </div>
+                </div>
+                <div className="flex items-start gap-2">
+                  <span className="text-tertiary font-bold mt-0.5">3.</span>
+                  <div className="flex-1">
+                    <p className="text-[0.875rem] text-on-surface">Replace <code className="px-1.5 py-0.5 bg-surface-container rounded font-mono text-xs">YOUR_AUTH_TOKEN_HERE</code> in the JSON with your actual token before copying.</p>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
 
       {/* Bento Grid Layout */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
@@ -294,9 +341,9 @@ export default function McpSetup() {
         </div>
         <div className="p-6 bg-surface-container-low rounded-xl support-card">
           <span className="material-symbols-outlined text-tertiary mb-3 block">security</span>
-          <h3 className="text-sm font-bold mb-2">Security Headers</h3>
+          <h3 className="text-sm font-bold mb-2">Authentication Token</h3>
           <p className="text-[0.8125rem] text-on-surface-variant">
-            Never commit your JSON config files with raw API keys to public repositories.
+            Replace <code className="px-1 py-0.5 bg-surface-container rounded text-xs font-mono">YOUR_AUTH_TOKEN_HERE</code> with your actual server token in all configurations above.
           </p>
         </div>
         <div className="p-6 bg-surface-container-low rounded-xl support-card">

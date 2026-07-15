@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { authFetch } from '../../lib/auth';
 import './Metrics.css';
 
 interface MetricsData {
@@ -115,7 +116,7 @@ export default function Metrics() {
 
   const loadMetrics = async () => {
     try {
-      const response = await fetch('/api/metrics');
+      const response = await authFetch('/api/metrics');
       if (!response.ok) throw new Error(`HTTP ${response.status}`);
       const data = await response.json();
       setMetrics(data);
