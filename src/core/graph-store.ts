@@ -433,24 +433,18 @@ export class StorageBackedGraph implements CodeGraphApi {
     return inEdges.length + outEdges.length;
   }
 
-  findDeadCode(repositoryId?: string): { results: CodeNode[]; total: number; truncated: boolean } {
+  findDeadCode(repositoryId?: string): CodeNode[] {
     if (!repositoryId) {
-      return { results: [], total: 0, truncated: false };
+      return [];
     }
 
     const cacheKey = `deadcode:${repositoryId}`;
     
     const cached = this.getCachedQuery(cacheKey);
     if (cached) {
-      const total = cached.length;
-      return {
-        results: cached,
-        total,
-        truncated: false,
-      };
+      return cached;
     }
 
-    const total = this.storage.countUnreferencedNodes(repositoryId);
     const deadNodes = this.storage.findUnreferencedNodes(repositoryId, MAX_TRAVERSE_ROWS, 0);
 
     for (const node of deadNodes) {
@@ -458,11 +452,7 @@ export class StorageBackedGraph implements CodeGraphApi {
     }
     this.cacheQuery(cacheKey, deadNodes);
 
-    return {
-      results: deadNodes,
-      total,
-      truncated: deadNodes.length >= MAX_TRAVERSE_ROWS && total > MAX_TRAVERSE_ROWS,
-    };
+    return deadNodes;
   }
 
   explainArchitecture(repositoryId: string, detailLevel: number = 1): ArchitectureSummary {

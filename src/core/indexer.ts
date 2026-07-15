@@ -334,7 +334,9 @@ export class Indexer extends EventEmitter {
     let created = 0;
     const now = new Date();
     const newEdges: GraphEdge[] = [];
-    const edgeIds = new Set<string>();
+    
+    // Build set of existing edge IDs to avoid duplicates
+    const existingEdgeIds = new Set(this.graph.getAllEdges().map(e => e.id));
 
     for (const ref of this.pendingReferences) {
       if (ref.repositoryId !== repositoryId) continue;
@@ -368,8 +370,8 @@ export class Indexer extends EventEmitter {
 
         for (const { target, confidence } of resolved) {
           const edgeId = this.generateEdgeId(call.callerNodeId, target.id, 'calls');
-          if (edgeIds.has(edgeId)) continue; // Skip duplicates
-          edgeIds.add(edgeId);
+          if (existingEdgeIds.has(edgeId)) continue; // Skip if already exists
+          existingEdgeIds.add(edgeId);
 
           newEdges.push({
             id: edgeId,
@@ -399,8 +401,8 @@ export class Indexer extends EventEmitter {
 
         for (const { target, confidence } of resolved) {
           const edgeId = this.generateEdgeId(inh.childNodeId, target.id, inh.kind);
-          if (edgeIds.has(edgeId)) continue;
-          edgeIds.add(edgeId);
+          if (existingEdgeIds.has(edgeId)) continue;
+          existingEdgeIds.add(edgeId);
 
           newEdges.push({
             id: edgeId,
@@ -443,8 +445,8 @@ export class Indexer extends EventEmitter {
             if (!sourceNode) continue;
 
             const edgeId = this.generateEdgeId(sourceNode.id, target.id, 'imports');
-            if (edgeIds.has(edgeId)) continue;
-            edgeIds.add(edgeId);
+            if (existingEdgeIds.has(edgeId)) continue;
+            existingEdgeIds.add(edgeId);
 
             newEdges.push({
               id: edgeId,

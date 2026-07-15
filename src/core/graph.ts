@@ -65,7 +65,7 @@ export interface CodeGraphApi {
   analyzeImpact(nodeId: string, maxDepth?: number): ImpactAnalysisResult;
   computeCentrality(): Map<string, number>;
   getCentrality(nodeId: string): number;
-  findDeadCode(repositoryId?: string): { results: CodeNode[]; total: number; truncated: boolean };
+  findDeadCode(repositoryId?: string): CodeNode[];
   explainArchitecture(repositoryId: string, detailLevel?: number): ArchitectureSummary;
   getStats(): {
     nodeCount: number;
@@ -96,7 +96,7 @@ export class CodeGraph implements CodeGraphApi {
   private mutationLock: Promise<void> = Promise.resolve();
 
   constructor(memoryLimitMb: number = 512) {
-    this.graph = new DirectedGraph();
+    this.graph = new DirectedGraph({ multi: true });
     this.nameIndex = new Map();
     this.fileIndex = new Map();
     const capped = Math.min(memoryLimitMb, 4096);
@@ -433,7 +433,7 @@ export class CodeGraph implements CodeGraphApi {
     return this.centralityCache!.get(nodeId) || 0;
   }
 
-  findDeadCode(repositoryId?: string): { results: CodeNode[]; total: number; truncated: boolean } {
+  findDeadCode(repositoryId?: string): CodeNode[] {
     const deadNodes: CodeNode[] = [];
 
     for (const nodeId of this.graph.nodes()) {
@@ -451,11 +451,7 @@ export class CodeGraph implements CodeGraphApi {
       }
     }
 
-    return {
-      results: deadNodes,
-      total: deadNodes.length,
-      truncated: false,
-    };
+    return deadNodes;
   }
 
   explainArchitecture(repositoryId: string, detailLevel: number = 1): ArchitectureSummary {

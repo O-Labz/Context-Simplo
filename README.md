@@ -124,6 +124,16 @@ Control resource usage with:
   -e GRAPH_HOT_CACHE_MB=256       # Graph cache size
 ```
 
+### AST Engine Selection
+
+Context-Simplo uses WASM tree-sitter by default for cross-platform compatibility. You can optionally enable native tree-sitter bindings:
+
+```bash
+  -e AST_ENGINE=native            # Use native tree-sitter (requires compilation)
+```
+
+**Note:** Native engine is opt-in and unsupported in the default Docker image. It requires `tree-sitter` and language grammar packages to be compiled with node-gyp. If native dependencies are absent, the system automatically falls back to WASM or heuristic parsing. For production use, the default WASM engine is recommended.
+
 For container limits, use `docker run --memory=4g --cpus=4`.
 
 ## Good to know

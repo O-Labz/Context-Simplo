@@ -14,8 +14,8 @@ export interface AstResult {
 }
 
 export class AstEngineError extends Error {
-  constructor(message: string, public override readonly cause?: unknown) {
-    super(message);
+  constructor(message: string, cause?: unknown) {
+    super(message, { cause });
     this.name = 'AstEngineError';
   }
 }
