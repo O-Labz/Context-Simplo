@@ -21,6 +21,8 @@ const UpdateConfigSchema = z.object({
   llmApiKey: z.string().optional(),
   llmBaseUrl: z.string().url().optional(),
   llmEmbeddingModel: z.string().optional(),
+  embeddingConcurrency: z.number().int().positive().optional(),
+  embeddingBatchSize: z.number().int().positive().optional(),
   autoIndex: z.boolean().optional(),
   watchEnabled: z.boolean().optional(),
   logLevel: z.enum(['error', 'warn', 'info', 'debug']).optional(),
@@ -135,6 +137,14 @@ export async function registerConfigRoutes(
 
     if (input.llmEmbeddingModel && !process.env.LLM_EMBEDDING_MODEL) {
       updates.llmEmbeddingModel = input.llmEmbeddingModel;
+    }
+
+    if (input.embeddingConcurrency !== undefined) {
+      updates.embeddingConcurrency = input.embeddingConcurrency;
+    }
+
+    if (input.embeddingBatchSize !== undefined) {
+      updates.embeddingBatchSize = input.embeddingBatchSize;
     }
 
     if (input.autoIndex !== undefined && !process.env.CONTEXT_SIMPLO_AUTO_INDEX) {

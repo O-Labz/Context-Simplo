@@ -93,14 +93,7 @@ export async function registerRepositoryRoutes(
       });
     }
 
-    if (!options.indexer) {
-      return reply.status(500).send({
-        error: 'Indexer not available',
-        message: 'Indexer module not initialized',
-      });
-    }
-
-    // Canonicalize and validate path
+    // Canonicalize and validate path FIRST (security: prevent information leakage)
     let absolutePath: string;
     try {
       absolutePath = path.resolve(options.workspaceRoot, input.path);
@@ -116,6 +109,14 @@ export async function registerRepositoryRoutes(
       return reply.status(400).send({
         error: 'Path traversal detected',
         message: 'Invalid repository path',
+      });
+    }
+
+    // Check if indexer is available
+    if (!options.indexer) {
+      return reply.status(500).send({
+        error: 'Indexer not available',
+        message: 'Indexer module not initialized',
       });
     }
 

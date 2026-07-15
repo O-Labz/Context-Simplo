@@ -118,14 +118,19 @@ export class ConfigManager extends EventEmitter {
     }
 
     this.reloading = true;
+    // Yield control immediately to ensure concurrent calls can see the lock
+    await Promise.resolve();
+    
     this.emit('reloading', updates);
 
     const changes: string[] = [];
     const warnings: string[] = [];
 
     try {
+      // Load current config from storage and merge with updates
       const dashboardConfig = this.storage.getConfig();
-      const newConfig = loadConfig(dashboardConfig);
+      const mergedDashboardConfig = { ...dashboardConfig, ...updates };
+      const newConfig = loadConfig(mergedDashboardConfig);
 
       const needsProviderReload = this.needsProviderReload(updates);
       const needsQueueUpdate = this.needsQueueUpdate(updates);

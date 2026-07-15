@@ -86,6 +86,20 @@ export class Indexer extends EventEmitter {
     options: IndexerOptions = {}
   ): Promise<IndexJob> {
     const absolutePath = resolve(this.workspaceRoot, repositoryPath);
+    
+    // Validate repository path exists
+    try {
+      const stats = await stat(absolutePath);
+      if (!stats.isDirectory()) {
+        throw new Error(`Path is not a directory: ${absolutePath}`);
+      }
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
+        throw new Error(`Repository path does not exist: ${absolutePath}`);
+      }
+      // For other errors (permissions, etc.), let the indexing process handle them
+    }
+    
     const repositoryId = this.generateRepositoryId(absolutePath);
 
     let repo = this.storage.getRepositoryByPath(absolutePath);

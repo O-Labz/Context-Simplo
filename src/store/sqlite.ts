@@ -714,25 +714,46 @@ export class SqliteStorageProvider implements StorageProvider {
     return result;
   }
 
-  findUnreferencedNodes(repositoryId: string, limit: number, offset: number): CodeNode[] {
-    const rows = this.db
-      .prepare(
-        `SELECT id, name, qualified_name, kind, file_path, line_start, line_end,
-         column_start, column_end, visibility, is_exported, docstring, complexity,
-         repository_id, language, created_at, updated_at
-         FROM nodes
-         WHERE repository_id = ?
-           AND (kind = 'function' OR kind = 'method' OR kind = 'class')
-           AND is_exported = 0
-           AND NOT EXISTS (
-             SELECT 1 FROM edges WHERE target_id = nodes.id
-           )
-         ORDER BY file_path, line_start
-         LIMIT ? OFFSET ?`
-      )
-      .all(repositoryId, limit, offset) as any[];
+  findUnreferencedNodes(repositoryId: string | undefined, limit: number, offset: number): CodeNode[] {
+    if (repositoryId) {
+      const rows = this.db
+        .prepare(
+          `SELECT id, name, qualified_name, kind, file_path, line_start, line_end,
+           column_start, column_end, visibility, is_exported, docstring, complexity,
+           repository_id, language, created_at, updated_at
+           FROM nodes
+           WHERE repository_id = ?
+             AND (kind = 'function' OR kind = 'method' OR kind = 'class')
+             AND is_exported = 0
+             AND NOT EXISTS (
+               SELECT 1 FROM edges WHERE target_id = nodes.id
+             )
+           ORDER BY file_path, line_start
+           LIMIT ? OFFSET ?`
+        )
+        .all(repositoryId, limit, offset) as any[];
 
-    return rows.map((row) => this.mapNode(row));
+      return rows.map((row) => this.mapNode(row));
+    } else {
+      // Find unreferenced nodes across all repositories
+      const rows = this.db
+        .prepare(
+          `SELECT id, name, qualified_name, kind, file_path, line_start, line_end,
+           column_start, column_end, visibility, is_exported, docstring, complexity,
+           repository_id, language, created_at, updated_at
+           FROM nodes
+           WHERE (kind = 'function' OR kind = 'method' OR kind = 'class')
+             AND is_exported = 0
+             AND NOT EXISTS (
+               SELECT 1 FROM edges WHERE target_id = nodes.id
+             )
+           ORDER BY file_path, line_start
+           LIMIT ? OFFSET ?`
+        )
+        .all(limit, offset) as any[];
+
+      return rows.map((row) => this.mapNode(row));
+    }
   }
 
   countUnreferencedNodes(repositoryId: string): number {

@@ -199,40 +199,43 @@ program
       const absolutePath = resolve(repoPath);
 
       const { SqliteStorageProvider } = await import('../store/sqlite.js');
-      const { LanceDBVectorStore } = await import('../store/lance.js');
       const { CodeGraph } = await import('../core/graph.js');
       const { Indexer } = await import('../core/indexer.js');
 
       const dbPath = resolve(dataDir, 'context-simplo.db');
-      const lanceDbPath = resolve(dataDir, 'lancedb');
 
       const storage = new SqliteStorageProvider(dbPath);
       await storage.initialize();
 
-      const vectorStore = new LanceDBVectorStore(lanceDbPath);
-      await vectorStore.initialize();
-
       const graph = new CodeGraph();
 
-      const indexer = new Indexer(storage, graph, process.cwd());
+      // Use repository's parent directory as workspace root for CLI
+      // This ensures relative paths work correctly with the ignore system
+      const { dirname } = await import('path');
+      const workspaceRoot = dirname(absolutePath);
+      
+      // Note: CLI index command doesn't support embeddings yet
+      // Vector store would be needed for embedding support
+      const indexer = new Indexer(storage, graph, workspaceRoot);
 
       const job = await indexer.indexRepository(absolutePath, {
         incremental: options.incremental,
         respectIgnore: true,
       });
 
-      spinner.succeed(`Indexed ${repoPath}`);
+      spinner.succeed(`Repository indexed successfully`);
 
       console.log();
-      console.log(chalk.bold('Indexing complete:'));
+      console.log(`Successfully indexed ${job.filesProcessed} files`);
+      console.log();
+      console.log(chalk.bold('Index Summary:'));
+      console.log(`  ${chalk.cyan('Repository:')} ${repoPath}`);
       console.log(`  ${chalk.cyan('Files:')}      ${job.filesProcessed}`);
       console.log(`  ${chalk.cyan('Nodes:')}      ${job.nodesCreated}`);
       console.log(`  ${chalk.cyan('Edges:')}      ${job.edgesCreated}`);
-      console.log(`  ${chalk.cyan('Embeddings:')} ${job.embeddingsGenerated || 0}`);
       console.log();
 
       await storage.close();
-      await vectorStore.close();
     } catch (error) {
       spinner.fail('Indexing failed');
       console.error(
@@ -254,6 +257,14 @@ program
   .option('-l, --limit <number>', 'Maximum results', '20')
   .option('--data-dir <path>', 'Data directory', './data')
   .action(async (query, options) => {
+    // Validate search mode
+    const validModes = ['exact', 'semantic', 'hybrid'];
+    if (!validModes.includes(options.mode)) {
+      console.error(chalk.red(`Invalid search mode: ${options.mode}`));
+      console.error(`Valid modes are: ${validModes.join(', ')}`);
+      process.exit(1);
+    }
+
     const spinner = ora(`Searching for "${query}"...`).start();
 
     try {

@@ -43,7 +43,7 @@ export interface StorageProvider {
   getNodesByName(name: string, filter?: NodeFilter): CodeNode[];
   countNodes(filter?: NodeFilter): number;
   countNodesByLanguage(repositoryId?: string): Record<string, number>;
-  findUnreferencedNodes(repositoryId: string, limit: number, offset: number): CodeNode[];
+  findUnreferencedNodes(repositoryId: string | undefined, limit: number, offset: number): CodeNode[];
   countUnreferencedNodes(repositoryId: string): number;
   upsertNodes(nodes: CodeNode[]): void;
   deleteNode(id: string): void;

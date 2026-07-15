@@ -434,18 +434,16 @@ export class StorageBackedGraph implements CodeGraphApi {
   }
 
   findDeadCode(repositoryId?: string): CodeNode[] {
-    if (!repositoryId) {
-      return [];
-    }
-
-    const cacheKey = `deadcode:${repositoryId}`;
+    const cacheKey = repositoryId ? `deadcode:${repositoryId}` : 'deadcode:all';
     
     const cached = this.getCachedQuery(cacheKey);
     if (cached) {
       return cached;
     }
 
-    const deadNodes = this.storage.findUnreferencedNodes(repositoryId, MAX_TRAVERSE_ROWS, 0);
+    const deadNodes = repositoryId 
+      ? this.storage.findUnreferencedNodes(repositoryId, MAX_TRAVERSE_ROWS, 0)
+      : this.storage.findUnreferencedNodes(undefined, MAX_TRAVERSE_ROWS, 0);
 
     for (const node of deadNodes) {
       this.cacheNode(node);
