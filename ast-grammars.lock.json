@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-07-15T14:30:01.763Z",
+  "generatedAt": "2026-07-15T14:38:35.665Z",
   "treeSitterCli": "0.24.4",
   "webTreeSitter": "0.26.11",
   "grammars": {
@@ -30,6 +30,34 @@
     "tree-sitter-java.wasm": {
       "package": "tree-sitter-java",
       "version": "0.23.5"
+    },
+    "tree-sitter-c.wasm": {
+      "package": "tree-sitter-c",
+      "version": "0.24.1"
+    },
+    "tree-sitter-cpp.wasm": {
+      "package": "tree-sitter-cpp",
+      "version": "0.23.4"
+    },
+    "tree-sitter-c-sharp.wasm": {
+      "package": "tree-sitter-c-sharp",
+      "version": "0.23.5"
+    },
+    "tree-sitter-ruby.wasm": {
+      "package": "tree-sitter-ruby",
+      "version": "0.23.1"
+    },
+    "tree-sitter-swift.wasm": {
+      "package": "tree-sitter-swift",
+      "version": "0.7.1"
+    },
+    "tree-sitter-kotlin.wasm": {
+      "package": "tree-sitter-kotlin",
+      "version": "0.3.8"
+    },
+    "tree-sitter-dart.wasm": {
+      "package": "tree-sitter-dart",
+      "version": "1.0.0"
     }
   }
 }

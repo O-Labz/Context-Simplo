@@ -102,7 +102,11 @@ function validate(data: any): boolean {
   it('should detect dead code', () => {
     const deadNodes = graph.findDeadCode();
 
-    expect(deadNodes.some((n) => n.name === 'validate')).toBe(true);
+    // validate is called by UserService.create, so it should NOT be dead
+    expect(deadNodes.some((n) => n.name === 'validate')).toBe(false);
+    // hello and greet are used, so they should NOT be dead
+    expect(deadNodes.some((n) => n.name === 'hello')).toBe(false);
+    expect(deadNodes.some((n) => n.name === 'greet')).toBe(false);
   });
 
   it('should handle incremental updates', async () => {
