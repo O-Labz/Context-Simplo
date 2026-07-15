@@ -47,9 +47,9 @@ async function initParser(): Promise<void> {
 
   initPromise = (async () => {
     try {
-      // @ts-expect-error - tree-sitter is an optional dependency without types
+      // @ts-ignore - tree-sitter is an optional dependency
       const TreeSitter = await import('tree-sitter');
-      Parser = (TreeSitter.default || TreeSitter) as TreeSitterParserConstructor;
+      Parser = (TreeSitter.default || TreeSitter) as unknown as TreeSitterParserConstructor;
       
       if (!Parser || typeof Parser !== 'function') {
         throw new AstEngineError('Failed to load native tree-sitter Parser');
@@ -125,6 +125,7 @@ async function loadLanguage(language: string): Promise<LanguageCache | null> {
     await initParser();
     if (!Parser) return null;
 
+    // @ts-ignore - native grammars are optional dependencies
     const grammarModule = await import(grammarName);
     const languageInstance = grammarModule.default || grammarModule;
 

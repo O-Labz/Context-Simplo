@@ -17,7 +17,7 @@ RUN apt-get update && apt-get install -y \
 COPY package*.json ./
 
 # Install root dependencies (HUSKY=0 skips git hook setup in Docker)
-RUN HUSKY=0 npm ci
+RUN HUSKY=0 npm ci --legacy-peer-deps
 
 # Copy source and build backend
 COPY tsconfig*.json ./
