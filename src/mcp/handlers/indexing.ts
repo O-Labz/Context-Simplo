@@ -52,7 +52,7 @@ export async function indexRepository(
       incremental: input.incremental || false,
       respectIgnore: true,
     })
-  ) ?? context.indexer.indexRepository(absolutePath, {
+  , absolutePath) ?? context.indexer.indexRepository(absolutePath, {
     incremental: input.incremental || false,
     respectIgnore: true,
   }));

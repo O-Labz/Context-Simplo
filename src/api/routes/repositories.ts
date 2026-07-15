@@ -135,7 +135,7 @@ export async function registerRepositoryRoutes(
             incremental: input.incremental,
             respectIgnore: true,
           })
-        ) ?? options.indexer.indexRepository(absolutePath, {
+        , absolutePath) ?? options.indexer.indexRepository(absolutePath, {
           incremental: input.incremental,
           respectIgnore: true,
         });
@@ -316,7 +316,7 @@ export async function registerRepositoryRoutes(
               incremental: false,
               respectIgnore: true,
             })
-          ) ?? options.indexer.indexRepository(repo.path, {
+          , repo.path) ?? options.indexer.indexRepository(repo.path, {
             incremental: false,
             respectIgnore: true,
           });
