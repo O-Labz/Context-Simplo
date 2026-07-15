@@ -82,11 +82,13 @@ docker run -d \
   -v context-simplo-data:/data \
   -e MOUNT_ROOT=/host \
   -e INITIAL_WORKSPACE=/host \
+  -e AUTH_TOKEN="$(openssl rand -hex 32)" \
+  -e AST_ENGINE=wasm \
   -e LLM_PROVIDER=ollama \
   -e LLM_BASE_URL=http://host.docker.internal:11434 \
   -e LLM_EMBEDDING_MODEL=nomic-embed-text \
   -e GRAPH_MEMORY_LIMIT_MB=4096 \
-  -e AUTH_TOKEN="$(openssl rand -hex 32)" \
+  -e LOG_LEVEL=info \
   ohopson/context-simplo:latest
 ```
 
@@ -126,13 +128,20 @@ Control resource usage with:
 
 ### AST Engine Selection
 
-Context-Simplo uses WASM tree-sitter by default for cross-platform compatibility. You can optionally enable native tree-sitter bindings:
+Context-Simplo v0.2.0 includes a multi-engine AST infrastructure for accurate call graphs and cyclomatic complexity across all 14 supported languages:
 
 ```bash
-  -e AST_ENGINE=native            # Use native tree-sitter (requires compilation)
+  -e AST_ENGINE=wasm      # Default: Web-tree-sitter WASM (recommended, zero native deps)
+  -e AST_ENGINE=native    # Opt-in: Native tree-sitter (requires compilation, faster)
+  -e AST_ENGINE=heuristic # Fallback: Regex-based (no dependencies, lower accuracy)
+  -e AST_ENGINE=auto      # Auto-select: WASM → heuristic fallback
 ```
 
-**Note:** Native engine is opt-in and unsupported in the default Docker image. It requires `tree-sitter` and language grammar packages to be compiled with node-gyp. If native dependencies are absent, the system automatically falls back to WASM or heuristic parsing. For production use, the default WASM engine is recommended.
+**Default:** `auto` mode uses WASM by default with automatic fallback to heuristic if grammars fail to load. 
+
+**Native engine:** Opt-in only. Requires `tree-sitter@0.25.0` and native grammar packages compiled with node-gyp. Not included in the default Docker image. If native dependencies are unavailable, the system gracefully falls back to WASM or heuristic parsing without breaking startup.
+
+**Languages supported:** TypeScript, TSX, JavaScript, JSX, Python, Rust, Go, Java, C, C++, C#, Ruby, PHP, Swift, Kotlin, Dart.
 
 For container limits, use `docker run --memory=4g --cpus=4`.
 
