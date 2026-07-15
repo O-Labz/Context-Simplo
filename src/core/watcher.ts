@@ -28,10 +28,12 @@ import { EventEmitter } from 'events';
 import { relative, resolve } from 'path';
 import type { Indexer } from './indexer.js';
 import { ContextIgnore } from '../security/ignore.js';
+import type { WatchReindexQueue } from './watch-queue.js';
 
 export interface WatcherOptions {
   debounceMs?: number;
   ignorePatterns?: string[];
+  watchQueue?: WatchReindexQueue;
 }
 
 export class FileWatcher extends EventEmitter {
@@ -41,11 +43,13 @@ export class FileWatcher extends EventEmitter {
   private debounceMs: number;
   private pendingChanges: Map<string, NodeJS.Timeout> = new Map();
   private contextIgnoreCache: Map<string, ContextIgnore> = new Map();
+  private watchQueue?: WatchReindexQueue;
 
   constructor(indexer: Indexer, options: WatcherOptions = {}) {
     super();
     this.indexer = indexer;
     this.debounceMs = options.debounceMs || 200;
+    this.watchQueue = options.watchQueue;
   }
 
   private getContextIgnore(dirPath: string): ContextIgnore {
@@ -112,6 +116,13 @@ export class FileWatcher extends EventEmitter {
     const relativePath = this.toRelativePath(filePath, watchRoot);
     this.emit('change', relativePath, changeType);
 
+    // If watch queue is available, route through it
+    if (this.watchQueue) {
+      this.watchQueue.enqueueChange(relativePath, repositoryId);
+      return;
+    }
+
+    // Otherwise use direct debouncing (legacy behavior)
     const existing = this.pendingChanges.get(filePath);
     if (existing) {
       clearTimeout(existing);
@@ -125,10 +136,17 @@ export class FileWatcher extends EventEmitter {
     this.pendingChanges.set(filePath, timeout);
   }
 
-  private async handleDelete(filePath: string, _repositoryId: string, watchRoot: string): Promise<void> {
+  private async handleDelete(filePath: string, repositoryId: string, watchRoot: string): Promise<void> {
     const relativePath = this.toRelativePath(filePath, watchRoot);
     this.emit('delete', relativePath);
 
+    // If watch queue is available, route through it
+    if (this.watchQueue) {
+      this.watchQueue.enqueueDelete(relativePath, repositoryId);
+      return;
+    }
+
+    // Otherwise handle directly (legacy behavior)
     const existing = this.pendingChanges.get(filePath);
     if (existing) {
       clearTimeout(existing);
