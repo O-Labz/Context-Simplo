@@ -1,0 +1,35 @@
+{
+  "generatedAt": "2026-07-15T14:30:01.763Z",
+  "treeSitterCli": "0.24.4",
+  "webTreeSitter": "0.26.11",
+  "grammars": {
+    "tree-sitter-typescript.wasm": {
+      "package": "tree-sitter-typescript",
+      "version": "0.23.2"
+    },
+    "tree-sitter-tsx.wasm": {
+      "package": "tree-sitter-typescript",
+      "version": "0.23.2"
+    },
+    "tree-sitter-javascript.wasm": {
+      "package": "tree-sitter-javascript",
+      "version": "0.25.0"
+    },
+    "tree-sitter-python.wasm": {
+      "package": "tree-sitter-python",
+      "version": "0.25.0"
+    },
+    "tree-sitter-rust.wasm": {
+      "package": "tree-sitter-rust",
+      "version": "0.24.0"
+    },
+    "tree-sitter-go.wasm": {
+      "package": "tree-sitter-go",
+      "version": "0.25.0"
+    },
+    "tree-sitter-java.wasm": {
+      "package": "tree-sitter-java",
+      "version": "0.23.5"
+    }
+  }
+}

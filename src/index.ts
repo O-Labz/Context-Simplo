@@ -19,7 +19,7 @@ import { Indexer } from './core/indexer.js';
 import { MCPServer } from './mcp/server.js';
 import { FileWatcher } from './core/watcher.js';
 import { ShutdownManager } from './core/shutdown.js';
-import { sanitizeErrorForLogging } from './core/errors.js';
+import { sanitizeErrorForLogging, ConfigError } from './core/errors.js';
 import { IndexQueue } from './core/index-queue.js';
 import { MemoryGuard } from './core/memory-guard.js';
 import { createEmbeddingProvider } from './llm/provider.js';
@@ -360,6 +360,25 @@ async function main() {
     console.error('FileWatcher error:', error);
   });
 
+  // Determine bind host: secure-by-default loopback unless overridden or in container
+  const isContainer = existsSync('/.dockerenv');
+  const authToken = config.authToken.value;
+  let listenHost: string;
+
+  if (config.serverBindHost.value) {
+    listenHost = config.serverBindHost.value;
+  } else if (isContainer) {
+    if (!authToken) {
+      throw new ConfigError(
+        'AUTH_TOKEN',
+        'Container bind to 0.0.0.0 requires AUTH_TOKEN to be set'
+      );
+    }
+    listenHost = '0.0.0.0';
+  } else {
+    listenHost = '127.0.0.1';
+  }
+
   const { fastify: apiServer, broadcaster } = await import('./api/server.js').then((m) =>
     m.createAPIServer({
       storage,
@@ -387,10 +406,9 @@ async function main() {
       eml,
       indexQueue,
       config,
+      authToken,
     })
   );
-
-  const listenHost = process.env.HOST || (existsSync('/.dockerenv') ? '0.0.0.0' : '127.0.0.1');
   
   // Start embedding backfiller before API server
   if (embeddingBackfiller) {

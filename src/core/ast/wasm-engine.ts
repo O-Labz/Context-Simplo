@@ -6,36 +6,47 @@
 import type { AstEngine, AstResult } from './engine.js';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
-import { readFileSync } from 'node:fs';
 
 // Lazy-init Parser singleton
-let Parser: typeof import('web-tree-sitter').default | null = null;
+let ParserClass: any = null;
 let initPromise: Promise<void> | null = null;
 
 async function initParser(): Promise<void> {
-  if (Parser) return;
+  if (ParserClass) return;
   if (initPromise) return initPromise;
 
   initPromise = (async () => {
-    const TreeSitter = await import('web-tree-sitter');
-    Parser = TreeSitter.default;
+    const { Parser } = await import('web-tree-sitter');
+    
+    if (!Parser || typeof Parser !== 'function') {
+      throw new Error('Failed to load web-tree-sitter Parser');
+    }
     
     // Initialize the parser with the WASM binary
     const __dirname = dirname(fileURLToPath(import.meta.url));
     const wasmPath = join(__dirname, '../../../node_modules/web-tree-sitter/tree-sitter.wasm');
-    await Parser.init({
-      locateFile() {
-        return wasmPath;
-      },
-    });
+    
+    try {
+      await Parser.init({
+        locateFile() {
+          return wasmPath;
+        },
+      });
+    } catch (error) {
+      console.error('Failed to initialize web-tree-sitter:', error);
+      throw error;
+    }
+    
+    // Set ParserClass after successful init
+    ParserClass = Parser;
   })();
 
   return initPromise;
 }
 
 interface LanguageCache {
-  language: import('web-tree-sitter').Language;
-  query?: import('web-tree-sitter').Query;
+  language: any;
+  query?: any;
 }
 
 const languageCache = new Map<string, LanguageCache>();
@@ -92,15 +103,15 @@ async function loadLanguage(language: string): Promise<LanguageCache | null> {
 
   try {
     await initParser();
-    if (!Parser) return null;
+    if (!ParserClass) return null;
 
     const __dirname = dirname(fileURLToPath(import.meta.url));
     const grammarPath = join(__dirname, 'grammars', `${grammarName}.wasm`);
 
-    const Language = await Parser.Language.load(grammarPath);
+    const Language = await ParserClass.Language.load(grammarPath);
     
     // Load query if available
-    let query: import('web-tree-sitter').Query | undefined;
+    let query: any | undefined;
     const queryString = CALL_QUERIES[language];
     if (queryString) {
       try {

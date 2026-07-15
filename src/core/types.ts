@@ -379,6 +379,16 @@ export const AppConfigSchema = z.object({
     source: ConfigSourceSchema,
     isLocked: z.boolean(),
   }),
+  authToken: z.object({
+    value: z.string().optional(),
+    source: ConfigSourceSchema,
+    isLocked: z.boolean(),
+  }),
+  serverBindHost: z.object({
+    value: z.string().optional(),
+    source: ConfigSourceSchema,
+    isLocked: z.boolean(),
+  }),
 });
 
 export type AppConfig = z.infer<typeof AppConfigSchema>;

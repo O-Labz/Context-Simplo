@@ -80,7 +80,7 @@ export interface CodeGraphApi {
   // Write methods
   addNode(node: CodeNode): Promise<void>;
   addEdge(edge: GraphEdge): Promise<void>;
-  bulkLoad(nodes: CodeNode[], edges: GraphEdge[]): Promise<void>;
+  bulkLoad(nodes: CodeNode[], edges: GraphEdge[], opts?: { fullReload?: boolean }): Promise<void>;
   removeNode(nodeId: string): Promise<void>;
   removeNodesInFile(filePath: string): Promise<void>;
   deserialize(data: string): Promise<void>;
@@ -180,15 +180,17 @@ export class CodeGraph implements CodeGraphApi {
     }
   }
 
-  async bulkLoad(nodes: CodeNode[], edges: GraphEdge[]): Promise<void> {
+  async bulkLoad(nodes: CodeNode[], edges: GraphEdge[], opts?: { fullReload?: boolean }): Promise<void> {
     const release = await this.acquireMutationLock();
     try {
       // Check memory limit before insertion
       this.checkMemoryLimit();
 
-      // Clear existing indexes and cache
-      this.nameIndex.clear();
-      this.fileIndex.clear();
+      // Only clear existing indexes and cache on full reload
+      if (opts?.fullReload) {
+        this.nameIndex.clear();
+        this.fileIndex.clear();
+      }
       this.centralityCache = null;
 
       // Add all nodes first

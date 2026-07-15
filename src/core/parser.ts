@@ -221,6 +221,16 @@ export async function parseFile(
   }
 
   const structure = parseResult?.structure || [];
+  const docstrings = parseResult?.docstrings || [];
+
+  // Build a map of docstrings by their span for fast lookup
+  const docstringMap = new Map<string, string>();
+  for (const doc of docstrings) {
+    if (doc.text && doc.span) {
+      const key = `${doc.span.startLine}:${doc.span.endLine}`;
+      docstringMap.set(key, doc.text);
+    }
+  }
 
   // Use AST engine for calls and complexity
   const engines = selectEngine({ enableHeuristic: true });
@@ -258,6 +268,16 @@ export async function parseFile(
       }
     }
 
+    // Look up docstring from the docstring map by matching span
+    let docstring: string | undefined = item.docstring;
+    if (startLine > 0 && endLine > 0) {
+      const key = `${startLine}:${endLine}`;
+      const foundDoc = docstringMap.get(key);
+      if (foundDoc) {
+        docstring = foundDoc;
+      }
+    }
+
     nodes.push({
       id: nodeId,
       name,
@@ -270,7 +290,7 @@ export async function parseFile(
       columnEnd: endCol,
       visibility: mapVisibility(item.visibility),
       isExported,
-      docstring: item.docstring,
+      docstring,
       complexity,
       repositoryId,
       language,

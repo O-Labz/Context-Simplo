@@ -8,8 +8,10 @@ import Fastify from 'fastify';
 import fastifyStatic from '@fastify/static';
 import fastifyWebsocket from '@fastify/websocket';
 import { basename } from 'path';
+import { timingSafeEqual } from 'crypto';
 import type { CodeGraphApi } from '../core/graph.js';
 import type { StorageProvider } from '../store/provider.js';
+import { UnauthorizedError } from '../core/errors.js';
 import {
   WebSocketBroadcaster,
   registerWebSocketRoute,
@@ -51,6 +53,7 @@ export interface APIServerOptions {
   eml?: EmlServices;
   indexQueue?: any;
   config?: any;
+  authToken?: string;
 }
 
 export interface APIServer {
@@ -66,6 +69,61 @@ export async function createAPIServer(
       level: process.env.CONTEXT_SIMPLO_LOG_LEVEL || 'info',
     },
   });
+
+  // Error handler for custom errors
+  fastify.setErrorHandler((error, _request, reply) => {
+    if (error instanceof UnauthorizedError) {
+      reply.code(401).send({
+        error: 'Unauthorized',
+        message: error.message,
+      });
+      return;
+    }
+    
+    // Let Fastify handle other errors
+    throw error;
+  });
+
+  // Authentication hook (must be first)
+  if (options.authToken) {
+    const configuredToken = options.authToken;
+    fastify.addHook('onRequest', async (request, _reply) => {
+      const url = request.url;
+      
+      // Only protect /api/, /mcp, and /ws routes
+      if (!url.startsWith('/api/') && !url.startsWith('/mcp') && !url.startsWith('/ws')) {
+        return;
+      }
+      
+      // Exclude health check
+      if (url === '/api/health') {
+        return;
+      }
+      
+      // Extract token from Authorization header or query parameter (for WebSocket)
+      let providedToken: string | undefined;
+      
+      const authHeader = request.headers.authorization;
+      if (authHeader?.startsWith('Bearer ')) {
+        providedToken = authHeader.substring(7);
+      } else if (request.query && typeof request.query === 'object' && 'token' in request.query) {
+        providedToken = String(request.query.token);
+      }
+      
+      if (!providedToken) {
+        throw new UnauthorizedError('Missing authentication token');
+      }
+      
+      // Constant-time comparison
+      const expectedBuffer = Buffer.from(configuredToken);
+      const providedBuffer = Buffer.from(providedToken);
+      
+      if (expectedBuffer.length !== providedBuffer.length || 
+          !timingSafeEqual(expectedBuffer, providedBuffer)) {
+        throw new UnauthorizedError('Invalid authentication token');
+      }
+    });
+  }
 
   // Create WebSocket broadcaster
   const broadcaster = new WebSocketBroadcaster();

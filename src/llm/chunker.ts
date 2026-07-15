@@ -71,7 +71,7 @@ function createChunk(
   partIndex?: number
 ): EmbeddingChunk {
   const chunkId = generateChunkId(node.id, partIndex);
-  const symbolContext = `${filePath}:${node.qualifiedName}`;
+  const symbolContext = `${filePath}:${node.kind}:${node.qualifiedName}`;
 
   return {
     id: chunkId,

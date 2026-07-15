@@ -19,7 +19,7 @@
  */
 
 import { connect, type Connection, type Table } from '@lancedb/lancedb';
-import type { EmbeddingChunk, SearchResult } from '../core/types.js';
+import type { EmbeddingChunk, SearchResult, NodeKind } from '../core/types.js';
 import { StoreError } from '../core/errors.js';
 
 export class LanceDBVectorStore {
@@ -155,9 +155,20 @@ export class LanceDBVectorStore {
       const paginatedResults = results.slice(offset, offset + limit);
 
       return paginatedResults.map((row: any) => {
-        // symbolContext format: "filePath:qualifiedName"
+        // symbolContext format: "filePath:kind:qualifiedName" (new) or "filePath:qualifiedName" (legacy)
         const parts = (row.symbolContext || '').split(':');
-        const qualifiedName = parts.length > 1 ? parts.slice(1).join(':') : parts[0] || '';
+        let kind: string = 'function';
+        let qualifiedName: string = '';
+        
+        if (parts.length >= 3) {
+          kind = parts[1];
+          qualifiedName = parts.slice(2).join(':');
+        } else if (parts.length === 2) {
+          qualifiedName = parts[1];
+        } else {
+          qualifiedName = parts[0] || '';
+        }
+        
         const nameParts = qualifiedName.split('.');
         const name = nameParts[nameParts.length - 1] || '';
         const parentSymbol = nameParts.length > 1 ? nameParts.slice(0, -1).join('.') : undefined;
@@ -166,7 +177,7 @@ export class LanceDBVectorStore {
           nodeId: row.nodeId || row.id,
           name: name,
           qualifiedName: qualifiedName,
-          kind: 'function' as const,
+          kind: kind as NodeKind,
           filePath: row.filePath,
           lineStart: row.startLine,
           lineEnd: row.endLine,

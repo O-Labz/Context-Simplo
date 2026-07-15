@@ -590,9 +590,21 @@ export class SqliteStorageProvider implements StorageProvider {
   }
 
   search(query: string, limit: number, offset: number): SearchResult[] {
-    // Escape FTS5 query to prevent query injection
-    // Wrap in double quotes to treat as a phrase and escape internal quotes
-    const escapedQuery = `"${query.replace(/"/g, '""')}"`;
+    // Sanitize FTS5 query: escape quotes and handle special FTS operators safely
+    // Allow term queries (not just phrases) while preventing injection
+    let sanitizedQuery = query.trim();
+    if (!sanitizedQuery) {
+      return [];
+    }
+    
+    // If user explicitly quotes, preserve phrase search behavior
+    const isExplicitPhrase = sanitizedQuery.startsWith('"') && sanitizedQuery.endsWith('"');
+    if (isExplicitPhrase) {
+      sanitizedQuery = `"${sanitizedQuery.slice(1, -1).replace(/"/g, '""')}"`;
+    } else {
+      // Escape quotes in term queries
+      sanitizedQuery = sanitizedQuery.replace(/"/g, '""');
+    }
     
     const rows = this.db
       .prepare(
@@ -605,7 +617,7 @@ export class SqliteStorageProvider implements StorageProvider {
          ORDER BY fts.rank
          LIMIT ? OFFSET ?`
       )
-      .all(escapedQuery, limit, offset) as any[];
+      .all(sanitizedQuery, limit, offset) as any[];
 
     return rows.map((row) => {
       // Extract parent symbol from qualified name (e.g., "AuthService.login" -> "AuthService")

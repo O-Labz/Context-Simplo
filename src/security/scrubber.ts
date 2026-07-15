@@ -197,8 +197,8 @@ const SECRET_PATTERNS: SecretPattern[] = [
   {
     name: 'Heroku API Key',
     category: 'heroku_key',
-    pattern: /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/gi,
-    confidence: 0.7,
+    pattern: /heroku[_-]?(?:api[_-]?)?key[:\s=]+['"]*([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})['"]*|heroku_token[:\s=]+['"]*([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})['"]*/gi,
+    confidence: 0.85,
   },
   {
     name: 'Mailgun API Key',
@@ -257,8 +257,8 @@ const SECRET_PATTERNS: SecretPattern[] = [
   {
     name: 'Cloudflare API Key',
     category: 'cloudflare_key',
-    pattern: /[A-Za-z0-9_\-]{37}/g,
-    confidence: 0.6,
+    pattern: /cloudflare[_-]?(?:api[_-]?)?key[:\s=]+['"]*([A-Za-z0-9_\-]{37})['"]*|X-Auth-Key[:\s]+([A-Za-z0-9_\-]{37})/gi,
+    confidence: 0.8,
   },
   {
     name: 'Square Access Token',
@@ -300,7 +300,7 @@ export function scrubSecrets(content: string): { scrubbed: string; detected: Det
   // Process highest-confidence patterns first so lower-confidence generic patterns
   // don't fire on the same secret that a specific pattern already matched.
   const sorted = [...SECRET_PATTERNS]
-    .filter((p) => p.confidence >= 0.7)
+    .filter((p) => p.confidence >= 0.75)
     .sort((a, b) => b.confidence - a.confidence);
 
   // Track matched ranges in the original content to skip overlapping hits.
@@ -310,9 +310,18 @@ export function scrubSecrets(content: string): { scrubbed: string; detected: Det
 
   for (const pattern of sorted) {
     let match;
+    let matchCount = 0;
+    const maxMatchesPerPattern = 100;
+    
     // Do NOT reset lastIndex inside the loop — resetting here creates an
     // infinite loop because exec(content) would keep finding the same match.
     while ((match = pattern.pattern.exec(content)) !== null) {
+      matchCount++;
+      if (matchCount > maxMatchesPerPattern) {
+        console.warn(`[scrubber] Pattern ${pattern.name} exceeded max matches, skipping further matches`);
+        break;
+      }
+      
       const start = match.index;
       const end = start + match[0].length;
       const lineNumber = content.substring(0, start).split('\n').length;
@@ -337,23 +346,34 @@ export function scrubSecrets(content: string): { scrubbed: string; detected: Det
 }
 
 function shouldRedact(line: string, pattern: SecretPattern): boolean {
-  if (pattern.confidence >= 0.9) {
+  if (pattern.confidence >= 0.95) {
     return true;
   }
 
   const lowerLine = line.toLowerCase();
 
+  // Skip obvious test/example/documentation contexts
   if (
     lowerLine.includes('example') ||
     lowerLine.includes('test') ||
     lowerLine.includes('mock') ||
     lowerLine.includes('dummy') ||
-    lowerLine.includes('placeholder')
+    lowerLine.includes('placeholder') ||
+    lowerLine.includes('sample') ||
+    lowerLine.includes('fake') ||
+    lowerLine.includes('redacted')
   ) {
     return false;
   }
 
-  if (lowerLine.includes('// ') || lowerLine.includes('# ') || lowerLine.includes('* ')) {
+  // Skip comments (but allow high-confidence patterns in comments)
+  if (pattern.confidence < 0.9 && (
+    lowerLine.includes('// ') || 
+    lowerLine.includes('# ') || 
+    lowerLine.includes('* ') ||
+    lowerLine.trim().startsWith('//')  ||
+    lowerLine.trim().startsWith('#')
+  )) {
     return false;
   }
 

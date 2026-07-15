@@ -100,6 +100,14 @@ export class NotFoundError extends ContextSimploError {
   }
 }
 
+export class UnauthorizedError extends ContextSimploError {
+  readonly code = 'UNAUTHORIZED';
+
+  constructor(message: string = 'Authentication required') {
+    super(message);
+  }
+}
+
 export class IndexQueueFullError extends ContextSimploError {
   readonly code = 'INDEX_QUEUE_FULL';
   readonly retryAfterSeconds: number;

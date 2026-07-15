@@ -77,7 +77,7 @@ ollama pull nomic-embed-text
 docker run -d \
   --name context-simplo \
   --restart unless-stopped \
-  -p 3001:3001 \
+  -p 127.0.0.1:3001:3001 \
   -v "$HOME":/host:ro \
   -v context-simplo-data:/data \
   -e MOUNT_ROOT=/host \
@@ -86,15 +86,18 @@ docker run -d \
   -e LLM_BASE_URL=http://host.docker.internal:11434 \
   -e LLM_EMBEDDING_MODEL=nomic-embed-text \
   -e GRAPH_MEMORY_LIMIT_MB=4096 \
+  -e AUTH_TOKEN="$(openssl rand -hex 32)" \
   ohopson/context-simplo:latest
 ```
 
 On Linux, also add `--add-host=host.docker.internal:host-gateway`.
 
+**Security note:** The server binds to `127.0.0.1` (loopback) by default outside containers for local-only access. Inside containers, it requires `AUTH_TOKEN` to be set before binding to `0.0.0.0`. The example above generates a secure random token. To expose the API over the network, bind to `0.0.0.0:3001:3001` and provide your own `AUTH_TOKEN`.
+
 Once it's up:
 
 - Dashboard: http://localhost:3001
-- Point your editor's MCP config at http://localhost:3001/mcp
+- Point your editor's MCP config at http://localhost:3001/mcp (include `Authorization: Bearer <token>` header if AUTH_TOKEN is set)
 
 ## Embedding options
 

@@ -69,6 +69,8 @@ const DEFAULT_CONFIG = {
   graphMemorySoftPct: 75,
   graphMemoryHardPct: 90,
   graphMaxNodes: 2000000,
+  authToken: undefined as string | undefined,
+  serverBindHost: undefined as string | undefined,
 } as const;
 
 const ENV_VAR_MAP = {
@@ -102,6 +104,8 @@ const ENV_VAR_MAP = {
   graphMemorySoftPct: 'GRAPH_MEMORY_SOFT_PCT',
   graphMemoryHardPct: 'GRAPH_MEMORY_HARD_PCT',
   graphMaxNodes: 'GRAPH_MAX_NODES',
+  authToken: 'AUTH_TOKEN',
+  serverBindHost: 'HOST',
 } as const;
 
 const EML_EXTRACTION_MODES: readonly EmlExtractionMode[] = ['llm', 'fallback', 'off'];
@@ -498,6 +502,22 @@ export function loadConfig(dashboardConfig?: DashboardConfig): AppConfig {
     DEFAULT_CONFIG.graphMaxNodes
   );
 
+  const envAuthToken = process.env.AUTH_TOKEN;
+  const authToken = createConfigValue(
+    'authToken',
+    envAuthToken,
+    undefined,
+    DEFAULT_CONFIG.authToken
+  );
+
+  const envServerBindHost = process.env.HOST;
+  const serverBindHost = createConfigValue(
+    'serverBindHost',
+    envServerBindHost,
+    undefined,
+    DEFAULT_CONFIG.serverBindHost
+  );
+
   if (llmProvider.value === 'openai' && !llmApiKey.value) {
     throw new ConfigError(
       'llmApiKey',
@@ -543,6 +563,8 @@ export function loadConfig(dashboardConfig?: DashboardConfig): AppConfig {
     graphMemorySoftPct,
     graphMemoryHardPct,
     graphMaxNodes,
+    authToken,
+    serverBindHost,
   };
 }
 

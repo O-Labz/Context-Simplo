@@ -35,6 +35,7 @@ import { scrubSecrets } from '../security/scrubber.js';
 import { chunkCodeForEmbedding } from '../llm/chunker.js';
 import { parseFile } from './parser.js';
 import { StoreError } from './errors.js';
+import { parseCache } from './parse-cache.js';
 
 export interface EmbeddingBackfillOptions {
   concurrency: number;
@@ -162,33 +163,41 @@ export class EmbeddingBackfiller extends EventEmitter {
 
   private async processFile(filePath: string, repositoryId: string): Promise<void> {
     try {
-      // Read file content
-      const absolutePath = resolve(this.options.workspaceRoot, filePath);
+      // Try cache first (populated by indexer)
+      const cached = parseCache.get(filePath);
       let fileContent: string;
-      try {
-        fileContent = await readFile(absolutePath, 'utf-8');
-      } catch (error) {
-        throw new StoreError(
-          'readFile',
-          `File not readable: ${filePath}`,
-          error as Error
-        );
+      let parsed;
+
+      if (cached) {
+        // Cache hit - reuse indexed parse + content
+        fileContent = cached.content;
+        parsed = cached.parsed;
+      } else {
+        // Cache miss - fallback to read + parse (restart-safe)
+        const absolutePath = resolve(this.options.workspaceRoot, filePath);
+        try {
+          fileContent = await readFile(absolutePath, 'utf-8');
+        } catch (error) {
+          throw new StoreError(
+            'readFile',
+            `File not readable: ${filePath}`,
+            error as Error
+          );
+        }
+
+        try {
+          parsed = await parseFile(filePath, repositoryId, this.options.workspaceRoot);
+        } catch (error) {
+          throw new StoreError(
+            'parseFile',
+            `Failed to parse ${filePath}`,
+            error as Error
+          );
+        }
       }
 
       // Scrub secrets
       const { scrubbed } = scrubSecrets(fileContent);
-
-      // Parse file to get AST nodes for chunking
-      let parsed;
-      try {
-        parsed = await parseFile(filePath, repositoryId, this.options.workspaceRoot);
-      } catch (error) {
-        throw new StoreError(
-          'parseFile',
-          `Failed to parse ${filePath}`,
-          error as Error
-        );
-      }
 
       // Chunk code for embedding
       const chunks = chunkCodeForEmbedding(parsed, scrubbed);

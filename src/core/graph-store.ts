@@ -616,7 +616,7 @@ export class StorageBackedGraph implements CodeGraphApi {
     this.invalidateQueryCache();
   }
 
-  async bulkLoad(nodes: CodeNode[], edges: GraphEdge[]): Promise<void> {
+  async bulkLoad(nodes: CodeNode[], edges: GraphEdge[], opts?: { fullReload?: boolean }): Promise<void> {
     // Write all nodes and edges to storage
     if (nodes.length > 0) {
       this.storage.upsertNodes(nodes);
@@ -631,8 +631,12 @@ export class StorageBackedGraph implements CodeGraphApi {
       this.storage.upsertEdges(edges);
     }
     
-    // Clear all caches to ensure consistency
-    this.invalidateAllCaches();
+    // Clear all caches on full reload, otherwise just query cache
+    if (opts?.fullReload) {
+      this.invalidateAllCaches();
+    } else {
+      this.invalidateQueryCache();
+    }
   }
 
   async removeNode(nodeId: string): Promise<void> {

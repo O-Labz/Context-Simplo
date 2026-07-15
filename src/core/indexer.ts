@@ -27,7 +27,7 @@
  * Security: Integrates with SecretScrubber before indexing.
  */
 
-import { readdir, stat } from 'fs/promises';
+import { readdir, stat, readFile } from 'fs/promises';
 import { resolve, relative, basename, dirname, join } from 'path';
 import { createHash } from 'crypto';
 import { parseFile, type ParsedFile } from './parser.js';
@@ -38,9 +38,11 @@ import type {
   IndexJob,
   GraphEdge,
 } from './types.js';
+import { parseCache } from './parse-cache.js';
 import { ParseError } from './errors.js';
 import { EventEmitter } from 'events';
 import { ContextIgnore } from '../security/ignore.js';
+import { scrubSecrets } from '../security/scrubber.js';
 import type { ParsePool } from './parse-pool.js';
 
 export interface IndexerOptions {
@@ -244,11 +246,25 @@ export class Indexer extends EventEmitter {
 
       await this.graph.removeNodesInFile(relativePath);
 
+      // Scrub secrets from docstrings before persisting
+      for (const node of parsed.nodes) {
+        if (node.docstring) {
+          const { scrubbed } = scrubSecrets(node.docstring);
+          node.docstring = scrubbed;
+        }
+      }
+
       this.storage.bulkWrite(parsed.nodes, []);
+
+      // Add nodes to graph for in-memory queries
+      await this.graph.bulkLoad(parsed.nodes, []);
 
       const edges = this.resolveEdges(parsed, repositoryId);
 
       this.storage.bulkWrite([], edges);
+
+      // Add edges to graph
+      await this.graph.bulkLoad([], edges);
 
       this.pendingReferences.push({
         calls: parsed.calls,
@@ -270,6 +286,15 @@ export class Indexer extends EventEmitter {
       this.storage.transaction(() => {
         this.storage.upsertFile(fileMetadata);
       });
+
+      // Populate parse cache for embedding backfill reuse
+      try {
+        const fileContent = await readFile(filePath, 'utf-8');
+        parseCache.set(relativePath, fileContent, parsed);
+      } catch (error) {
+        // Non-fatal: cache population is best-effort
+        console.warn(`[index.cache.skip] ${relativePath}:`, (error as Error).message);
+      }
 
       console.info('[index.file.persisted]', {
         path: relativePath,
@@ -407,6 +432,8 @@ export class Indexer extends EventEmitter {
 
     if (newEdges.length > 0) {
       this.storage.upsertEdges(newEdges);
+      // Add forward reference edges to graph
+      await this.graph.bulkLoad([], newEdges);
     }
 
     return created;
