@@ -78,7 +78,7 @@ docker run -d \
   --name context-simplo \
   --restart unless-stopped \
   -p 127.0.0.1:3001:3001 \
-  -v "$HOME":/host:ro \
+  -v "$HOME":/host \
   -v context-simplo-data:/data \
   -e MOUNT_ROOT=/host \
   -e INITIAL_WORKSPACE=/host \
