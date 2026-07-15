@@ -134,13 +134,14 @@ export async function createAPIServer(
   // Register WebSocket route
   await registerWebSocketRoute(fastify, broadcaster);
 
-  // Register static file serving for dashboard
+  // Register static file serving for dashboard BEFORE routes so routes take precedence
   await fastify.register(fastifyStatic, {
     root: options.dashboardPath,
     prefix: '/',
+    constraints: {}, // Allow routes to override
   });
 
-  // MCP HTTP endpoint (must be registered before SPA fallback)
+  // MCP HTTP endpoint (must be registered before other routes)
   if (options.mcpServer) {
     const ALLOWED_ORIGINS = new Set([
       'http://localhost:3001',
@@ -242,6 +243,11 @@ export async function createAPIServer(
       workspaceRoot: currentWorkspace,
       rootName: basename(currentWorkspace),
     };
+  });
+
+  // Explicit root route for dashboard
+  fastify.get('/', async (_request, reply) => {
+    return reply.sendFile('index.html');
   });
 
   // Register API routes
