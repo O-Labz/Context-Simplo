@@ -47,6 +47,10 @@
       "package": "tree-sitter-ruby",
       "version": "0.23.1"
     },
+    "tree-sitter-php.wasm": {
+      "package": "tree-sitter-php",
+      "version": "0.24.2"
+    },
     "tree-sitter-swift.wasm": {
       "package": "tree-sitter-swift",
       "version": "0.7.1"
