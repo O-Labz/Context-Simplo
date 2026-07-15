@@ -389,13 +389,13 @@ program
       console.log(chalk.bold('Context-Simplo Status:'));
       console.log();
       console.log(
-        `  ${chalk.cyan('Repositories:')}  ${dbStats.repositoryCount} indexed`
+        `  ${chalk.cyan('repositories:')}  ${dbStats.repositoryCount} indexed`
       );
       console.log(
-        `  ${chalk.cyan('Files:')}         ${dbStats.fileCount} indexed`
+        `  ${chalk.cyan('files:')}         ${dbStats.fileCount} indexed`
       );
       console.log(
-        `  ${chalk.cyan('Nodes:')}         ${dbStats.nodeCount.toLocaleString()}`
+        `  ${chalk.cyan('nodes:')}         ${dbStats.nodeCount.toLocaleString()}`
       );
       console.log(
         `  ${chalk.cyan('Edges:')}         ${dbStats.edgeCount.toLocaleString()}`

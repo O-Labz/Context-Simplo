@@ -34,6 +34,7 @@ import { parseFile, type ParsedFile } from './parser.js';
 import type { CodeGraphApi } from './graph.js';
 import type { StorageProvider } from '../store/provider.js';
 import type {
+  CodeNode,
   FileMetadata,
   IndexJob,
   GraphEdge,
@@ -259,13 +260,7 @@ export class Indexer extends EventEmitter {
       // Add nodes to graph for in-memory queries
       await this.graph.bulkLoad(parsed.nodes, []);
 
-      const edges = this.resolveEdges(parsed, repositoryId);
-
-      this.storage.bulkWrite([], edges);
-
-      // Add edges to graph
-      await this.graph.bulkLoad([], edges);
-
+      // Store references for later resolution (after all files are indexed)
       this.pendingReferences.push({
         calls: parsed.calls,
         imports: parsed.imports,
@@ -299,7 +294,7 @@ export class Indexer extends EventEmitter {
       console.info('[index.file.persisted]', {
         path: relativePath,
         nodeCount: parsed.nodes.length,
-        edgeCount: edges.length,
+        edgeCount: 0, // Edges will be created in forward resolution pass
       });
 
       this.emit('file:complete', relativePath, parsed.nodes.length);
@@ -339,56 +334,92 @@ export class Indexer extends EventEmitter {
     let created = 0;
     const now = new Date();
     const newEdges: GraphEdge[] = [];
+    const edgeIds = new Set<string>();
 
     for (const ref of this.pendingReferences) {
       if (ref.repositoryId !== repositoryId) continue;
 
+      // Get nodes for this file to build same-file scope
+      const nodesInFile = this.graph.getNodesInFile(ref.filePath);
+      const sameFileNodes = new Map<string, CodeNode>();
+      for (const node of nodesInFile) {
+        sameFileNodes.set(node.name, node);
+      }
+
+      // Build import map for this file
+      const importMap = new Map<string, string>();
+      for (const imp of ref.imports) {
+        for (const importedName of imp.imported) {
+          importMap.set(importedName, imp.source);
+        }
+      }
+
+      // Resolve calls with scope-aware lookup
       for (const call of ref.calls) {
-        const targets = this.graph.findByName(call.calleeName);
-        for (const target of targets) {
-          if (target.repositoryId !== repositoryId) continue;
-          if (!this.graph.getNode(call.callerNodeId)) continue;
-          
+        if (!this.graph.getNode(call.callerNodeId)) continue;
+
+        const resolved = this.resolveName(
+          call.calleeName,
+          ref.filePath,
+          repositoryId,
+          sameFileNodes,
+          importMap
+        );
+
+        for (const { target, confidence } of resolved) {
           const edgeId = this.generateEdgeId(call.callerNodeId, target.id, 'calls');
-          const edge: GraphEdge = {
+          if (edgeIds.has(edgeId)) continue; // Skip duplicates
+          edgeIds.add(edgeId);
+
+          newEdges.push({
             id: edgeId,
             sourceId: call.callerNodeId,
             targetId: target.id,
             kind: 'calls',
-            confidence: 0.9,
+            confidence,
             repositoryId,
             createdAt: now,
             updatedAt: now,
-          };
-          newEdges.push(edge);
+          });
           created++;
         }
       }
 
+      // Resolve inheritance
       for (const inh of ref.inheritance) {
-        const parents = this.graph.findByName(inh.parentName);
-        for (const parent of parents) {
-          if (parent.repositoryId !== repositoryId) continue;
-          if (!this.graph.getNode(inh.childNodeId)) continue;
-          
-          const edgeId = this.generateEdgeId(inh.childNodeId, parent.id, inh.kind);
-          const edge: GraphEdge = {
+        if (!this.graph.getNode(inh.childNodeId)) continue;
+
+        const resolved = this.resolveName(
+          inh.parentName,
+          ref.filePath,
+          repositoryId,
+          sameFileNodes,
+          importMap
+        );
+
+        for (const { target, confidence } of resolved) {
+          const edgeId = this.generateEdgeId(inh.childNodeId, target.id, inh.kind);
+          if (edgeIds.has(edgeId)) continue;
+          edgeIds.add(edgeId);
+
+          newEdges.push({
             id: edgeId,
             sourceId: inh.childNodeId,
-            targetId: parent.id,
+            targetId: target.id,
             kind: inh.kind,
-            confidence: 1.0,
+            confidence,
             repositoryId,
             createdAt: now,
             updatedAt: now,
-          };
-          newEdges.push(edge);
+          });
           created++;
         }
       }
 
+      // Resolve import edges
       for (const imp of ref.imports) {
         if (!imp.source || !imp.source.startsWith('.')) continue;
+
         const importDir = dirname(ref.filePath);
         const resolvedBase = join(importDir, imp.source).replace(/\\/g, '/');
         const extensions = ['', '.ts', '.tsx', '.js', '.jsx', '/index.ts', '/index.tsx', '/index.js'];
@@ -406,14 +437,16 @@ export class Indexer extends EventEmitter {
             });
             if (!matchesPath) continue;
 
-            const nodesInFile = this.graph.getNodesInFile(ref.filePath);
             const sourceNode = nodesInFile.find(n =>
               n.kind === 'function' || n.kind === 'class' || n.kind === 'method'
             ) || nodesInFile[0];
             if (!sourceNode) continue;
 
             const edgeId = this.generateEdgeId(sourceNode.id, target.id, 'imports');
-            const edge: GraphEdge = {
+            if (edgeIds.has(edgeId)) continue;
+            edgeIds.add(edgeId);
+
+            newEdges.push({
               id: edgeId,
               sourceId: sourceNode.id,
               targetId: target.id,
@@ -422,8 +455,7 @@ export class Indexer extends EventEmitter {
               repositoryId,
               createdAt: now,
               updatedAt: now,
-            };
-            newEdges.push(edge);
+            });
             created++;
           }
         }
@@ -432,7 +464,6 @@ export class Indexer extends EventEmitter {
 
     if (newEdges.length > 0) {
       this.storage.upsertEdges(newEdges);
-      // Add forward reference edges to graph
       await this.graph.bulkLoad([], newEdges);
     }
 
@@ -535,95 +566,65 @@ export class Indexer extends EventEmitter {
     return createHash('sha256').update(content).digest('hex');
   }
 
-  private resolveEdges(
-    parsed: Awaited<ReturnType<typeof parseFile>>,
-    repositoryId: string
-  ): GraphEdge[] {
-    const edges: GraphEdge[] = [];
-    const now = new Date();
+  /**
+   * Resolve a symbol name using scope-aware lookup:
+   * 1. Same-file symbols (high confidence)
+   * 2. Imported symbols from the import table (high confidence)
+   * 3. Global repo-wide search (low confidence)
+   */
+  private resolveName(
+    name: string,
+    sourceFilePath: string,
+    repositoryId: string,
+    sameFileNodes: Map<string, CodeNode>,
+    importMap: Map<string, string>
+  ): Array<{ target: CodeNode; confidence: number }> {
+    const results: Array<{ target: CodeNode; confidence: number }> = [];
 
-    for (const call of parsed.calls) {
-      const targetNodes = this.graph.findByName(call.calleeName);
-      for (const target of targetNodes) {
-        if (target.repositoryId === repositoryId) {
-          edges.push({
-            id: this.generateEdgeId(call.callerNodeId, target.id, 'calls'),
-            sourceId: call.callerNodeId,
-            targetId: target.id,
-            kind: 'calls',
-            confidence: 0.9,
-            repositoryId,
-            createdAt: now,
-            updatedAt: now,
-          });
-        }
-      }
+    // 1. Check same-file scope first (highest confidence)
+    const sameFileNode = sameFileNodes.get(name);
+    if (sameFileNode) {
+      return [{ target: sameFileNode, confidence: 0.95 }];
     }
 
-    for (const inheritance of parsed.inheritance) {
-      const parentNodes = this.graph.findByName(inheritance.parentName);
-      for (const parent of parentNodes) {
-        if (parent.repositoryId === repositoryId) {
-          edges.push({
-            id: this.generateEdgeId(
-              inheritance.childNodeId,
-              parent.id,
-              inheritance.kind
-            ),
-            sourceId: inheritance.childNodeId,
-            targetId: parent.id,
-            kind: inheritance.kind,
-            confidence: 1.0,
-            repositoryId,
-            createdAt: now,
-            updatedAt: now,
-          });
-        }
-      }
-    }
-
-    for (const imp of parsed.imports) {
-      if (!imp.source || !imp.source.startsWith('.')) continue;
-
-      const importDir = dirname(parsed.filePath);
-      const resolvedBase = join(importDir, imp.source).replace(/\\/g, '/');
+    // 2. Check if name is in import table
+    const importSource = importMap.get(name);
+    if (importSource && importSource.startsWith('.')) {
+      // Resolve the import path
+      const importDir = dirname(sourceFilePath);
+      const resolvedBase = join(importDir, importSource).replace(/\\/g, '/');
       const extensions = ['', '.ts', '.tsx', '.js', '.jsx', '/index.ts', '/index.tsx', '/index.js'];
 
-      for (const importedName of imp.imported) {
-        const targetNodes = this.graph.findByName(importedName);
-        for (const target of targetNodes) {
-          if (target.repositoryId !== repositoryId) continue;
-          if (target.filePath === parsed.filePath) continue;
+      const candidates = this.graph.findByName(name);
+      for (const candidate of candidates) {
+        if (candidate.repositoryId !== repositoryId) continue;
+        if (candidate.filePath === sourceFilePath) continue;
 
-          const targetFileBase = target.filePath.replace(/\.(ts|tsx|js|jsx)$/, '').replace(/\/index$/, '');
-          const matchesPath = extensions.some(ext => {
-            const candidate = resolvedBase + ext;
-            return target.filePath === candidate || targetFileBase === resolvedBase;
-          });
+        const targetFileBase = candidate.filePath.replace(/\.(ts|tsx|js|jsx)$/, '').replace(/\/index$/, '');
+        const matchesPath = extensions.some(ext => {
+          const candidatePath = resolvedBase + ext;
+          return candidate.filePath === candidatePath || targetFileBase === resolvedBase;
+        });
 
-          if (!matchesPath) continue;
-
-          const sourceNode = parsed.nodes.find(n =>
-            n.kind === 'function' || n.kind === 'class' || n.kind === 'method'
-          ) || parsed.nodes[0];
-
-          if (!sourceNode) continue;
-
-          edges.push({
-            id: this.generateEdgeId(sourceNode.id, target.id, 'imports'),
-            sourceId: sourceNode.id,
-            targetId: target.id,
-            kind: 'imports',
-            confidence: 1.0,
-            repositoryId,
-            createdAt: now,
-            updatedAt: now,
-          });
+        if (matchesPath) {
+          results.push({ target: candidate, confidence: 0.9 });
         }
+      }
+
+      if (results.length > 0) {
+        return results;
       }
     }
 
-    return edges;
+    // 3. Fall back to global search (low confidence)
+    const globalMatches = this.graph.findByName(name);
+    for (const match of globalMatches) {
+      if (match.repositoryId === repositoryId) {
+        results.push({ target: match, confidence: 0.6 });
+      }
+    }
+
+    return results;
   }
 
   private generateRepositoryId(path: string): string {

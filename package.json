@@ -68,6 +68,7 @@
     "@lancedb/lancedb": "^0.27.1",
     "@modelcontextprotocol/sdk": "^1.0.4",
     "@octokit/rest": "^22.0.1",
+    "apache-arrow": "^18.1.0",
     "better-sqlite3": "^11.8.1",
     "chalk": "^5.4.1",
     "chokidar": "^4.0.3",
@@ -115,6 +116,23 @@
     "tsx": "^4.19.2",
     "typescript": "^5.7.2",
     "vitest": "^2.1.8"
+  },
+  "optionalDependencies": {
+    "tree-sitter": "0.25.0",
+    "tree-sitter-c": "^0.24.1",
+    "tree-sitter-c-sharp": "^0.23.5",
+    "tree-sitter-cpp": "^0.23.4",
+    "tree-sitter-dart": "^1.0.0",
+    "tree-sitter-go": "^0.25.0",
+    "tree-sitter-java": "^0.23.5",
+    "tree-sitter-javascript": "^0.25.0",
+    "tree-sitter-kotlin": "^0.3.8",
+    "tree-sitter-php": "^0.24.2",
+    "tree-sitter-python": "^0.25.0",
+    "tree-sitter-ruby": "^0.23.1",
+    "tree-sitter-rust": "^0.24.0",
+    "tree-sitter-swift": "^0.7.1",
+    "tree-sitter-typescript": "^0.23.2"
   },
   "pnpm": {
     "overrides": {

@@ -101,12 +101,21 @@ export async function registerRepositoryRoutes(
     }
 
     // Canonicalize and validate path
-    const absolutePath = path.resolve(options.workspaceRoot, input.path);
+    let absolutePath: string;
+    try {
+      absolutePath = path.resolve(options.workspaceRoot, input.path);
 
-    if (!isSubpath(options.workspaceRoot, absolutePath)) {
+      if (!isSubpath(options.workspaceRoot, absolutePath)) {
+        return reply.status(400).send({
+          error: 'Path traversal detected',
+          message: 'Repository path must be within workspace root',
+        });
+      }
+    } catch (pathError) {
+      // Path validation failed - treat as traversal attempt
       return reply.status(400).send({
         error: 'Path traversal detected',
-        message: 'Repository path must be within workspace root',
+        message: 'Invalid repository path',
       });
     }
 

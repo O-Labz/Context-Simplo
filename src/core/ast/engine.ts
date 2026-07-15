@@ -12,3 +12,10 @@ export interface AstResult {
   branchCount: number;
   complexityBySymbol: Map<string, number>;
 }
+
+export class AstEngineError extends Error {
+  constructor(message: string, public override readonly cause?: unknown) {
+    super(message);
+    this.name = 'AstEngineError';
+  }
+}

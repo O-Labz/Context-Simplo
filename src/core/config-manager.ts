@@ -196,6 +196,11 @@ export class ConfigManager extends EventEmitter {
 
     try {
       if (newProviderType !== 'none') {
+        // Validate required credentials for providers that need them
+        if ((newProviderType === 'openai' || newProviderType === 'azure') && !newConfig.llmApiKey.value) {
+          throw new Error(`Provider ${newProviderType} requires an API key. Please configure it in settings.`);
+        }
+
         newProvider = await createEmbeddingProvider(newProviderType, {
           apiKey: newConfig.llmApiKey.value,
           baseUrl: newConfig.llmBaseUrl.value,

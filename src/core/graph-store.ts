@@ -184,22 +184,10 @@ export class StorageBackedGraph implements CodeGraphApi {
     fileCount: number;
     languageBreakdown: Record<string, number>;
   } {
-    // Delegate to storage stats and count methods
     const storageStats = this.storage.getStats();
     const nodeCount = this.storage.countNodes();
     
-    // Get language breakdown by querying all nodes (may be expensive for huge repos)
-    // For now, use a simple implementation - can be optimized with SQL GROUP BY later
-    const languageBreakdown: Record<string, number> = {};
-    
-    // Use a bounded sample if the repo is huge
-    const allNodes = nodeCount > MAX_TRAVERSE_ROWS ? 
-      this.storage.getAllNodes().slice(0, MAX_TRAVERSE_ROWS) :
-      this.storage.getAllNodes();
-      
-    for (const node of allNodes) {
-      languageBreakdown[node.language] = (languageBreakdown[node.language] || 0) + 1;
-    }
+    const languageBreakdown = this.storage.countNodesByLanguage();
 
     return {
       nodeCount,
@@ -445,37 +433,36 @@ export class StorageBackedGraph implements CodeGraphApi {
     return inEdges.length + outEdges.length;
   }
 
-  findDeadCode(repositoryId?: string): CodeNode[] {
-    const cacheKey = `deadcode:${repositoryId || 'all'}`;
+  findDeadCode(repositoryId?: string): { results: CodeNode[]; total: number; truncated: boolean } {
+    if (!repositoryId) {
+      return { results: [], total: 0, truncated: false };
+    }
+
+    const cacheKey = `deadcode:${repositoryId}`;
     
-    // Check query cache
     const cached = this.getCachedQuery(cacheKey);
     if (cached) {
-      return cached;
+      const total = cached.length;
+      return {
+        results: cached,
+        total,
+        truncated: false,
+      };
     }
 
-    // Get nodes with filter, bounded to MAX_TRAVERSE_ROWS
-    const filter: NodeFilter = {};
-    if (repositoryId) {
-      filter.repositoryId = repositoryId;
-    }
-    
-    const allNodes = this.storage.getNodes(filter).slice(0, MAX_TRAVERSE_ROWS);
-    const deadNodes: CodeNode[] = [];
+    const total = this.storage.countUnreferencedNodes(repositoryId);
+    const deadNodes = this.storage.findUnreferencedNodes(repositoryId, MAX_TRAVERSE_ROWS, 0);
 
-    for (const node of allNodes) {
-      if (node.kind === 'function' || node.kind === 'method' || node.kind === 'class') {
-        // Check if node has any incoming edges (callers)
-        const inEdges = this.storage.getEdges(undefined, node.id);
-        if (inEdges.length === 0 && !node.isExported) {
-          deadNodes.push(node);
-          this.cacheNode(node);
-        }
-      }
+    for (const node of deadNodes) {
+      this.cacheNode(node);
     }
-
     this.cacheQuery(cacheKey, deadNodes);
-    return deadNodes;
+
+    return {
+      results: deadNodes,
+      total,
+      truncated: deadNodes.length >= MAX_TRAVERSE_ROWS && total > MAX_TRAVERSE_ROWS,
+    };
   }
 
   explainArchitecture(repositoryId: string, detailLevel: number = 1): ArchitectureSummary {

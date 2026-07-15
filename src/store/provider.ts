@@ -42,6 +42,9 @@ export interface StorageProvider {
   getNodesInFile(filePath: string): CodeNode[];
   getNodesByName(name: string, filter?: NodeFilter): CodeNode[];
   countNodes(filter?: NodeFilter): number;
+  countNodesByLanguage(repositoryId?: string): Record<string, number>;
+  findUnreferencedNodes(repositoryId: string, limit: number, offset: number): CodeNode[];
+  countUnreferencedNodes(repositoryId: string): number;
   upsertNodes(nodes: CodeNode[]): void;
   deleteNode(id: string): void;
   deleteNodesInFile(filePath: string): void;

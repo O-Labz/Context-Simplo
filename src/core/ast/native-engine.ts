@@ -1,68 +1,71 @@
 /**
- * WASM-based AST engine using web-tree-sitter.
- * Provides high-accuracy parsing with compiled grammar files.
+ * Native tree-sitter AST engine using node-gyp bindings.
+ * Only used when AST_ENGINE=native. Guarded dynamic import ensures
+ * a failed/absent native build never breaks startup or Docker.
  */
 
 import type { AstEngine, AstResult } from './engine.js';
-import { fileURLToPath } from 'node:url';
-import { dirname, join } from 'node:path';
+import { AstEngineError } from './engine.js';
 
-// Lazy-init classes
-let ParserClass: any = null;
-let LanguageClass: any = null;
-let QueryClass: any = null;
+// Type declarations for optional tree-sitter dependency
+interface TreeSitterNode {
+  startPosition: { row: number; column: number };
+  endPosition: { row: number; column: number };
+  startIndex: number;
+  endIndex: number;
+  childCount: number;
+  child(index: number): TreeSitterNode | null;
+}
+
+interface TreeSitterTree {
+  rootNode: TreeSitterNode;
+}
+
+interface TreeSitterQuery {
+  captures(node: TreeSitterNode): Array<{ node: TreeSitterNode; name: string }>;
+}
+
+interface TreeSitterLanguage {
+  query(source: string): TreeSitterQuery;
+}
+
+interface TreeSitterParser {
+  setLanguage(language: TreeSitterLanguage): void;
+  parse(source: string): TreeSitterTree;
+}
+
+interface TreeSitterParserConstructor {
+  new (): TreeSitterParser;
+}
+
+let Parser: TreeSitterParserConstructor | null = null;
 let initPromise: Promise<void> | null = null;
 
 async function initParser(): Promise<void> {
-  if (ParserClass && LanguageClass && QueryClass) return;
+  if (Parser) return;
   if (initPromise) return initPromise;
 
   initPromise = (async () => {
-    const TreeSitter = await import('web-tree-sitter');
-    const Parser = TreeSitter.Parser;
-    const Language = TreeSitter.Language;
-    const Query = (TreeSitter as any).Query;
-    
-    if (!Parser || typeof Parser !== 'function') {
-      throw new Error('Failed to load web-tree-sitter Parser');
-    }
-    
-    if (!Language || typeof Language !== 'function') {
-      throw new Error('Failed to load web-tree-sitter Language');
-    }
-    
-    // Initialize the parser with the WASM binary
-    const __dirname = dirname(fileURLToPath(import.meta.url));
-    const wasmPath = join(__dirname, '../../../node_modules/web-tree-sitter/web-tree-sitter.wasm');
-    
     try {
-      await Parser.init({
-        locateFile() {
-          return wasmPath;
-        },
-      });
+      // @ts-expect-error - tree-sitter is an optional dependency without types
+      const TreeSitter = await import('tree-sitter');
+      Parser = (TreeSitter.default || TreeSitter) as TreeSitterParserConstructor;
+      
+      if (!Parser || typeof Parser !== 'function') {
+        throw new AstEngineError('Failed to load native tree-sitter Parser');
+      }
     } catch (error) {
-      console.error('Failed to initialize web-tree-sitter:', error);
-      throw error;
+      const message = error instanceof Error ? error.message : String(error);
+      throw new AstEngineError(
+        `Native tree-sitter unavailable: ${message}. Install with 'npm install tree-sitter' or use AST_ENGINE=wasm`,
+        error
+      );
     }
-    
-    // Set classes after successful init
-    ParserClass = Parser;
-    LanguageClass = Language;
-    QueryClass = Query;
   })();
 
   return initPromise;
 }
 
-interface LanguageCache {
-  language: any;
-  query?: any;
-}
-
-const languageCache = new Map<string, LanguageCache>();
-
-// Map our language codes to grammar file names
 const LANGUAGE_GRAMMAR_MAP: Record<string, string> = {
   ts: 'tree-sitter-typescript',
   tsx: 'tree-sitter-tsx',
@@ -82,7 +85,6 @@ const LANGUAGE_GRAMMAR_MAP: Record<string, string> = {
   dart: 'tree-sitter-dart',
 };
 
-// Per-language call queries (tree-sitter query syntax)
 const CALL_QUERIES: Record<string, string> = {
   ts: '(call_expression function: [(identifier) (member_expression)] @call)',
   tsx: '(call_expression function: [(identifier) (member_expression)] @call)',
@@ -102,6 +104,13 @@ const CALL_QUERIES: Record<string, string> = {
   dart: '(function_expression_body (identifier) @call)',
 };
 
+interface LanguageCache {
+  language: TreeSitterLanguage;
+  query?: TreeSitterQuery;
+}
+
+const languageCache = new Map<string, LanguageCache>();
+
 async function loadLanguage(language: string): Promise<LanguageCache | null> {
   if (languageCache.has(language)) {
     return languageCache.get(language)!;
@@ -114,23 +123,17 @@ async function loadLanguage(language: string): Promise<LanguageCache | null> {
 
   try {
     await initParser();
-    if (!LanguageClass) return null;
+    if (!Parser) return null;
 
-    const __dirname = dirname(fileURLToPath(import.meta.url));
-    const grammarPath = join(__dirname, 'grammars', `${grammarName}.wasm`);
+    const grammarModule = await import(grammarName);
+    const languageInstance = grammarModule.default || grammarModule;
 
-    const languageInstance = await LanguageClass.load(grammarPath);
-    
-    // Load query if available
-    let query: any | undefined;
+    let query: TreeSitterQuery | undefined;
     const queryString = CALL_QUERIES[language];
-    if (queryString && QueryClass) {
+    if (queryString) {
       try {
-        // Create query using the Query class
-        query = new QueryClass(languageInstance, queryString);
+        query = languageInstance.query(queryString);
       } catch (error) {
-        // Query loading can fail for some grammars, that's OK
-        // We'll still be able to parse and compute complexity
         console.warn(`Failed to load query for ${language}:`, error);
       }
     }
@@ -139,20 +142,19 @@ async function loadLanguage(language: string): Promise<LanguageCache | null> {
     languageCache.set(language, cache);
     return cache;
   } catch (error) {
-    console.warn(`Failed to load WASM grammar for ${language}:`, error);
-    return null;
+    const message = error instanceof Error ? error.message : String(error);
+    throw new AstEngineError(
+      `Failed to load native grammar for ${language}: ${message}`,
+      error
+    );
   }
 }
 
-/**
- * Count AST node types to estimate complexity.
- * Higher node count = more complex code structure.
- */
-function computeComplexityFromTree(tree: any): number {
+function computeComplexityFromTree(tree: TreeSitterTree): number {
   const root = tree.rootNode;
   let nodeCount = 0;
 
-  function traverse(node: any): void {
+  function traverse(node: TreeSitterNode): void {
     nodeCount++;
     for (let i = 0; i < node.childCount; i++) {
       const child = node.child(i);
@@ -161,17 +163,12 @@ function computeComplexityFromTree(tree: any): number {
   }
 
   traverse(root);
-  
-  // Normalize: complexity = 1 + (nodes / 10)
   return Math.max(1, Math.floor(1 + nodeCount / 10));
 }
 
-/**
- * Extract function/method call names from query captures.
- */
 function extractCallsFromQuery(
-  tree: any,
-  query: any,
+  tree: TreeSitterTree,
+  query: TreeSitterQuery,
   source: string
 ): Array<{ callerLine: number; calleeName: string }> {
   const calls: Array<{ callerLine: number; calleeName: string }> = [];
@@ -183,7 +180,6 @@ function extractCallsFromQuery(
     const line = node.startPosition.row + 1;
     let calleeName = source.slice(node.startIndex, node.endIndex);
 
-    // Extract final identifier from member expressions
     if (calleeName.includes('.')) {
       const parts = calleeName.split('.');
       calleeName = parts[parts.length - 1] || calleeName;
@@ -199,19 +195,17 @@ function extractCallsFromQuery(
   return calls;
 }
 
-export class WasmEngine implements AstEngine {
-  readonly name = 'wasm';
+export class NativeEngine implements AstEngine {
+  readonly name = 'native';
 
   parse(source: string, language: string): AstResult | null {
-    // Return null if not yet initialized (will fall back to heuristic)
-    // Proper async initialization should happen before first parse
     const cache = languageCache.get(language);
-    if (!cache || !ParserClass) {
+    if (!cache || !Parser) {
       return null;
     }
 
     try {
-      const parserInstance = new ParserClass();
+      const parserInstance = new Parser();
       parserInstance.setLanguage(cache.language);
 
       const tree = parserInstance.parse(source);
@@ -229,15 +223,11 @@ export class WasmEngine implements AstEngine {
         complexityBySymbol: new Map(),
       };
     } catch (error) {
-      console.warn(`WASM parse error for ${language}:`, error);
+      console.warn(`Native parse error for ${language}:`, error);
       return null;
     }
   }
 
-  /**
-   * Async initialization helper - must be called before parse().
-   * Typically called at app startup or in test setup.
-   */
   async init(languages: string[]): Promise<void> {
     await initParser();
     await Promise.all(languages.map(lang => loadLanguage(lang)));

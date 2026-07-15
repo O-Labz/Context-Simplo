@@ -233,7 +233,7 @@ export async function parseFile(
   }
 
   // Use AST engine for calls and complexity
-  const engines = selectEngine({ enableHeuristic: true });
+  const engines = await selectEngine({ enableHeuristic: true });
   let astResult: AstResult | null = null;
   for (const engine of engines) {
     astResult = engine.parse(content, language);
@@ -369,8 +369,7 @@ export async function parseFile(
   }
 
   function computeComplexityForBody(body: string, lang: string): number {
-    const bodyEngines = selectEngine({ enableHeuristic: true });
-    for (const engine of bodyEngines) {
+    for (const engine of engines) {
       const result = engine.parse(body, lang);
       if (result) {
         return 1 + result.branchCount;

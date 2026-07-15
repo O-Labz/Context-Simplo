@@ -698,6 +698,60 @@ export class SqliteStorageProvider implements StorageProvider {
       .run(watching ? 1 : 0, id);
   }
 
+  countNodesByLanguage(repositoryId?: string): Record<string, number> {
+    const sql = repositoryId
+      ? 'SELECT language, COUNT(*) as count FROM nodes WHERE repository_id = ? GROUP BY language'
+      : 'SELECT language, COUNT(*) as count FROM nodes GROUP BY language';
+    
+    const rows = repositoryId
+      ? (this.db.prepare(sql).all(repositoryId) as Array<{ language: string; count: number }>)
+      : (this.db.prepare(sql).all() as Array<{ language: string; count: number }>);
+
+    const result: Record<string, number> = {};
+    for (const row of rows) {
+      result[row.language] = row.count;
+    }
+    return result;
+  }
+
+  findUnreferencedNodes(repositoryId: string, limit: number, offset: number): CodeNode[] {
+    const rows = this.db
+      .prepare(
+        `SELECT id, name, qualified_name, kind, file_path, line_start, line_end,
+         column_start, column_end, visibility, is_exported, docstring, complexity,
+         repository_id, language, created_at, updated_at
+         FROM nodes
+         WHERE repository_id = ?
+           AND (kind = 'function' OR kind = 'method' OR kind = 'class')
+           AND is_exported = 0
+           AND NOT EXISTS (
+             SELECT 1 FROM edges WHERE target_id = nodes.id
+           )
+         ORDER BY file_path, line_start
+         LIMIT ? OFFSET ?`
+      )
+      .all(repositoryId, limit, offset) as any[];
+
+    return rows.map((row) => this.mapNode(row));
+  }
+
+  countUnreferencedNodes(repositoryId: string): number {
+    const row = this.db
+      .prepare(
+        `SELECT COUNT(*) as count
+         FROM nodes
+         WHERE repository_id = ?
+           AND (kind = 'function' OR kind = 'method' OR kind = 'class')
+           AND is_exported = 0
+           AND NOT EXISTS (
+             SELECT 1 FROM edges WHERE target_id = nodes.id
+           )`
+      )
+      .get(repositoryId) as { count: number };
+
+    return row.count;
+  }
+
   getStats(): {
     repositoryCount: number;
     fileCount: number;

@@ -527,7 +527,7 @@ export const TOOL_DEFINITIONS = [
   },
   {
     name: 'find_dead_code',
-    description: 'Find unreferenced symbols (functions, methods, classes with zero incoming edges).',
+    description: 'Find unreferenced symbols (functions, methods, classes with zero incoming edges). Returns `truncated: true` if results were capped at 500 nodes.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -1043,7 +1043,7 @@ export const TOOL_DEFINITIONS_COMPACT = [
   },
   {
     name: 'find_dead_code',
-    description: 'Find unreferenced symbols (zero incoming edges).',
+    description: 'Find unreferenced symbols (zero incoming edges). Returns truncated: true if capped at 500.',
     inputSchema: {
       type: 'object',
       properties: {

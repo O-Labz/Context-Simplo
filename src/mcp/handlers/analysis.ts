@@ -21,11 +21,11 @@ export async function findDeadCode(
 ): Promise<unknown> {
   const input = FindDeadCodeInputSchema.parse(args);
 
-  const deadNodes = context.graph.findDeadCode(input.repositoryId);
+  const result = context.graph.findDeadCode(input.repositoryId);
 
   const offset = input.offset || 0;
   const limit = input.limit || 20;
-  const paginatedNodes = deadNodes.slice(offset, offset + limit);
+  const paginatedNodes = result.results.slice(offset, offset + limit);
 
   return {
     results: paginatedNodes.map((node) => ({
@@ -38,10 +38,11 @@ export async function findDeadCode(
       lineEnd: node.lineEnd,
       language: node.language,
     })),
-    total: deadNodes.length,
+    total: result.total,
     limit,
     offset,
-    hasMore: offset + limit < deadNodes.length,
+    hasMore: offset + limit < result.results.length,
+    truncated: result.truncated,
   };
 }
 

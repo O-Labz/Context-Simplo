@@ -65,7 +65,7 @@ export interface CodeGraphApi {
   analyzeImpact(nodeId: string, maxDepth?: number): ImpactAnalysisResult;
   computeCentrality(): Map<string, number>;
   getCentrality(nodeId: string): number;
-  findDeadCode(repositoryId?: string): CodeNode[];
+  findDeadCode(repositoryId?: string): { results: CodeNode[]; total: number; truncated: boolean };
   explainArchitecture(repositoryId: string, detailLevel?: number): ArchitectureSummary;
   getStats(): {
     nodeCount: number;
@@ -433,7 +433,7 @@ export class CodeGraph implements CodeGraphApi {
     return this.centralityCache!.get(nodeId) || 0;
   }
 
-  findDeadCode(repositoryId?: string): CodeNode[] {
+  findDeadCode(repositoryId?: string): { results: CodeNode[]; total: number; truncated: boolean } {
     const deadNodes: CodeNode[] = [];
 
     for (const nodeId of this.graph.nodes()) {
@@ -451,7 +451,11 @@ export class CodeGraph implements CodeGraphApi {
       }
     }
 
-    return deadNodes;
+    return {
+      results: deadNodes,
+      total: deadNodes.length,
+      truncated: false,
+    };
   }
 
   explainArchitecture(repositoryId: string, detailLevel: number = 1): ArchitectureSummary {
