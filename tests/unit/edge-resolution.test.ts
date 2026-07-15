@@ -213,3 +213,250 @@ function main() {
     }
   });
 });
+
+describe('Incremental Edge Resolution', () => {
+  let tmpDir: string;
+  let storage: SqliteStorageProvider;
+  let graph: CodeGraph;
+  let indexer: Indexer;
+
+  beforeEach(async () => {
+    tmpDir = mkdtempSync(join(tmpdir(), 'cs-edge-incr-test-'));
+    storage = new SqliteStorageProvider(':memory:');
+    await storage.initialize();
+    graph = new CodeGraph(512);
+    indexer = new Indexer(storage, graph, tmpDir);
+  });
+
+  it('resolves outbound edges when file is reindexed', async () => {
+    // Create initial files
+    const utilsFile = join(tmpDir, 'utils.ts');
+    const mainFile = join(tmpDir, 'main.ts');
+
+    writeFileSync(utilsFile, `
+export function helper() {
+  return 42;
+}
+`);
+
+    writeFileSync(mainFile, `
+import { helper } from './utils';
+
+function main() {
+  const result = helper();
+  return result;
+}
+`);
+
+    // Index both files
+    await indexer.indexRepository(tmpDir, { incremental: false });
+
+    // Verify edge was created
+    const mainNode = graph.findByName('main')[0];
+    const helperNode = graph.findByName('helper')[0];
+    
+    let edges = graph.getAllEdges();
+    let callEdge = edges.find(e =>
+      e.kind === 'calls' &&
+      e.sourceId === mainNode.id &&
+      e.targetId === helperNode.id
+    );
+    expect(callEdge).toBeDefined();
+
+    // Delete all edges to simulate incremental scenario
+    const allEdges = graph.getAllEdges();
+    for (const edge of allEdges) {
+      storage.deleteEdge(edge.id);
+    }
+    // Clear graph edges by reloading from storage
+    graph.clear();
+    await graph.bulkLoad(storage.getAllNodes(), []);
+
+    // Reindex main.ts and resolve references
+    await indexer.indexFile(mainFile, mainNode.repositoryId, true);
+    const created = await indexer.resolveReferencesForFiles([mainFile.replace(tmpDir + '/', '')], mainNode.repositoryId);
+
+    expect(created).toBeGreaterThan(0);
+
+    // Verify edge was recreated
+    edges = graph.getAllEdges();
+    callEdge = edges.find(e =>
+      e.kind === 'calls' &&
+      e.sourceId === mainNode.id &&
+      e.targetId === helperNode.id
+    );
+    expect(callEdge).toBeDefined();
+  });
+
+  it('resolves inbound edges when target file is reindexed', async () => {
+    // Create files where main calls helper
+    const utilsFile = join(tmpDir, 'utils.ts');
+    const mainFile = join(tmpDir, 'main.ts');
+
+    writeFileSync(mainFile, `
+import { helper } from './utils';
+
+function main() {
+  const result = helper();
+  return result;
+}
+`);
+
+    writeFileSync(utilsFile, `
+export function helper() {
+  return 42;
+}
+`);
+
+    // Index both files
+    await indexer.indexRepository(tmpDir, { incremental: false });
+
+    const mainNode = graph.findByName('main')[0];
+    const helperNode = graph.findByName('helper')[0];
+
+    // Delete all edges from storage only
+    const edges = graph.getAllEdges();
+    for (const edge of edges) {
+      storage.deleteEdge(edge.id);
+    }
+    // Clear graph edges by reloading from storage (which now has no edges)
+    graph.clear();
+    await graph.bulkLoad(storage.getAllNodes(), []);
+
+    // Reindex utils.ts (the target) and resolve references
+    await indexer.indexFile(utilsFile, helperNode.repositoryId, true);
+    const created = await indexer.resolveReferencesForFiles([utilsFile.replace(tmpDir + '/', '')], helperNode.repositoryId);
+
+    expect(created).toBeGreaterThan(0);
+
+    // Verify inbound edge was recreated
+    const newEdges = graph.getAllEdges();
+    const callEdge = newEdges.find(e =>
+      e.kind === 'calls' &&
+      e.sourceId === mainNode.id &&
+      e.targetId === helperNode.id
+    );
+    expect(callEdge).toBeDefined();
+  });
+
+  it('avoids creating duplicate edges', async () => {
+    const utilsFile = join(tmpDir, 'utils.ts');
+    const mainFile = join(tmpDir, 'main.ts');
+
+    writeFileSync(utilsFile, `
+export function helper() {
+  return 42;
+}
+`);
+
+    writeFileSync(mainFile, `
+import { helper } from './utils';
+
+function main() {
+  const result = helper();
+  return result;
+}
+`);
+
+    // Index both files
+    await indexer.indexRepository(tmpDir, { incremental: false });
+
+    const initialEdgeCount = graph.getAllEdges().length;
+    
+    // Try to resolve again (should not create duplicates)
+    const mainNode = graph.findByName('main')[0];
+    const created = await indexer.resolveReferencesForFiles([mainFile.replace(tmpDir + '/', '')], mainNode.repositoryId);
+
+    expect(created).toBe(0);
+    expect(graph.getAllEdges().length).toBe(initialEdgeCount);
+  });
+
+  it('persists code_references during indexing', async () => {
+    const file = join(tmpDir, 'test.ts');
+    
+    writeFileSync(file, `
+import { helper } from './utils';
+
+function main() {
+  helper();
+}
+`);
+
+    const repoId = 'test-repo';
+    
+    // Create repository first
+    storage.upsertRepository({
+      id: repoId,
+      path: tmpDir,
+      name: 'test-repo',
+      fileCount: 0,
+      nodeCount: 0,
+      edgeCount: 0,
+      languages: {},
+      isWatched: false,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    });
+
+    await indexer.indexFile(file, repoId, false);
+
+    // Check that code_references were persisted
+    const refs = storage.getUnresolvedReferencesInRepository(repoId);
+    expect(refs.length).toBeGreaterThan(0);
+    
+    // Should have at least one call reference
+    const callRefs = refs.filter(r => r.referenceKind === 'call');
+    expect(callRefs.length).toBeGreaterThan(0);
+  });
+
+  it('deletes stale references when file is reindexed', async () => {
+    const file = join(tmpDir, 'test.ts');
+    
+    // First version with one call
+    writeFileSync(file, `
+function main() {
+  oldFunction();
+}
+`);
+
+    const repoId = 'test-repo';
+    
+    // Create repository first
+    storage.upsertRepository({
+      id: repoId,
+      path: tmpDir,
+      name: 'test-repo',
+      fileCount: 0,
+      nodeCount: 0,
+      edgeCount: 0,
+      languages: {},
+      isWatched: false,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    });
+
+    await indexer.indexFile(file, repoId, false);
+
+    const initialRefs = storage.getUnresolvedReferencesInRepository(repoId);
+    const initialCount = initialRefs.length;
+    expect(initialCount).toBeGreaterThan(0);
+
+    // Reindex with different calls
+    writeFileSync(file, `
+function main() {
+  newFunction();
+}
+`);
+
+    await indexer.indexFile(file, repoId, true);
+
+    const newRefs = storage.getUnresolvedReferencesInRepository(repoId);
+    
+    // Should have new references, not old ones
+    const hasOld = newRefs.some(r => r.targetName === 'oldFunction');
+    const hasNew = newRefs.some(r => r.targetName === 'newFunction');
+    
+    expect(hasOld).toBe(false);
+    expect(hasNew).toBe(true);
+  });
+});

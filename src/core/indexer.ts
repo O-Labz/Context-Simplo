@@ -38,6 +38,7 @@ import type {
   FileMetadata,
   IndexJob,
   GraphEdge,
+  CodeReference,
 } from './types.js';
 import { parseCache } from './parse-cache.js';
 import { ParseError } from './errors.js';
@@ -261,6 +262,9 @@ export class Indexer extends EventEmitter {
 
       await this.graph.removeNodesInFile(relativePath);
 
+      // Delete stale code_references for this file
+      this.storage.deleteCodeReferencesForFile(relativePath);
+
       // Scrub secrets from docstrings before persisting
       for (const node of parsed.nodes) {
         if (node.docstring) {
@@ -273,6 +277,16 @@ export class Indexer extends EventEmitter {
 
       // Add nodes to graph for in-memory queries
       await this.graph.bulkLoad(parsed.nodes, []);
+
+      // Build and persist code_references for later resolution
+      const referenceRows = this.buildReferenceRows(
+        parsed.calls,
+        relativePath,
+        repositoryId
+      );
+      if (referenceRows.length > 0) {
+        this.storage.saveCodeReferences(referenceRows);
+      }
 
       // Store references for later resolution (after all files are indexed)
       this.pendingReferences.push({
@@ -580,6 +594,186 @@ export class Indexer extends EventEmitter {
     const { readFile } = await import('fs/promises');
     const content = await readFile(filePath, 'utf-8');
     return createHash('sha256').update(content).digest('hex');
+  }
+
+  /**
+   * Build code_references rows from parsed calls
+   */
+  private buildReferenceRows(
+    calls: Array<{ callerNodeId: string; calleeName: string; lineNumber?: number }>,
+    filePath: string,
+    repositoryId: string
+  ): CodeReference[] {
+    const now = new Date();
+    const references: CodeReference[] = [];
+
+    // Build references for calls only (imports are handled differently in the current system)
+    for (const call of calls) {
+      const refId = createHash('sha256')
+        .update(`${call.callerNodeId}:${call.calleeName}:call`)
+        .digest('hex')
+        .substring(0, 16);
+      
+      references.push({
+        id: refId,
+        sourceFile: filePath,
+        sourceNodeId: call.callerNodeId,
+        targetName: call.calleeName,
+        referenceKind: 'call',
+        lineNumber: call.lineNumber || 1,
+        repositoryId,
+        resolved: false,
+        createdAt: now,
+        updatedAt: now,
+      });
+    }
+
+    return references;
+  }
+
+  /**
+   * Resolve references for specific files (incremental resolution)
+   * Resolves both outbound (from these files) and inbound (to nodes in these files) edges
+   */
+  async resolveReferencesForFiles(filePaths: string[], repositoryId: string): Promise<number> {
+    let created = 0;
+    const now = new Date();
+    const newEdges: GraphEdge[] = [];
+
+    // Build set of existing edge IDs ONCE to avoid duplicates
+    const existingEdgeIds = new Set(this.graph.getAllEdges().map(e => e.id));
+
+    // Get all nodes in the affected files
+    const affectedNodeNames = new Set<string>();
+    for (const filePath of filePaths) {
+      const nodesInFile = this.graph.getNodesInFile(filePath);
+      for (const node of nodesInFile) {
+        affectedNodeNames.add(node.name);
+      }
+    }
+
+    // 1. Resolve outbound references FROM these files
+    for (const filePath of filePaths) {
+      // Get unresolved references for this file
+      const refs = this.storage.getUnresolvedReferencesInRepository(repositoryId)
+        .filter(ref => ref.sourceFile === filePath);
+
+      // Build scope for this file
+      const nodesInFile = this.graph.getNodesInFile(filePath);
+      const sameFileNodes = new Map<string, CodeNode>();
+      for (const node of nodesInFile) {
+        sameFileNodes.set(node.name, node);
+      }
+
+      // Build import map for this file (from pendingReferences if available)
+      const importMap = new Map<string, string>();
+      const pendingRef = this.pendingReferences.find(r => r.filePath === filePath);
+      if (pendingRef) {
+        for (const imp of pendingRef.imports) {
+          for (const importedName of imp.imported) {
+            importMap.set(importedName, imp.source);
+          }
+        }
+      }
+
+      // Resolve each reference
+      for (const ref of refs) {
+        if (ref.referenceKind === 'call') {
+          const resolved = this.resolveName(
+            ref.targetName,
+            filePath,
+            repositoryId,
+            sameFileNodes,
+            importMap
+          );
+
+          for (const { target, confidence } of resolved) {
+            const edgeId = this.generateEdgeId(ref.sourceNodeId, target.id, 'calls');
+            if (existingEdgeIds.has(edgeId)) continue;
+            existingEdgeIds.add(edgeId);
+
+            newEdges.push({
+              id: edgeId,
+              sourceId: ref.sourceNodeId,
+              targetId: target.id,
+              kind: 'calls',
+              confidence,
+              repositoryId,
+              createdAt: now,
+              updatedAt: now,
+            });
+
+            // Mark reference as resolved
+            this.storage.markReferenceResolved(ref.id);
+            created++;
+          }
+        }
+      }
+    }
+
+    // 2. Resolve inbound references TO nodes in these files
+    for (const nodeName of affectedNodeNames) {
+      // Find all unresolved references to this node
+      const inboundRefs = this.storage.getUnresolvedReferencesForTargetName(nodeName, repositoryId);
+
+      for (const ref of inboundRefs) {
+        // Build scope for the source file
+        const sourceNodesInFile = this.graph.getNodesInFile(ref.sourceFile);
+        const sameFileNodes = new Map<string, CodeNode>();
+        for (const node of sourceNodesInFile) {
+          sameFileNodes.set(node.name, node);
+        }
+
+        // Build import map for source file
+        const importMap = new Map<string, string>();
+        const pendingRef = this.pendingReferences.find(r => r.filePath === ref.sourceFile);
+        if (pendingRef) {
+          for (const imp of pendingRef.imports) {
+            for (const importedName of imp.imported) {
+              importMap.set(importedName, imp.source);
+            }
+          }
+        }
+
+        // Resolve the reference
+        const resolved = this.resolveName(
+          ref.targetName,
+          ref.sourceFile,
+          repositoryId,
+          sameFileNodes,
+          importMap
+        );
+
+        for (const { target, confidence } of resolved) {
+          const edgeId = this.generateEdgeId(ref.sourceNodeId, target.id, 'calls');
+          if (existingEdgeIds.has(edgeId)) continue;
+          existingEdgeIds.add(edgeId);
+
+          newEdges.push({
+            id: edgeId,
+            sourceId: ref.sourceNodeId,
+            targetId: target.id,
+            kind: 'calls',
+            confidence,
+            repositoryId,
+            createdAt: now,
+            updatedAt: now,
+          });
+
+          // Mark reference as resolved
+          this.storage.markReferenceResolved(ref.id);
+          created++;
+        }
+      }
+    }
+
+    // Persist all new edges
+    if (newEdges.length > 0) {
+      this.storage.upsertEdges(newEdges);
+      await this.graph.bulkLoad([], newEdges);
+    }
+
+    return created;
   }
 
   /**
