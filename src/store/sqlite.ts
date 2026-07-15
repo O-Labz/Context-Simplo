@@ -565,6 +565,13 @@ export class SqliteStorageProvider implements StorageProvider {
     }
   }
 
+  bulkWrite(nodes: CodeNode[], edges: GraphEdge[]): void {
+    this.transaction(() => {
+      this.upsertNodes(nodes);
+      this.upsertEdges(edges);
+    });
+  }
+
   deleteEdge(id: string): void {
     this.db.prepare('DELETE FROM edges WHERE id = ?').run(id);
   }

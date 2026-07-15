@@ -54,6 +54,8 @@ export interface StorageProvider {
   deleteEdgesForNode(nodeId: string): void;
   deleteEdgesInRepository(repositoryId: string): void;
 
+  bulkWrite(nodes: CodeNode[], edges: GraphEdge[]): void;
+
   search(query: string, limit: number, offset: number): SearchResult[];
 
   getConfig(key?: string): Record<string, unknown>;

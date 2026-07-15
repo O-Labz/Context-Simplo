@@ -33,6 +33,8 @@ import {
 } from '@kreuzberg/tree-sitter-language-pack';
 import { ParseError } from './errors.js';
 import type { CodeNode, NodeKind, Visibility } from './types.js';
+import { selectEngine } from './ast/registry.js';
+import type { AstResult } from './ast/engine.js';
 
 const downloadedLanguages = new Set<string>();
 const downloadInProgress = new Map<string, Promise<void>>();
@@ -220,6 +222,14 @@ export async function parseFile(
 
   const structure = parseResult?.structure || [];
 
+  // Use AST engine for calls and complexity
+  const engines = selectEngine({ enableHeuristic: true });
+  let astResult: AstResult | null = null;
+  for (const engine of engines) {
+    astResult = engine.parse(content, language);
+    if (astResult) break;
+  }
+
   function processStructureItem(
     item: any,
     parentName?: string
@@ -238,6 +248,16 @@ export async function parseFile(
     const nodeKind = mapNodeKind(kind);
     const isExported = exportedNames.has(name);
 
+    // Compute complexity for functions/methods from AST result
+    let complexity: number | undefined;
+    if ((nodeKind === 'function' || nodeKind === 'method') && astResult && startLine > 0 && endLine > 0) {
+      const bodyText = getLineRange(content, startLine, endLine);
+      const bodyComplexity = computeComplexityForBody(bodyText, language);
+      if (bodyComplexity > 0) {
+        complexity = bodyComplexity;
+      }
+    }
+
     nodes.push({
       id: nodeId,
       name,
@@ -251,6 +271,7 @@ export async function parseFile(
       visibility: mapVisibility(item.visibility),
       isExported,
       docstring: item.docstring,
+      complexity,
       repositoryId,
       language,
       createdAt: now,
@@ -306,10 +327,18 @@ export async function parseFile(
       }
     }
 
-    // Extract function calls from function/method bodies (cap size to avoid huge allocations)
-    if ((nodeKind === 'function' || nodeKind === 'method') && startLine > 0 && endLine > 0 && (endLine - startLine) < 500) {
-      const bodyText = getLineRange(content, startLine, endLine);
-      extractCallsFromBody(bodyText, nodeId, startLine);
+    // Extract function calls from function/method bodies using AST engine
+    if ((nodeKind === 'function' || nodeKind === 'method') && astResult && startLine > 0 && endLine > 0 && (endLine - startLine) < 500) {
+      const bodyCalls = astResult.calls.filter(
+        call => call.callerLine >= startLine && call.callerLine <= endLine
+      );
+      for (const call of bodyCalls) {
+        calls.push({
+          callerNodeId: nodeId,
+          calleeName: call.calleeName,
+          line: call.callerLine,
+        });
+      }
     }
 
     if (item.children) {
@@ -319,30 +348,15 @@ export async function parseFile(
     }
   }
 
-  function extractCallsFromBody(body: string, callerNodeId: string, baseLineOffset: number): void {
-    const callRegex = /\b([a-zA-Z_$][\w$]*)\s*\(/g;
-    const keywords = new Set([
-      'if', 'for', 'while', 'switch', 'catch', 'return', 'throw',
-      'new', 'typeof', 'instanceof', 'function', 'class', 'import',
-      'export', 'const', 'let', 'var', 'await', 'async', 'yield',
-    ]);
-
-    let match: RegExpExecArray | null;
-    const seen = new Set<string>();
-    while ((match = callRegex.exec(body)) !== null) {
-      const calleeName = match[1];
-      if (!calleeName || keywords.has(calleeName) || seen.has(calleeName)) continue;
-      seen.add(calleeName);
-      calls.push({ callerNodeId, calleeName, line: baseLineOffset });
+  function computeComplexityForBody(body: string, lang: string): number {
+    const bodyEngines = selectEngine({ enableHeuristic: true });
+    for (const engine of bodyEngines) {
+      const result = engine.parse(body, lang);
+      if (result) {
+        return 1 + result.branchCount;
+      }
     }
-
-    const memberCallRegex = /\.([a-zA-Z_$][\w$]*)\s*\(/g;
-    while ((match = memberCallRegex.exec(body)) !== null) {
-      const calleeName = match[1];
-      if (!calleeName || seen.has(calleeName)) continue;
-      seen.add(calleeName);
-      calls.push({ callerNodeId, calleeName, line: baseLineOffset });
-    }
+    return 1; // Minimum complexity
   }
 
   for (const item of structure) {

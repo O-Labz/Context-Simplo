@@ -242,48 +242,53 @@ export class Indexer extends EventEmitter {
         parsed = await parseFile(relativePath, repositoryId, this.workspaceRoot);
       }
 
-      // Batch all graph writes in a single transaction for atomicity + performance
       await this.graph.removeNodesInFile(relativePath);
-      
-      await this.storage.transaction(async () => {
-        // Bulk persist nodes (so resolveEdges' findByName lookups see them)
-        await this.graph.bulkLoad(parsed.nodes, []);
-        
-        // Resolve edges now that nodes are persisted
-        const edges = this.resolveEdges(parsed, repositoryId);
-        
-        // Bulk persist edges (single cache invalidation)
-        await this.graph.bulkLoad([], edges);
 
-        // Track pending forward references
-        this.pendingReferences.push({
-          calls: parsed.calls,
-          imports: parsed.imports,
-          inheritance: parsed.inheritance,
-          repositoryId,
-          filePath: parsed.filePath,
-        });
+      this.storage.bulkWrite(parsed.nodes, []);
 
-        // Update file metadata
-        fileMetadata.hash = parsed.hash;
-        fileMetadata.language = parsed.language;
-        fileMetadata.nodeCount = parsed.nodes.length;
-        fileMetadata.status = 'indexed';
-        fileMetadata.lastError = undefined;
-        fileMetadata.indexedAt = new Date();
-        fileMetadata.updatedAt = new Date();
+      const edges = this.resolveEdges(parsed, repositoryId);
 
-        fileMetadata.embeddingStatus = 'pending';
+      this.storage.bulkWrite([], edges);
+
+      this.pendingReferences.push({
+        calls: parsed.calls,
+        imports: parsed.imports,
+        inheritance: parsed.inheritance,
+        repositoryId,
+        filePath: parsed.filePath,
+      });
+
+      fileMetadata.hash = parsed.hash;
+      fileMetadata.language = parsed.language;
+      fileMetadata.nodeCount = parsed.nodes.length;
+      fileMetadata.status = 'indexed';
+      fileMetadata.lastError = undefined;
+      fileMetadata.indexedAt = new Date();
+      fileMetadata.updatedAt = new Date();
+      fileMetadata.embeddingStatus = 'pending';
+
+      this.storage.transaction(() => {
         this.storage.upsertFile(fileMetadata);
       });
 
-    this.emit('file:complete', relativePath, parsed.nodes.length);
+      console.info('[index.file.persisted]', {
+        path: relativePath,
+        nodeCount: parsed.nodes.length,
+        edgeCount: edges.length,
+      });
+
+      this.emit('file:complete', relativePath, parsed.nodes.length);
     } catch (error) {
       fileMetadata.status = 'error';
       fileMetadata.lastError = (error as Error).message;
       fileMetadata.retryCount++;
       fileMetadata.updatedAt = new Date();
       this.storage.upsertFile(fileMetadata);
+
+      console.warn('[index.file.error]', {
+        path: relativePath,
+        error: (error as Error).message,
+      });
 
       throw new ParseError(relativePath, (error as Error).message, error as Error);
     }
