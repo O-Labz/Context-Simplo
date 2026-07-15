@@ -68,7 +68,7 @@ export async function extractSnippet(
     }
     
     return snippet;
-  } catch (error) {
+  } catch {
     // File might not be accessible, return undefined
     return undefined;
   }
@@ -99,7 +99,7 @@ export async function extractSnippetsBatch(
         fileCache.set(result.filePath, lines);
       }
       
-      const snippet = await extractSnippetFromLines(
+      const snippet = extractSnippetFromLines(
         lines,
         result.lineStart,
         result.lineEnd,
@@ -109,7 +109,7 @@ export async function extractSnippetsBatch(
       if (snippet) {
         snippets.set(key, snippet);
       }
-    } catch (error) {
+    } catch {
       // Skip files that can't be read
       continue;
     }

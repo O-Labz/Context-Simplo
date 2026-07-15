@@ -71,7 +71,7 @@ const SECRET_PATTERNS: SecretPattern[] = [
   {
     name: 'Anthropic API Key',
     category: 'anthropic_key',
-    pattern: /sk-ant-[A-Za-z0-9\-]{95,}/g,
+    pattern: /sk-ant-[A-Za-z0-9-]{95,}/g,
     confidence: 1.0,
   },
   {
@@ -89,7 +89,7 @@ const SECRET_PATTERNS: SecretPattern[] = [
   {
     name: 'Google API Key',
     category: 'google_key',
-    pattern: /AIza[A-Za-z0-9_\-]{35}/g,
+    pattern: /AIza[A-Za-z0-9_-]{35}/g,
     confidence: 1.0,
   },
   {
@@ -101,7 +101,7 @@ const SECRET_PATTERNS: SecretPattern[] = [
   {
     name: 'Slack Token',
     category: 'slack_token',
-    pattern: /xox[baprs]-[A-Za-z0-9\-]{10,}/g,
+    pattern: /xox[baprs]-[A-Za-z0-9-]{10,}/g,
     confidence: 1.0,
   },
   {
@@ -119,13 +119,13 @@ const SECRET_PATTERNS: SecretPattern[] = [
   {
     name: 'SendGrid API Key',
     category: 'sendgrid_key',
-    pattern: /SG\.[A-Za-z0-9_\-]{22}\.[A-Za-z0-9_\-]{43}/g,
+    pattern: /SG\.[A-Za-z0-9_-]{22}\.[A-Za-z0-9_-]{43}/g,
     confidence: 1.0,
   },
   {
     name: 'JWT Token',
     category: 'jwt',
-    pattern: /eyJ[A-Za-z0-9_\-]+\.eyJ[A-Za-z0-9_\-]+\.[A-Za-z0-9_\-]+/g,
+    pattern: /eyJ[A-Za-z0-9_-]+\.eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+/g,
     confidence: 0.85,
   },
   {
@@ -155,19 +155,19 @@ const SECRET_PATTERNS: SecretPattern[] = [
   {
     name: 'Generic API Key',
     category: 'api_key',
-    pattern: /api[_-]?key\s*[=:]\s*['"]?([A-Za-z0-9_\-]{20,})['"]?/gi,
+    pattern: /api[_-]?key\s*[=:]\s*['"]?([A-Za-z0-9_-]{20,})['"]?/gi,
     confidence: 0.8,
   },
   {
     name: 'Generic Secret',
     category: 'secret',
-    pattern: /secret\s*[=:]\s*['"]?([A-Za-z0-9_\-]{20,})['"]?/gi,
+    pattern: /secret\s*[=:]\s*['"]?([A-Za-z0-9_-]{20,})['"]?/gi,
     confidence: 0.75,
   },
   {
     name: 'Generic Token',
     category: 'token',
-    pattern: /token\s*[=:]\s*['"]?([A-Za-z0-9_\-]{20,})['"]?/gi,
+    pattern: /token\s*[=:]\s*['"]?([A-Za-z0-9_-]{20,})['"]?/gi,
     confidence: 0.75,
   },
   {
@@ -179,19 +179,19 @@ const SECRET_PATTERNS: SecretPattern[] = [
   {
     name: 'Database Connection String',
     category: 'connection_string',
-    pattern: /(postgres|mysql|mongodb):\/\/[^:]+:[^@]+@[^\/]+/gi,
+    pattern: /(postgres|mysql|mongodb):\/\/[^:]+:[^@]+@[^/]+/gi,
     confidence: 0.95,
   },
   {
     name: 'Bearer Token',
     category: 'bearer_token',
-    pattern: /Bearer\s+[A-Za-z0-9_\-\.]{20,}/gi,
+    pattern: /Bearer\s+[A-Za-z0-9_\-.]{20,}/gi,
     confidence: 0.9,
   },
   {
     name: 'Basic Auth',
     category: 'basic_auth',
-    pattern: /Basic\s+[A-Za-z0-9+\/=]{20,}/gi,
+    pattern: /Basic\s+[A-Za-z0-9+/=]{20,}/gi,
     confidence: 0.9,
   },
   {
@@ -221,19 +221,19 @@ const SECRET_PATTERNS: SecretPattern[] = [
   {
     name: 'PyPI Token',
     category: 'pypi_token',
-    pattern: /pypi-[A-Za-z0-9_\-]{100,}/g,
+    pattern: /pypi-[A-Za-z0-9_-]{100,}/g,
     confidence: 1.0,
   },
   {
     name: 'Docker Hub Token',
     category: 'docker_token',
-    pattern: /dckr_pat_[A-Za-z0-9_\-]{40,}/g,
+    pattern: /dckr_pat_[A-Za-z0-9_-]{40,}/g,
     confidence: 1.0,
   },
   {
     name: 'GitLab Token',
     category: 'gitlab_token',
-    pattern: /glpat-[A-Za-z0-9_\-]{20,}/g,
+    pattern: /glpat-[A-Za-z0-9_-]{20,}/g,
     confidence: 1.0,
   },
   {
@@ -245,31 +245,31 @@ const SECRET_PATTERNS: SecretPattern[] = [
   {
     name: 'Azure Storage Key',
     category: 'azure_key',
-    pattern: /AccountKey=[A-Za-z0-9+\/=]{88}/g,
+    pattern: /AccountKey=[A-Za-z0-9+/=]{88}/g,
     confidence: 1.0,
   },
   {
     name: 'Firebase API Key',
     category: 'firebase_key',
-    pattern: /AIza[A-Za-z0-9_\-]{35}/g,
+    pattern: /AIza[A-Za-z0-9_-]{35}/g,
     confidence: 0.9,
   },
   {
     name: 'Cloudflare API Key',
     category: 'cloudflare_key',
-    pattern: /cloudflare[_-]?(?:api[_-]?)?key[:\s=]+['"]*([A-Za-z0-9_\-]{37})['"]*|X-Auth-Key[:\s]+([A-Za-z0-9_\-]{37})/gi,
+    pattern: /cloudflare[_-]?(?:api[_-]?)?key[:\s=]+['"]*([A-Za-z0-9_-]{37})['"]*|X-Auth-Key[:\s]+([A-Za-z0-9_-]{37})/gi,
     confidence: 0.8,
   },
   {
     name: 'Square Access Token',
     category: 'square_token',
-    pattern: /sq0atp-[A-Za-z0-9_\-]{22}/g,
+    pattern: /sq0atp-[A-Za-z0-9_-]{22}/g,
     confidence: 1.0,
   },
   {
     name: 'Square OAuth Secret',
     category: 'square_secret',
-    pattern: /sq0csp-[A-Za-z0-9_\-]{43}/g,
+    pattern: /sq0csp-[A-Za-z0-9_-]{43}/g,
     confidence: 1.0,
   },
   {
@@ -281,13 +281,13 @@ const SECRET_PATTERNS: SecretPattern[] = [
   {
     name: 'Telegram Bot Token',
     category: 'telegram_token',
-    pattern: /[0-9]{8,10}:[A-Za-z0-9_\-]{35}/g,
+    pattern: /[0-9]{8,10}:[A-Za-z0-9_-]{35}/g,
     confidence: 0.95,
   },
   {
     name: 'Discord Bot Token',
     category: 'discord_token',
-    pattern: /[MN][A-Za-z0-9]{23,25}\.[A-Za-z0-9]{6}\.[A-Za-z0-9_\-]{27,}/g,
+    pattern: /[MN][A-Za-z0-9]{23,25}\.[A-Za-z0-9]{6}\.[A-Za-z0-9_-]{27,}/g,
     confidence: 0.95,
   },
 ];

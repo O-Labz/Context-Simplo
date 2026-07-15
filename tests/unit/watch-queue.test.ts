@@ -184,9 +184,10 @@ describe('WatchReindexQueue', () => {
 
     await queue.drain('test-repo');
 
-    // Deletes should come before changes
+    // Deletes should come before changes. indexFile receives an absolute path
+    // (repo.path + relative), whereas removeNodesInFile receives the relative path.
     expect(operations[0]).toContain('delete:deleted.ts');
-    expect(operations[1]).toContain('index:changed.ts');
+    expect(operations[1]).toMatch(/^index:.*changed\.ts$/);
   });
 
   it('closes and drains all queues', async () => {

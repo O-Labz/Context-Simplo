@@ -93,7 +93,7 @@ export class EmbeddingQueue extends EventEmitter {
 
       this.queue.push(job);
       this.emit('queued', job.id);
-      this.processQueue();
+      void this.processQueue();
     });
   }
 
@@ -118,11 +118,11 @@ export class EmbeddingQueue extends EventEmitter {
       this.inFlight++;
       this.emit('progress', this.getStats());
 
-      this.processJob(job).finally(() => {
+      void this.processJob(job).finally(() => {
         this.inFlight--;
         this.emit('progress', this.getStats());
         this.emit('drained');
-        this.processQueue();
+        void this.processQueue();
       });
     }
   }

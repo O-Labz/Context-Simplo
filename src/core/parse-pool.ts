@@ -109,7 +109,7 @@ export class ParsePool {
       (poolWorker as any).recycling = true;
       
       // Terminate the old worker and create a new one
-      poolWorker.worker.terminate();
+      void poolWorker.worker.terminate();
       const index = this.workers.findIndex((w) => w.workerId === poolWorker.workerId);
       if (index >= 0) {
         this.workers[index] = this.createWorker(index);

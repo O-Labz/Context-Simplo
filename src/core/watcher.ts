@@ -100,7 +100,7 @@ export class FileWatcher extends EventEmitter {
   unwatch(dirPath: string): void {
     const watcher = this.watchers.get(dirPath);
     if (watcher) {
-      watcher.close();
+      void watcher.close();
       this.watchers.delete(dirPath);
       this.watcherRepoIds.delete(dirPath);
       this.contextIgnoreCache.delete(dirPath);
@@ -130,7 +130,7 @@ export class FileWatcher extends EventEmitter {
 
     const timeout = setTimeout(() => {
       this.pendingChanges.delete(filePath);
-      this.reindexFile(filePath, repositoryId);
+      void this.reindexFile(filePath, repositoryId);
     }, this.debounceMs);
 
     this.pendingChanges.set(filePath, timeout);

@@ -22,9 +22,7 @@ export interface IndexQueueOptions {
 
 interface QueuedJob<T> {
   job: () => Promise<T>;
-  // eslint-disable-next-line no-unused-vars
   resolve: (value: T) => void;
-  // eslint-disable-next-line no-unused-vars
   reject: (error: Error) => void;
   key?: string;
 }
