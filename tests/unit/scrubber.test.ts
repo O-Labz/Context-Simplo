@@ -121,4 +121,92 @@ MIIEpAIBAAKCAQEA...
 
     expect(detected.length).toBe(0);
   });
+
+  it('should handle tightened Heroku pattern', () => {
+    // Bare UUID should not be redacted
+    const bareUUID = 'f47ac10b-58cc-4372-a567-0e02b2c3d479';
+    const { detected: detected1 } = scrubSecrets(bareUUID);
+    expect(detected1.length).toBe(0);
+
+    // UUID with heroku context should be redacted
+    const herokuKey = 'heroku_api_key=f47ac10b-58cc-4372-a567-0e02b2c3d479';
+    const { scrubbed, detected } = scrubSecrets(herokuKey);
+    expect(detected.length).toBeGreaterThan(0);
+    expect(scrubbed).toContain('[REDACTED:heroku_key]');
+  });
+
+  it('should handle tightened Cloudflare pattern', () => {
+    // Random 37-char string should not be redacted
+    const random37 = 'a'.repeat(37);
+    const { detected: detected1 } = scrubSecrets(random37);
+    expect(detected1.length).toBe(0);
+
+    // 37-char string with cloudflare context should be redacted
+    const cloudflareKey = 'cloudflare_api_key=abcdefghijklmnopqrstuvwxyz1234567890a';
+    const { scrubbed, detected } = scrubSecrets(cloudflareKey);
+    expect(detected.length).toBeGreaterThan(0);
+    // May be matched as either cloudflare_key or api_key pattern
+    expect(scrubbed).toContain('[REDACTED:');
+    expect(scrubbed).not.toContain('abcdefghijklmnopqrstuvwxyz1234567890a');
+  });
+
+  it('should respect minimum confidence threshold', () => {
+    // Low-confidence patterns (< 0.75) should be filtered out
+    const code = 'some random text that might look like a pattern';
+    const { detected } = scrubSecrets(code);
+    
+    // All detected secrets should have confidence >= 0.75
+    for (const secret of detected) {
+      expect(secret.confidence).toBeGreaterThanOrEqual(0.75);
+    }
+  });
+
+  it('should prevent over-redaction with max matches limit', () => {
+    // Create content with many potential matches
+    const manyMatches = Array(150).fill('token=abc123def456ghi789jkl012').join('\n');
+    const { detected } = scrubSecrets(manyMatches);
+    
+    // Should stop at max matches (100) per pattern
+    expect(detected.length).toBeLessThanOrEqual(100);
+  });
+
+  it('should respect confidence thresholds for comment contexts', () => {
+    // High-confidence patterns (>= 0.95) should be redacted even in comments
+    const highConfCode = `
+      // Example AWS key: AKIAIOSFODNN7EXAMPLE
+    `;
+    const { detected: detected1 } = scrubSecrets(highConfCode);
+    expect(detected1.length).toBeGreaterThan(0);
+
+    // Lower-confidence patterns should skip comments with test/example keywords
+    const lowConfCode = `
+      // Example token for testing: secret=test123456789012345678
+    `;
+    const { detected: detected2 } = scrubSecrets(lowConfCode);
+    // Should be 0 because it has both "example" and "testing" keywords
+    expect(detected2.length).toBe(0);
+  });
+
+  it('should handle GitLab tokens', () => {
+    const code = `
+      const gitlabToken = 'glpat-1234567890abcdefghij';
+    `;
+
+    const { scrubbed, detected } = scrubSecrets(code);
+
+    expect(scrubbed).toContain('[REDACTED:gitlab_token]');
+    expect(detected.length).toBe(1);
+    expect(detected[0]?.category).toBe('gitlab_token');
+  });
+
+  it('should handle NPM tokens', () => {
+    const code = `
+      const npmToken = 'npm_abcdefghijklmnopqrstuvwxyz1234567890';
+    `;
+
+    const { scrubbed, detected } = scrubSecrets(code);
+
+    expect(scrubbed).toContain('[REDACTED:npm_token]');
+    expect(detected.length).toBe(1);
+  });
 });

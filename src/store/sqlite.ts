@@ -40,6 +40,7 @@ import type {
   RepositoryInfo,
   NodeFilter,
   SearchResult,
+  CodeReference,
 } from '../core/types.js';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -77,6 +78,7 @@ export class SqliteStorageProvider implements StorageProvider {
       { version: 2, file: '002_eml.sql', description: 'Engineering Memory Layer schema' },
       { version: 3, file: '003_graph_indexes.sql', description: 'graph lookup indexes' },
       { version: 4, file: '004_embedding_status.sql', description: 'Add embedding_status for background backfill' },
+      { version: 5, file: '005_code_references.sql', description: 'Add code_references table for incremental resolution' },
     ];
 
     for (const migration of migrationFiles) {
@@ -565,6 +567,13 @@ export class SqliteStorageProvider implements StorageProvider {
     }
   }
 
+  bulkWrite(nodes: CodeNode[], edges: GraphEdge[]): void {
+    this.transaction(() => {
+      this.upsertNodes(nodes);
+      this.upsertEdges(edges);
+    });
+  }
+
   deleteEdge(id: string): void {
     this.db.prepare('DELETE FROM edges WHERE id = ?').run(id);
   }
@@ -582,10 +591,130 @@ export class SqliteStorageProvider implements StorageProvider {
       .run(repositoryId, repositoryId);
   }
 
+  saveCodeReferences(references: CodeReference[]): void {
+    if (references.length === 0) return;
+
+    const stmt = this.db.prepare(
+      `INSERT INTO code_references (id, source_file, source_node_id, target_name, reference_kind, line_number, repository_id, resolved, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+       ON CONFLICT(id) DO UPDATE SET
+       target_name = excluded.target_name,
+       reference_kind = excluded.reference_kind,
+       line_number = excluded.line_number,
+       resolved = excluded.resolved,
+       updated_at = excluded.updated_at`
+    );
+
+    for (const ref of references) {
+      stmt.run(
+        ref.id,
+        ref.sourceFile,
+        ref.sourceNodeId,
+        ref.targetName,
+        ref.referenceKind,
+        ref.lineNumber,
+        ref.repositoryId,
+        ref.resolved ? 1 : 0,
+        ref.createdAt.toISOString(),
+        ref.updatedAt.toISOString()
+      );
+    }
+  }
+
+  deleteCodeReferencesForFile(filePath: string): void {
+    this.db.prepare('DELETE FROM code_references WHERE source_file = ?').run(filePath);
+  }
+
+  getUnresolvedReferencesForTargetName(targetName: string, repositoryId: string): CodeReference[] {
+    const rows = this.db
+      .prepare(
+        `SELECT id, source_file, source_node_id, target_name, reference_kind, line_number, repository_id, resolved, created_at, updated_at
+         FROM code_references
+         WHERE target_name = ? AND repository_id = ? AND resolved = 0`
+      )
+      .all(targetName, repositoryId) as {
+        id: string;
+        source_file: string;
+        source_node_id: string;
+        target_name: string;
+        reference_kind: string;
+        line_number: number;
+        repository_id: string;
+        resolved: number;
+        created_at: string;
+        updated_at: string;
+      }[];
+
+    return rows.map((row) => ({
+      id: row.id,
+      sourceFile: row.source_file,
+      sourceNodeId: row.source_node_id,
+      targetName: row.target_name,
+      referenceKind: row.reference_kind as 'call' | 'import',
+      lineNumber: row.line_number,
+      repositoryId: row.repository_id,
+      resolved: row.resolved === 1,
+      createdAt: new Date(row.created_at),
+      updatedAt: new Date(row.updated_at),
+    }));
+  }
+
+  markReferenceResolved(id: string): void {
+    this.db
+      .prepare('UPDATE code_references SET resolved = 1, updated_at = ? WHERE id = ?')
+      .run(new Date().toISOString(), id);
+  }
+
+  getUnresolvedReferencesInRepository(repositoryId: string): CodeReference[] {
+    const rows = this.db
+      .prepare(
+        `SELECT id, source_file, source_node_id, target_name, reference_kind, line_number, repository_id, resolved, created_at, updated_at
+         FROM code_references
+         WHERE repository_id = ? AND resolved = 0`
+      )
+      .all(repositoryId) as {
+        id: string;
+        source_file: string;
+        source_node_id: string;
+        target_name: string;
+        reference_kind: string;
+        line_number: number;
+        repository_id: string;
+        resolved: number;
+        created_at: string;
+        updated_at: string;
+      }[];
+
+    return rows.map((row) => ({
+      id: row.id,
+      sourceFile: row.source_file,
+      sourceNodeId: row.source_node_id,
+      targetName: row.target_name,
+      referenceKind: row.reference_kind as 'call' | 'import',
+      lineNumber: row.line_number,
+      repositoryId: row.repository_id,
+      resolved: row.resolved === 1,
+      createdAt: new Date(row.created_at),
+      updatedAt: new Date(row.updated_at),
+    }));
+  }
+
   search(query: string, limit: number, offset: number): SearchResult[] {
-    // Escape FTS5 query to prevent query injection
-    // Wrap in double quotes to treat as a phrase and escape internal quotes
-    const escapedQuery = `"${query.replace(/"/g, '""')}"`;
+    // Sanitize FTS5 query: escape quotes and handle special FTS operators safely
+    // Allow term queries (not just phrases) while preventing injection
+    let sanitizedQuery = query.trim();
+    if (!sanitizedQuery) {
+      return [];
+    }
+    
+    // If user explicitly quotes, preserve phrase search behavior
+    const isExplicitPhrase = sanitizedQuery.startsWith('"') && sanitizedQuery.endsWith('"');
+    if (isExplicitPhrase) {
+      sanitizedQuery = `"${sanitizedQuery.slice(1, -1).replace(/"/g, '""')}"`;
+    } else {
+      // Escape quotes in term queries
+      sanitizedQuery = sanitizedQuery.replace(/"/g, '""');
+    }
     
     const rows = this.db
       .prepare(
@@ -598,7 +727,7 @@ export class SqliteStorageProvider implements StorageProvider {
          ORDER BY fts.rank
          LIMIT ? OFFSET ?`
       )
-      .all(escapedQuery, limit, offset) as any[];
+      .all(sanitizedQuery, limit, offset) as any[];
 
     return rows.map((row) => {
       // Extract parent symbol from qualified name (e.g., "AuthService.login" -> "AuthService")
@@ -677,6 +806,81 @@ export class SqliteStorageProvider implements StorageProvider {
         `UPDATE repositories SET is_watched = ?, updated_at = datetime('now') WHERE id = ?`
       )
       .run(watching ? 1 : 0, id);
+  }
+
+  countNodesByLanguage(repositoryId?: string): Record<string, number> {
+    const sql = repositoryId
+      ? 'SELECT language, COUNT(*) as count FROM nodes WHERE repository_id = ? GROUP BY language'
+      : 'SELECT language, COUNT(*) as count FROM nodes GROUP BY language';
+    
+    const rows = repositoryId
+      ? (this.db.prepare(sql).all(repositoryId) as Array<{ language: string; count: number }>)
+      : (this.db.prepare(sql).all() as Array<{ language: string; count: number }>);
+
+    const result: Record<string, number> = {};
+    for (const row of rows) {
+      result[row.language] = row.count;
+    }
+    return result;
+  }
+
+  findUnreferencedNodes(repositoryId: string | undefined, limit: number, offset: number): CodeNode[] {
+    if (repositoryId) {
+      const rows = this.db
+        .prepare(
+          `SELECT id, name, qualified_name, kind, file_path, line_start, line_end,
+           column_start, column_end, visibility, is_exported, docstring, complexity,
+           repository_id, language, created_at, updated_at
+           FROM nodes
+           WHERE repository_id = ?
+             AND (kind = 'function' OR kind = 'method' OR kind = 'class')
+             AND is_exported = 0
+             AND NOT EXISTS (
+               SELECT 1 FROM edges WHERE target_id = nodes.id
+             )
+           ORDER BY file_path, line_start
+           LIMIT ? OFFSET ?`
+        )
+        .all(repositoryId, limit, offset) as any[];
+
+      return rows.map((row) => this.mapNode(row));
+    } else {
+      // Find unreferenced nodes across all repositories
+      const rows = this.db
+        .prepare(
+          `SELECT id, name, qualified_name, kind, file_path, line_start, line_end,
+           column_start, column_end, visibility, is_exported, docstring, complexity,
+           repository_id, language, created_at, updated_at
+           FROM nodes
+           WHERE (kind = 'function' OR kind = 'method' OR kind = 'class')
+             AND is_exported = 0
+             AND NOT EXISTS (
+               SELECT 1 FROM edges WHERE target_id = nodes.id
+             )
+           ORDER BY file_path, line_start
+           LIMIT ? OFFSET ?`
+        )
+        .all(limit, offset) as any[];
+
+      return rows.map((row) => this.mapNode(row));
+    }
+  }
+
+  countUnreferencedNodes(repositoryId: string): number {
+    const row = this.db
+      .prepare(
+        `SELECT COUNT(*) as count
+         FROM nodes
+         WHERE repository_id = ?
+           AND (kind = 'function' OR kind = 'method' OR kind = 'class')
+           AND is_exported = 0
+           AND NOT EXISTS (
+             SELECT 1 FROM edges WHERE target_id = nodes.id
+           )`
+      )
+      .get(repositoryId) as { count: number };
+
+    return row.count;
   }
 
   getStats(): {

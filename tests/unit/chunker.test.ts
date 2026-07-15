@@ -37,7 +37,7 @@ describe('Code Chunker', () => {
 
     expect(chunks.length).toBe(1);
     expect(chunks[0]?.content).toContain('hello');
-    expect(chunks[0]?.symbolContext).toBe('test.ts:hello');
+    expect(chunks[0]?.symbolContext).toBe('test.ts:function:hello');
     expect(chunks[0]?.nodeId).toBe('node1');
   });
 
@@ -145,7 +145,7 @@ describe('Code Chunker', () => {
 
     const chunks = chunkCodeForEmbedding(parsed, fileContent);
 
-    expect(chunks[0]?.symbolContext).toBe('services/user.ts:UserService.create');
+    expect(chunks[0]?.symbolContext).toBe('services/user.ts:method:UserService.create');
   });
 
   it('should handle empty nodes gracefully', () => {

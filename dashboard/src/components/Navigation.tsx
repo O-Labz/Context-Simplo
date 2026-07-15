@@ -1,5 +1,6 @@
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { useState, useEffect } from 'react';
+import { authFetch, AuthService } from '../lib/auth';
 
 export default function Navigation() {
   const location = useLocation();
@@ -9,7 +10,7 @@ export default function Navigation() {
   const [currentProvider, setCurrentProvider] = useState<string>('none');
 
   useEffect(() => {
-    fetch('/api/config')
+    authFetch('/api/config')
       .then(res => res.json())
       .then(data => {
         const cfg = data.config || {};
@@ -113,6 +114,18 @@ export default function Navigation() {
                   >
                     Configure Provider
                   </Link>
+                </div>
+                <div className="px-2 py-2 border-t border-outline-variant/20">
+                  <button
+                    onClick={() => {
+                      AuthService.clearToken();
+                      setShowSettings(false);
+                    }}
+                    className="w-full px-3 py-2 text-sm text-error font-medium hover:bg-error/10 rounded-lg transition-colors flex items-center gap-2"
+                  >
+                    <span className="material-symbols-outlined text-[18px]">logout</span>
+                    Sign Out
+                  </button>
                 </div>
               </div>
             </>

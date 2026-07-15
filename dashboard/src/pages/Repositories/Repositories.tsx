@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import FolderBrowser from '../../components/FolderBrowser';
 import ToastContainer, { useToast } from '../../components/Toast';
+import { authFetch } from '../../lib/auth';
 import './Repositories.css';
 
 interface Repository {
@@ -45,7 +46,7 @@ export default function Repositories() {
   useEffect(() => {
     loadRepositories();
     loadIndexQueue();
-    fetch('/api/health')
+    authFetch('/api/health')
       .then((r) => r.json())
       .then((d) => setWorkspaceRoot(d.workspaceRoot || ''))
       .catch((err) => console.warn('Failed to load workspace info:', err));
@@ -58,7 +59,7 @@ export default function Repositories() {
 
   const loadConfig = async () => {
     try {
-      const response = await fetch('/api/config');
+      const response = await authFetch('/api/config');
       const data = await response.json();
       setAutoIndex(data.config.autoIndex || false);
       setAutoIndexLocked(data.envLocked.autoIndex || false);
@@ -69,7 +70,7 @@ export default function Repositories() {
 
   const loadRepositories = async () => {
     try {
-      const response = await fetch('/api/repositories');
+      const response = await authFetch('/api/repositories');
       const data = await response.json();
       setRepos(data.repositories || []);
     } catch (error) {
@@ -81,7 +82,7 @@ export default function Repositories() {
 
   const loadIndexQueue = async () => {
     try {
-      const response = await fetch('/api/metrics');
+      const response = await authFetch('/api/metrics');
       const data = await response.json();
       setIndexQueue(data.indexQueue || null);
     } catch (error) {
@@ -92,7 +93,7 @@ export default function Repositories() {
   const handleReindex = async (repoId: string) => {
     setBusyAction(`reindex-${repoId}`);
     try {
-      const response = await fetch(`/api/repositories/${repoId}/reindex`, {
+      const response = await authFetch(`/api/repositories/${repoId}/reindex`, {
         method: 'POST',
       });
       if (response.ok) {
@@ -113,7 +114,7 @@ export default function Repositories() {
 
     setBusyAction(`delete-${repoId}`);
     try {
-      const response = await fetch(`/api/repositories/${repoId}`, { method: 'DELETE' });
+      const response = await authFetch(`/api/repositories/${repoId}`, { method: 'DELETE' });
       if (response.ok) {
         toast('success', 'Repository deleted.');
         loadRepositories();
@@ -134,8 +135,8 @@ export default function Repositories() {
     setBusyAction(`watch-${repoId}`);
     try {
       const response = repo.isWatched
-        ? await fetch(`/api/repositories/${repoId}/watch`, { method: 'DELETE' })
-        : await fetch(`/api/repositories/${repoId}/watch`, { method: 'POST' });
+        ? await authFetch(`/api/repositories/${repoId}/watch`, { method: 'DELETE' })
+        : await authFetch(`/api/repositories/${repoId}/watch`, { method: 'POST' });
 
       if (!response.ok) {
         toast('error', 'Server returned an error while toggling file watching.');
@@ -159,7 +160,7 @@ export default function Repositories() {
 
     setTogglingAutoIndex(true);
     try {
-      const response = await fetch('/api/config', {
+      const response = await authFetch('/api/config', {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ autoIndex: !autoIndex }),
@@ -188,7 +189,7 @@ export default function Repositories() {
   const handleQuickIndexWorkspace = async () => {
     setBusyAction('quick-index');
     try {
-      const response = await fetch('/api/repositories', {
+      const response = await authFetch('/api/repositories', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ path: '/workspace', incremental: false }),
@@ -213,7 +214,7 @@ export default function Repositories() {
 
     setAdding(true);
     try {
-      const response = await fetch('/api/repositories', {
+      const response = await authFetch('/api/repositories', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ path: newRepoPath }),
@@ -241,7 +242,7 @@ export default function Repositories() {
 
     setChangingWorkspace(true);
     try {
-      const response = await fetch('/api/workspace', {
+      const response = await authFetch('/api/workspace', {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ path: newWorkspacePath }),

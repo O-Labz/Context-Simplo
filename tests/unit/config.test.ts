@@ -7,7 +7,8 @@ describe('Config', () => {
   beforeEach(() => {
     Object.keys(process.env).forEach((key) => {
       if (key.startsWith('LLM_') || key.startsWith('CONTEXT_SIMPLO_') || key.startsWith('EMBEDDING_') || 
-          key.startsWith('PARSE_') || key.startsWith('INDEX_') || key.startsWith('GRAPH_') || key.startsWith('WORKER_')) {
+          key.startsWith('PARSE_') || key.startsWith('INDEX_') || key.startsWith('GRAPH_') || 
+          key.startsWith('WORKER_') || key.startsWith('WATCH_')) {
         delete process.env[key];
       }
     });
@@ -119,18 +120,27 @@ describe('Config', () => {
       expect(config.graphMemorySoftPct.value).toBe(75);
       expect(config.graphMemoryHardPct.value).toBe(90);
       expect(config.graphMaxNodes.value).toBe(2000000);
+      expect(config.watchDrainDelayMs.value).toBe(500);
+      expect(config.watchFullReindexThreshold.value).toBe(50);
+      expect(config.watchDebounceMs.value).toBe(200);
     });
 
     it('should parse new config fields from env vars', () => {
       process.env.PARSE_WORKER_POOL_SIZE = '4';
       process.env.INDEX_MAX_CONCURRENT_JOBS = '2';
       process.env.GRAPH_HOT_CACHE_MB = '512';
+      process.env.WATCH_DRAIN_DELAY_MS = '1000';
+      process.env.WATCH_FULL_REINDEX_THRESHOLD = '100';
+      process.env.WATCH_DEBOUNCE_MS = '300';
 
       const config = loadConfig();
 
       expect(config.parseWorkerPoolSize.value).toBe(4);
       expect(config.indexMaxConcurrentJobs.value).toBe(2);
       expect(config.graphHotCacheMb.value).toBe(512);
+      expect(config.watchDrainDelayMs.value).toBe(1000);
+      expect(config.watchFullReindexThreshold.value).toBe(100);
+      expect(config.watchDebounceMs.value).toBe(300);
     });
 
     it('should validate percentage ranges', () => {

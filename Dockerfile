@@ -17,7 +17,7 @@ RUN apt-get update && apt-get install -y \
 COPY package*.json ./
 
 # Install root dependencies (HUSKY=0 skips git hook setup in Docker)
-RUN HUSKY=0 npm ci
+RUN HUSKY=0 npm ci --legacy-peer-deps
 
 # Copy source and build backend
 COPY tsconfig*.json ./
@@ -28,8 +28,12 @@ RUN npm run build
 RUN mkdir -p dist/store/migrations
 COPY src/store/migrations/*.sql dist/store/migrations/
 
+# Copy WASM grammar files for AST engine
+RUN mkdir -p dist/core/ast/grammars
+COPY src/core/ast/grammars/*.wasm dist/core/ast/grammars/
+
 # Remove devDependencies to slim down the production image
-RUN npm prune --omit=dev
+RUN npm prune --omit=dev --legacy-peer-deps
 
 # Dashboard stage — isolated to avoid esbuild version conflicts with root
 FROM node:22-slim AS dashboard-builder

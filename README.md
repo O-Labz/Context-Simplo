@@ -77,24 +77,53 @@ ollama pull nomic-embed-text
 docker run -d \
   --name context-simplo \
   --restart unless-stopped \
-  -p 3001:3001 \
-  -v "$HOME":/host:ro \
+  -p 127.0.0.1:3001:3001 \
+  -v "$HOME":/host \
   -v context-simplo-data:/data \
   -e MOUNT_ROOT=/host \
   -e INITIAL_WORKSPACE=/host \
+  -e AUTH_TOKEN="$(openssl rand -hex 32)" \
+  -e AST_ENGINE=wasm \
   -e LLM_PROVIDER=ollama \
   -e LLM_BASE_URL=http://host.docker.internal:11434 \
   -e LLM_EMBEDDING_MODEL=nomic-embed-text \
   -e GRAPH_MEMORY_LIMIT_MB=4096 \
+  -e LOG_LEVEL=info \
   ohopson/context-simplo:latest
 ```
 
 On Linux, also add `--add-host=host.docker.internal:host-gateway`.
 
+**Security note:** The server binds to `127.0.0.1` (loopback) by default outside containers for local-only access. Inside containers, it requires `AUTH_TOKEN` to be set before binding to `0.0.0.0`. The example above generates a secure random token. To expose the API over the network, bind to `0.0.0.0:3001:3001` and provide your own `AUTH_TOKEN`.
+
 Once it's up:
 
-- Dashboard: http://localhost:3001
-- Point your editor's MCP config at http://localhost:3001/mcp
+- Dashboard: http://localhost:3001 (login with your AUTH_TOKEN)
+- MCP endpoint: http://localhost:3001/mcp
+
+**MCP Configuration:**
+
+Add to your editor's MCP config (e.g., `~/.cursor/mcp.json`):
+
+```json
+{
+  "mcpServers": {
+    "context-simplo": {
+      "url": "http://localhost:3001/mcp",
+      "description": "Context-Simplo code intelligence",
+      "headers": {
+        "Authorization": "Bearer YOUR_AUTH_TOKEN_HERE"
+      }
+    }
+  }
+}
+```
+
+Replace `YOUR_AUTH_TOKEN_HERE` with the token you set in `AUTH_TOKEN`. If you used the random generator in the docker command above, retrieve it with:
+
+```bash
+docker exec context-simplo printenv AUTH_TOKEN
+```
 
 ## Embedding options
 
@@ -119,7 +148,32 @@ Control resource usage with:
   -e PARSE_WORKER_POOL_SIZE=2     # Parse workers (set 0 to disable)
   -e INDEX_MAX_CONCURRENT_JOBS=1  # Concurrent indexing jobs  
   -e GRAPH_HOT_CACHE_MB=256       # Graph cache size
+  -e WATCH_DRAIN_DELAY_MS=500     # Watch queue drain delay (milliseconds)
+  -e WATCH_FULL_REINDEX_THRESHOLD=50  # File count threshold for full reindex
+  -e WATCH_DEBOUNCE_MS=200        # File watcher debounce delay (milliseconds)
 ```
+
+**Watch queue tuning:**
+- `WATCH_DRAIN_DELAY_MS`: How long to accumulate file changes before processing (default: 500ms)
+- `WATCH_FULL_REINDEX_THRESHOLD`: If more than this many files change at once, trigger a full reindex instead of incremental (default: 50)
+- `WATCH_DEBOUNCE_MS`: Debounce delay for individual file changes (default: 200ms)
+
+### AST Engine Selection
+
+Context-Simplo v0.2.0 includes a multi-engine AST infrastructure for accurate call graphs and cyclomatic complexity across all 14 supported languages:
+
+```bash
+  -e AST_ENGINE=wasm      # Default: Web-tree-sitter WASM (recommended, zero native deps)
+  -e AST_ENGINE=native    # Opt-in: Native tree-sitter (requires compilation, faster)
+  -e AST_ENGINE=heuristic # Fallback: Regex-based (no dependencies, lower accuracy)
+  -e AST_ENGINE=auto      # Auto-select: WASM → heuristic fallback
+```
+
+**Default:** `auto` mode uses WASM by default with automatic fallback to heuristic if grammars fail to load. 
+
+**Native engine:** Opt-in only. Requires `tree-sitter@0.25.0` and native grammar packages compiled with node-gyp. Not included in the default Docker image. If native dependencies are unavailable, the system gracefully falls back to WASM or heuristic parsing without breaking startup.
+
+**Languages supported:** TypeScript, TSX, JavaScript, JSX, Python, Rust, Go, Java, C, C++, C#, Ruby, PHP, Swift, Kotlin, Dart.
 
 For container limits, use `docker run --memory=4g --cpus=4`.
 
@@ -133,3 +187,5 @@ For container limits, use `docker run --memory=4g --cpus=4`.
 ## License
 
 MIT, see [LICENSE](LICENSE).
+
+<!-- Performance test comment added at 12:47 PM to test auto-indexing speed -->

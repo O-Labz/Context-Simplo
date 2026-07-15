@@ -27,20 +27,24 @@
  * Security: Integrates with SecretScrubber before indexing.
  */
 
-import { readdir, stat } from 'fs/promises';
+import { readdir, stat, readFile } from 'fs/promises';
 import { resolve, relative, basename, dirname, join } from 'path';
 import { createHash } from 'crypto';
 import { parseFile, type ParsedFile } from './parser.js';
 import type { CodeGraphApi } from './graph.js';
 import type { StorageProvider } from '../store/provider.js';
 import type {
+  CodeNode,
   FileMetadata,
   IndexJob,
   GraphEdge,
+  CodeReference,
 } from './types.js';
+import { parseCache } from './parse-cache.js';
 import { ParseError } from './errors.js';
 import { EventEmitter } from 'events';
 import { ContextIgnore } from '../security/ignore.js';
+import { scrubSecrets } from '../security/scrubber.js';
 import type { ParsePool } from './parse-pool.js';
 
 export interface IndexerOptions {
@@ -83,6 +87,20 @@ export class Indexer extends EventEmitter {
     options: IndexerOptions = {}
   ): Promise<IndexJob> {
     const absolutePath = resolve(this.workspaceRoot, repositoryPath);
+    
+    // Validate repository path exists
+    try {
+      const stats = await stat(absolutePath);
+      if (!stats.isDirectory()) {
+        throw new Error(`Path is not a directory: ${absolutePath}`);
+      }
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
+        throw new Error(`Repository path does not exist: ${absolutePath}`);
+      }
+      // For other errors (permissions, etc.), let the indexing process handle them
+    }
+    
     const repositoryId = this.generateRepositoryId(absolutePath);
 
     let repo = this.storage.getRepositoryByPath(absolutePath);
@@ -242,19 +260,35 @@ export class Indexer extends EventEmitter {
         parsed = await parseFile(relativePath, repositoryId, this.workspaceRoot);
       }
 
-      // Remove existing nodes from file before adding new ones
       await this.graph.removeNodesInFile(relativePath);
-      
-      // Bulk persist nodes (so resolveEdges' findByName lookups see them)
-      await this.graph.bulkLoad(parsed.nodes, []);
-      
-      // Resolve edges now that nodes are persisted
-      const edges = this.resolveEdges(parsed, repositoryId);
-      
-      // Bulk persist edges (single cache invalidation)
-      await this.graph.bulkLoad([], edges);
 
-      // Track pending forward references
+      // Delete stale code_references for this file
+      this.storage.deleteCodeReferencesForFile(relativePath);
+
+      // Scrub secrets from docstrings before persisting
+      for (const node of parsed.nodes) {
+        if (node.docstring) {
+          const { scrubbed } = scrubSecrets(node.docstring);
+          node.docstring = scrubbed;
+        }
+      }
+
+      this.storage.bulkWrite(parsed.nodes, []);
+
+      // Add nodes to graph for in-memory queries
+      await this.graph.bulkLoad(parsed.nodes, []);
+
+      // Build and persist code_references for later resolution
+      const referenceRows = this.buildReferenceRows(
+        parsed.calls,
+        relativePath,
+        repositoryId
+      );
+      if (referenceRows.length > 0) {
+        this.storage.saveCodeReferences(referenceRows);
+      }
+
+      // Store references for later resolution (after all files are indexed)
       this.pendingReferences.push({
         calls: parsed.calls,
         imports: parsed.imports,
@@ -263,26 +297,46 @@ export class Indexer extends EventEmitter {
         filePath: parsed.filePath,
       });
 
-      // Update file metadata in a transaction
+      fileMetadata.hash = parsed.hash;
+      fileMetadata.language = parsed.language;
+      fileMetadata.nodeCount = parsed.nodes.length;
+      fileMetadata.status = 'indexed';
+      fileMetadata.lastError = undefined;
+      fileMetadata.indexedAt = new Date();
+      fileMetadata.updatedAt = new Date();
+      fileMetadata.embeddingStatus = 'pending';
+
       this.storage.transaction(() => {
-        fileMetadata.hash = parsed.hash;
-        fileMetadata.language = parsed.language;
-        fileMetadata.nodeCount = parsed.nodes.length;
-        fileMetadata.status = 'indexed';
-        fileMetadata.lastError = undefined;
-        fileMetadata.indexedAt = new Date();
-        fileMetadata.updatedAt = new Date();
-        fileMetadata.embeddingStatus = 'pending';
         this.storage.upsertFile(fileMetadata);
       });
 
-    this.emit('file:complete', relativePath, parsed.nodes.length);
+      // Populate parse cache for embedding backfill reuse
+      try {
+        const fileContent = await readFile(filePath, 'utf-8');
+        parseCache.set(relativePath, fileContent, parsed);
+      } catch (error) {
+        // Non-fatal: cache population is best-effort
+        console.warn(`[index.cache.skip] ${relativePath}:`, (error as Error).message);
+      }
+
+      console.info('[index.file.persisted]', {
+        path: relativePath,
+        nodeCount: parsed.nodes.length,
+        edgeCount: 0, // Edges will be created in forward resolution pass
+      });
+
+      this.emit('file:complete', relativePath, parsed.nodes.length);
     } catch (error) {
       fileMetadata.status = 'error';
       fileMetadata.lastError = (error as Error).message;
       fileMetadata.retryCount++;
       fileMetadata.updatedAt = new Date();
       this.storage.upsertFile(fileMetadata);
+
+      console.warn('[index.file.error]', {
+        path: relativePath,
+        error: (error as Error).message,
+      });
 
       throw new ParseError(relativePath, (error as Error).message, error as Error);
     }
@@ -308,56 +362,94 @@ export class Indexer extends EventEmitter {
     let created = 0;
     const now = new Date();
     const newEdges: GraphEdge[] = [];
+    
+    // Build set of existing edge IDs to avoid duplicates
+    const existingEdgeIds = new Set(this.graph.getAllEdges().map(e => e.id));
 
     for (const ref of this.pendingReferences) {
       if (ref.repositoryId !== repositoryId) continue;
 
+      // Get nodes for this file to build same-file scope
+      const nodesInFile = this.graph.getNodesInFile(ref.filePath);
+      const sameFileNodes = new Map<string, CodeNode>();
+      for (const node of nodesInFile) {
+        sameFileNodes.set(node.name, node);
+      }
+
+      // Build import map for this file
+      const importMap = new Map<string, string>();
+      for (const imp of ref.imports) {
+        for (const importedName of imp.imported) {
+          importMap.set(importedName, imp.source);
+        }
+      }
+
+      // Resolve calls with scope-aware lookup
       for (const call of ref.calls) {
-        const targets = this.graph.findByName(call.calleeName);
-        for (const target of targets) {
-          if (target.repositoryId !== repositoryId) continue;
-          if (!this.graph.getNode(call.callerNodeId)) continue;
-          
+        if (!this.graph.getNode(call.callerNodeId)) continue;
+
+        const resolved = this.resolveName(
+          call.calleeName,
+          ref.filePath,
+          repositoryId,
+          sameFileNodes,
+          importMap
+        );
+
+        for (const { target, confidence } of resolved) {
           const edgeId = this.generateEdgeId(call.callerNodeId, target.id, 'calls');
-          const edge: GraphEdge = {
+          if (existingEdgeIds.has(edgeId)) continue; // Skip if already exists
+          existingEdgeIds.add(edgeId);
+
+          newEdges.push({
             id: edgeId,
             sourceId: call.callerNodeId,
             targetId: target.id,
             kind: 'calls',
-            confidence: 0.9,
+            confidence,
             repositoryId,
             createdAt: now,
             updatedAt: now,
-          };
-          newEdges.push(edge);
+          });
           created++;
         }
       }
 
+      // Resolve inheritance
       for (const inh of ref.inheritance) {
-        const parents = this.graph.findByName(inh.parentName);
-        for (const parent of parents) {
-          if (parent.repositoryId !== repositoryId) continue;
-          if (!this.graph.getNode(inh.childNodeId)) continue;
-          
-          const edgeId = this.generateEdgeId(inh.childNodeId, parent.id, inh.kind);
-          const edge: GraphEdge = {
+        if (!this.graph.getNode(inh.childNodeId)) continue;
+
+        const resolved = this.resolveName(
+          inh.parentName,
+          ref.filePath,
+          repositoryId,
+          sameFileNodes,
+          importMap
+        );
+
+        for (const { target, confidence } of resolved) {
+          const edgeId = this.generateEdgeId(inh.childNodeId, target.id, inh.kind);
+          if (existingEdgeIds.has(edgeId)) continue;
+          existingEdgeIds.add(edgeId);
+
+          newEdges.push({
             id: edgeId,
             sourceId: inh.childNodeId,
-            targetId: parent.id,
+            targetId: target.id,
             kind: inh.kind,
-            confidence: 1.0,
+            confidence,
             repositoryId,
             createdAt: now,
             updatedAt: now,
-          };
-          newEdges.push(edge);
+          });
           created++;
         }
       }
 
+      // Resolve import edges
       for (const imp of ref.imports) {
         if (!imp.source || !imp.source.startsWith('.')) continue;
+
         const importDir = dirname(ref.filePath);
         const resolvedBase = join(importDir, imp.source).replace(/\\/g, '/');
         const extensions = ['', '.ts', '.tsx', '.js', '.jsx', '/index.ts', '/index.tsx', '/index.js'];
@@ -375,14 +467,16 @@ export class Indexer extends EventEmitter {
             });
             if (!matchesPath) continue;
 
-            const nodesInFile = this.graph.getNodesInFile(ref.filePath);
             const sourceNode = nodesInFile.find(n =>
               n.kind === 'function' || n.kind === 'class' || n.kind === 'method'
             ) || nodesInFile[0];
             if (!sourceNode) continue;
 
             const edgeId = this.generateEdgeId(sourceNode.id, target.id, 'imports');
-            const edge: GraphEdge = {
+            if (existingEdgeIds.has(edgeId)) continue;
+            existingEdgeIds.add(edgeId);
+
+            newEdges.push({
               id: edgeId,
               sourceId: sourceNode.id,
               targetId: target.id,
@@ -391,8 +485,7 @@ export class Indexer extends EventEmitter {
               repositoryId,
               createdAt: now,
               updatedAt: now,
-            };
-            newEdges.push(edge);
+            });
             created++;
           }
         }
@@ -401,6 +494,7 @@ export class Indexer extends EventEmitter {
 
     if (newEdges.length > 0) {
       this.storage.upsertEdges(newEdges);
+      await this.graph.bulkLoad([], newEdges);
     }
 
     return created;
@@ -502,95 +596,245 @@ export class Indexer extends EventEmitter {
     return createHash('sha256').update(content).digest('hex');
   }
 
-  private resolveEdges(
-    parsed: Awaited<ReturnType<typeof parseFile>>,
+  /**
+   * Build code_references rows from parsed calls
+   */
+  private buildReferenceRows(
+    calls: Array<{ callerNodeId: string; calleeName: string; lineNumber?: number }>,
+    filePath: string,
     repositoryId: string
-  ): GraphEdge[] {
-    const edges: GraphEdge[] = [];
+  ): CodeReference[] {
     const now = new Date();
+    const references: CodeReference[] = [];
 
-    for (const call of parsed.calls) {
-      const targetNodes = this.graph.findByName(call.calleeName);
-      for (const target of targetNodes) {
-        if (target.repositoryId === repositoryId) {
-          edges.push({
-            id: this.generateEdgeId(call.callerNodeId, target.id, 'calls'),
-            sourceId: call.callerNodeId,
+    // Build references for calls only (imports are handled differently in the current system)
+    for (const call of calls) {
+      const refId = createHash('sha256')
+        .update(`${call.callerNodeId}:${call.calleeName}:call`)
+        .digest('hex')
+        .substring(0, 16);
+      
+      references.push({
+        id: refId,
+        sourceFile: filePath,
+        sourceNodeId: call.callerNodeId,
+        targetName: call.calleeName,
+        referenceKind: 'call',
+        lineNumber: call.lineNumber || 1,
+        repositoryId,
+        resolved: false,
+        createdAt: now,
+        updatedAt: now,
+      });
+    }
+
+    return references;
+  }
+
+  /**
+   * Resolve references for specific files (incremental resolution)
+   * Resolves both outbound (from these files) and inbound (to nodes in these files) edges
+   */
+  async resolveReferencesForFiles(filePaths: string[], repositoryId: string): Promise<number> {
+    let created = 0;
+    const now = new Date();
+    const newEdges: GraphEdge[] = [];
+
+    // Build set of existing edge IDs ONCE to avoid duplicates
+    const existingEdgeIds = new Set(this.graph.getAllEdges().map(e => e.id));
+
+    // Get all nodes in the affected files
+    const affectedNodeNames = new Set<string>();
+    for (const filePath of filePaths) {
+      const nodesInFile = this.graph.getNodesInFile(filePath);
+      for (const node of nodesInFile) {
+        affectedNodeNames.add(node.name);
+      }
+    }
+
+    // 1. Resolve outbound references FROM these files
+    for (const filePath of filePaths) {
+      // Get unresolved references for this file
+      const refs = this.storage.getUnresolvedReferencesInRepository(repositoryId)
+        .filter(ref => ref.sourceFile === filePath);
+
+      // Build scope for this file
+      const nodesInFile = this.graph.getNodesInFile(filePath);
+      const sameFileNodes = new Map<string, CodeNode>();
+      for (const node of nodesInFile) {
+        sameFileNodes.set(node.name, node);
+      }
+
+      // Build import map for this file (from pendingReferences if available)
+      const importMap = new Map<string, string>();
+      const pendingRef = this.pendingReferences.find(r => r.filePath === filePath);
+      if (pendingRef) {
+        for (const imp of pendingRef.imports) {
+          for (const importedName of imp.imported) {
+            importMap.set(importedName, imp.source);
+          }
+        }
+      }
+
+      // Resolve each reference
+      for (const ref of refs) {
+        if (ref.referenceKind === 'call') {
+          const resolved = this.resolveName(
+            ref.targetName,
+            filePath,
+            repositoryId,
+            sameFileNodes,
+            importMap
+          );
+
+          for (const { target, confidence } of resolved) {
+            const edgeId = this.generateEdgeId(ref.sourceNodeId, target.id, 'calls');
+            if (existingEdgeIds.has(edgeId)) continue;
+            existingEdgeIds.add(edgeId);
+
+            newEdges.push({
+              id: edgeId,
+              sourceId: ref.sourceNodeId,
+              targetId: target.id,
+              kind: 'calls',
+              confidence,
+              repositoryId,
+              createdAt: now,
+              updatedAt: now,
+            });
+
+            // Mark reference as resolved
+            this.storage.markReferenceResolved(ref.id);
+            created++;
+          }
+        }
+      }
+    }
+
+    // 2. Resolve inbound references TO nodes in these files
+    for (const nodeName of affectedNodeNames) {
+      // Find all unresolved references to this node
+      const inboundRefs = this.storage.getUnresolvedReferencesForTargetName(nodeName, repositoryId);
+
+      for (const ref of inboundRefs) {
+        // Build scope for the source file
+        const sourceNodesInFile = this.graph.getNodesInFile(ref.sourceFile);
+        const sameFileNodes = new Map<string, CodeNode>();
+        for (const node of sourceNodesInFile) {
+          sameFileNodes.set(node.name, node);
+        }
+
+        // Build import map for source file
+        const importMap = new Map<string, string>();
+        const pendingRef = this.pendingReferences.find(r => r.filePath === ref.sourceFile);
+        if (pendingRef) {
+          for (const imp of pendingRef.imports) {
+            for (const importedName of imp.imported) {
+              importMap.set(importedName, imp.source);
+            }
+          }
+        }
+
+        // Resolve the reference
+        const resolved = this.resolveName(
+          ref.targetName,
+          ref.sourceFile,
+          repositoryId,
+          sameFileNodes,
+          importMap
+        );
+
+        for (const { target, confidence } of resolved) {
+          const edgeId = this.generateEdgeId(ref.sourceNodeId, target.id, 'calls');
+          if (existingEdgeIds.has(edgeId)) continue;
+          existingEdgeIds.add(edgeId);
+
+          newEdges.push({
+            id: edgeId,
+            sourceId: ref.sourceNodeId,
             targetId: target.id,
             kind: 'calls',
-            confidence: 0.9,
+            confidence,
             repositoryId,
             createdAt: now,
             updatedAt: now,
           });
+
+          // Mark reference as resolved
+          this.storage.markReferenceResolved(ref.id);
+          created++;
         }
       }
     }
 
-    for (const inheritance of parsed.inheritance) {
-      const parentNodes = this.graph.findByName(inheritance.parentName);
-      for (const parent of parentNodes) {
-        if (parent.repositoryId === repositoryId) {
-          edges.push({
-            id: this.generateEdgeId(
-              inheritance.childNodeId,
-              parent.id,
-              inheritance.kind
-            ),
-            sourceId: inheritance.childNodeId,
-            targetId: parent.id,
-            kind: inheritance.kind,
-            confidence: 1.0,
-            repositoryId,
-            createdAt: now,
-            updatedAt: now,
-          });
-        }
-      }
+    // Persist all new edges
+    if (newEdges.length > 0) {
+      this.storage.upsertEdges(newEdges);
+      await this.graph.bulkLoad([], newEdges);
     }
 
-    for (const imp of parsed.imports) {
-      if (!imp.source || !imp.source.startsWith('.')) continue;
+    return created;
+  }
 
-      const importDir = dirname(parsed.filePath);
-      const resolvedBase = join(importDir, imp.source).replace(/\\/g, '/');
+  /**
+   * Resolve a symbol name using scope-aware lookup:
+   * 1. Same-file symbols (high confidence)
+   * 2. Imported symbols from the import table (high confidence)
+   * 3. Global repo-wide search (low confidence)
+   */
+  private resolveName(
+    name: string,
+    sourceFilePath: string,
+    repositoryId: string,
+    sameFileNodes: Map<string, CodeNode>,
+    importMap: Map<string, string>
+  ): Array<{ target: CodeNode; confidence: number }> {
+    const results: Array<{ target: CodeNode; confidence: number }> = [];
+
+    // 1. Check same-file scope first (highest confidence)
+    const sameFileNode = sameFileNodes.get(name);
+    if (sameFileNode) {
+      return [{ target: sameFileNode, confidence: 0.95 }];
+    }
+
+    // 2. Check if name is in import table
+    const importSource = importMap.get(name);
+    if (importSource && importSource.startsWith('.')) {
+      // Resolve the import path
+      const importDir = dirname(sourceFilePath);
+      const resolvedBase = join(importDir, importSource).replace(/\\/g, '/');
       const extensions = ['', '.ts', '.tsx', '.js', '.jsx', '/index.ts', '/index.tsx', '/index.js'];
 
-      for (const importedName of imp.imported) {
-        const targetNodes = this.graph.findByName(importedName);
-        for (const target of targetNodes) {
-          if (target.repositoryId !== repositoryId) continue;
-          if (target.filePath === parsed.filePath) continue;
+      const candidates = this.graph.findByName(name);
+      for (const candidate of candidates) {
+        if (candidate.repositoryId !== repositoryId) continue;
+        if (candidate.filePath === sourceFilePath) continue;
 
-          const targetFileBase = target.filePath.replace(/\.(ts|tsx|js|jsx)$/, '').replace(/\/index$/, '');
-          const matchesPath = extensions.some(ext => {
-            const candidate = resolvedBase + ext;
-            return target.filePath === candidate || targetFileBase === resolvedBase;
-          });
+        const targetFileBase = candidate.filePath.replace(/\.(ts|tsx|js|jsx)$/, '').replace(/\/index$/, '');
+        const matchesPath = extensions.some(ext => {
+          const candidatePath = resolvedBase + ext;
+          return candidate.filePath === candidatePath || targetFileBase === resolvedBase;
+        });
 
-          if (!matchesPath) continue;
-
-          const sourceNode = parsed.nodes.find(n =>
-            n.kind === 'function' || n.kind === 'class' || n.kind === 'method'
-          ) || parsed.nodes[0];
-
-          if (!sourceNode) continue;
-
-          edges.push({
-            id: this.generateEdgeId(sourceNode.id, target.id, 'imports'),
-            sourceId: sourceNode.id,
-            targetId: target.id,
-            kind: 'imports',
-            confidence: 1.0,
-            repositoryId,
-            createdAt: now,
-            updatedAt: now,
-          });
+        if (matchesPath) {
+          results.push({ target: candidate, confidence: 0.9 });
         }
+      }
+
+      if (results.length > 0) {
+        return results;
       }
     }
 
-    return edges;
+    // 3. Fall back to global search (low confidence)
+    const globalMatches = this.graph.findByName(name);
+    for (const match of globalMatches) {
+      if (match.repositoryId === repositoryId) {
+        results.push({ target: match, confidence: 0.6 });
+      }
+    }
+
+    return results;
   }
 
   private generateRepositoryId(path: string): string {

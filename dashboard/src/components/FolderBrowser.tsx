@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
+import { authFetch } from '../lib/auth';
 
 interface DirEntry {
   name: string;
@@ -33,7 +34,7 @@ export default function FolderBrowser({ onSelect, selected, rootLabel, scope = '
     setError(null);
     try {
       const scopeParam = scope === 'mount' ? '&scope=mount' : '';
-      const res = await fetch(`/api/browse?path=${encodeURIComponent(dirPath)}${scopeParam}`);
+      const res = await authFetch(`/api/browse?path=${encodeURIComponent(dirPath)}${scopeParam}`);
       if (!res.ok) {
         const err = await res.json();
         throw new Error(err.error || 'Failed to browse');
@@ -51,7 +52,7 @@ export default function FolderBrowser({ onSelect, selected, rootLabel, scope = '
     } finally {
       setLoading(false);
     }
-  }, [scope]);
+  }, [scope, resolvedRootName]);
 
   useEffect(() => {
     loadDirectory('/');

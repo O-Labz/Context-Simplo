@@ -93,20 +93,30 @@ export async function registerRepositoryRoutes(
       });
     }
 
+    // Canonicalize and validate path FIRST (security: prevent information leakage)
+    let absolutePath: string;
+    try {
+      absolutePath = path.resolve(options.workspaceRoot, input.path);
+
+      if (!isSubpath(options.workspaceRoot, absolutePath)) {
+        return reply.status(400).send({
+          error: 'Path traversal detected',
+          message: 'Repository path must be within workspace root',
+        });
+      }
+    } catch (pathError) {
+      // Path validation failed - treat as traversal attempt
+      return reply.status(400).send({
+        error: 'Path traversal detected',
+        message: 'Invalid repository path',
+      });
+    }
+
+    // Check if indexer is available
     if (!options.indexer) {
       return reply.status(500).send({
         error: 'Indexer not available',
         message: 'Indexer module not initialized',
-      });
-    }
-
-    // Canonicalize and validate path
-    const absolutePath = path.resolve(options.workspaceRoot, input.path);
-
-    if (!isSubpath(options.workspaceRoot, absolutePath)) {
-      return reply.status(400).send({
-        error: 'Path traversal detected',
-        message: 'Repository path must be within workspace root',
       });
     }
 
@@ -125,7 +135,7 @@ export async function registerRepositoryRoutes(
             incremental: input.incremental,
             respectIgnore: true,
           })
-        ) ?? options.indexer.indexRepository(absolutePath, {
+        , absolutePath) ?? options.indexer.indexRepository(absolutePath, {
           incremental: input.incremental,
           respectIgnore: true,
         });
@@ -306,7 +316,7 @@ export async function registerRepositoryRoutes(
               incremental: false,
               respectIgnore: true,
             })
-          ) ?? options.indexer.indexRepository(repo.path, {
+          , repo.path) ?? options.indexer.indexRepository(repo.path, {
             incremental: false,
             respectIgnore: true,
           });

@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { authFetch } from '../../lib/auth';
 
 interface Repository {
   id: string;
@@ -22,7 +23,7 @@ export function RepoSelector({
   const [disabled, setDisabled] = useState(false);
 
   useEffect(() => {
-    fetch('/api/repositories')
+    authFetch('/api/repositories')
       .then((r) => r.json())
       .then((data) => {
         const list: Repository[] = (data.repositories || data || []).map((r: Repository) => ({
@@ -36,7 +37,7 @@ export function RepoSelector({
   }, []);
 
   useEffect(() => {
-    fetch('/api/eml/health')
+    authFetch('/api/eml/health')
       .then(async (r) => {
         if (r.status === 503) {
           setDisabled(true);

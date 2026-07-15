@@ -80,6 +80,25 @@ export const GraphEdgeSchema = z.object({
 
 export type GraphEdge = z.infer<typeof GraphEdgeSchema>;
 
+export const ReferenceKindSchema = z.enum(['call', 'import']);
+
+export type ReferenceKind = z.infer<typeof ReferenceKindSchema>;
+
+export const CodeReferenceSchema = z.object({
+  id: z.string(),
+  sourceFile: z.string(),
+  sourceNodeId: z.string(),
+  targetName: z.string(),
+  referenceKind: ReferenceKindSchema,
+  lineNumber: z.number().int().positive(),
+  repositoryId: z.string(),
+  resolved: z.boolean(),
+  createdAt: z.date(),
+  updatedAt: z.date(),
+});
+
+export type CodeReference = z.infer<typeof CodeReferenceSchema>;
+
 export const FileMetadataSchema = z.object({
   path: z.string(),
   repositoryId: z.string(),
@@ -375,6 +394,31 @@ export const AppConfigSchema = z.object({
     isLocked: z.boolean(),
   }),
   graphMaxNodes: z.object({
+    value: z.number().int().positive(),
+    source: ConfigSourceSchema,
+    isLocked: z.boolean(),
+  }),
+  authToken: z.object({
+    value: z.string().optional(),
+    source: ConfigSourceSchema,
+    isLocked: z.boolean(),
+  }),
+  serverBindHost: z.object({
+    value: z.string().optional(),
+    source: ConfigSourceSchema,
+    isLocked: z.boolean(),
+  }),
+  watchDrainDelayMs: z.object({
+    value: z.number().int().positive(),
+    source: ConfigSourceSchema,
+    isLocked: z.boolean(),
+  }),
+  watchFullReindexThreshold: z.object({
+    value: z.number().int().positive(),
+    source: ConfigSourceSchema,
+    isLocked: z.boolean(),
+  }),
+  watchDebounceMs: z.object({
     value: z.number().int().positive(),
     source: ConfigSourceSchema,
     isLocked: z.boolean(),

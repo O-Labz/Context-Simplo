@@ -15,6 +15,7 @@ import type {
   RepositoryInfo,
   NodeFilter,
   SearchResult,
+  CodeReference,
 } from '../core/types.js';
 
 export interface StorageProvider {
@@ -42,6 +43,9 @@ export interface StorageProvider {
   getNodesInFile(filePath: string): CodeNode[];
   getNodesByName(name: string, filter?: NodeFilter): CodeNode[];
   countNodes(filter?: NodeFilter): number;
+  countNodesByLanguage(repositoryId?: string): Record<string, number>;
+  findUnreferencedNodes(repositoryId: string | undefined, limit: number, offset: number): CodeNode[];
+  countUnreferencedNodes(repositoryId: string): number;
   upsertNodes(nodes: CodeNode[]): void;
   deleteNode(id: string): void;
   deleteNodesInFile(filePath: string): void;
@@ -53,6 +57,14 @@ export interface StorageProvider {
   deleteEdge(id: string): void;
   deleteEdgesForNode(nodeId: string): void;
   deleteEdgesInRepository(repositoryId: string): void;
+
+  saveCodeReferences(references: CodeReference[]): void;
+  deleteCodeReferencesForFile(filePath: string): void;
+  getUnresolvedReferencesForTargetName(targetName: string, repositoryId: string): CodeReference[];
+  markReferenceResolved(id: string): void;
+  getUnresolvedReferencesInRepository(repositoryId: string): CodeReference[];
+
+  bulkWrite(nodes: CodeNode[], edges: GraphEdge[]): void;
 
   search(query: string, limit: number, offset: number): SearchResult[];
 

@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { authFetch } from '../../lib/auth';
 import './Search.css';
 
 interface SearchResult {
@@ -44,7 +45,7 @@ export default function Search() {
 
   const loadRepositories = async () => {
     try {
-      const response = await fetch('/api/repositories');
+      const response = await authFetch('/api/repositories');
       const data = await response.json();
       const repos = data.repositories || [];
       setRepositories(repos);
@@ -58,7 +59,7 @@ export default function Search() {
 
   const checkLlmConfig = async () => {
     try {
-      const testResponse = await fetch('/api/search', {
+      const testResponse = await authFetch('/api/search', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ query: 'test', mode: 'semantic', limit: 1 }),
@@ -82,7 +83,7 @@ export default function Search() {
         body.repositoryId = selectedRepoId;
       }
 
-      const response = await fetch('/api/search', {
+      const response = await authFetch('/api/search', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(body),

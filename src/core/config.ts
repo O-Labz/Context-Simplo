@@ -69,6 +69,11 @@ const DEFAULT_CONFIG = {
   graphMemorySoftPct: 75,
   graphMemoryHardPct: 90,
   graphMaxNodes: 2000000,
+  authToken: undefined as string | undefined,
+  serverBindHost: undefined as string | undefined,
+  watchDrainDelayMs: 500,
+  watchFullReindexThreshold: 50,
+  watchDebounceMs: 200,
 } as const;
 
 const ENV_VAR_MAP = {
@@ -102,6 +107,11 @@ const ENV_VAR_MAP = {
   graphMemorySoftPct: 'GRAPH_MEMORY_SOFT_PCT',
   graphMemoryHardPct: 'GRAPH_MEMORY_HARD_PCT',
   graphMaxNodes: 'GRAPH_MAX_NODES',
+  authToken: 'AUTH_TOKEN',
+  serverBindHost: 'HOST',
+  watchDrainDelayMs: 'WATCH_DRAIN_DELAY_MS',
+  watchFullReindexThreshold: 'WATCH_FULL_REINDEX_THRESHOLD',
+  watchDebounceMs: 'WATCH_DEBOUNCE_MS',
 } as const;
 
 const EML_EXTRACTION_MODES: readonly EmlExtractionMode[] = ['llm', 'fallback', 'off'];
@@ -498,6 +508,46 @@ export function loadConfig(dashboardConfig?: DashboardConfig): AppConfig {
     DEFAULT_CONFIG.graphMaxNodes
   );
 
+  const envAuthToken = process.env.AUTH_TOKEN;
+  const authToken = createConfigValue(
+    'authToken',
+    envAuthToken,
+    undefined,
+    DEFAULT_CONFIG.authToken
+  );
+
+  const envServerBindHost = process.env.HOST;
+  const serverBindHost = createConfigValue(
+    'serverBindHost',
+    envServerBindHost,
+    undefined,
+    DEFAULT_CONFIG.serverBindHost
+  );
+
+  const envWatchDrainDelayMs = parseEnvValue('watchDrainDelayMs', process.env.WATCH_DRAIN_DELAY_MS) as number | undefined;
+  const watchDrainDelayMs = createConfigValue(
+    'watchDrainDelayMs',
+    envWatchDrainDelayMs,
+    undefined,
+    DEFAULT_CONFIG.watchDrainDelayMs
+  );
+
+  const envWatchFullReindexThreshold = parseEnvValue('watchFullReindexThreshold', process.env.WATCH_FULL_REINDEX_THRESHOLD) as number | undefined;
+  const watchFullReindexThreshold = createConfigValue(
+    'watchFullReindexThreshold',
+    envWatchFullReindexThreshold,
+    undefined,
+    DEFAULT_CONFIG.watchFullReindexThreshold
+  );
+
+  const envWatchDebounceMs = parseEnvValue('watchDebounceMs', process.env.WATCH_DEBOUNCE_MS) as number | undefined;
+  const watchDebounceMs = createConfigValue(
+    'watchDebounceMs',
+    envWatchDebounceMs,
+    undefined,
+    DEFAULT_CONFIG.watchDebounceMs
+  );
+
   if (llmProvider.value === 'openai' && !llmApiKey.value) {
     throw new ConfigError(
       'llmApiKey',
@@ -543,6 +593,11 @@ export function loadConfig(dashboardConfig?: DashboardConfig): AppConfig {
     graphMemorySoftPct,
     graphMemoryHardPct,
     graphMaxNodes,
+    authToken,
+    serverBindHost,
+    watchDrainDelayMs,
+    watchFullReindexThreshold,
+    watchDebounceMs,
   };
 }
 
