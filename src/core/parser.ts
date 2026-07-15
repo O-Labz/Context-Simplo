@@ -260,7 +260,7 @@ export async function parseFile(
 
     // Compute complexity for functions/methods from AST result
     let complexity: number | undefined;
-    if ((nodeKind === 'function' || nodeKind === 'method') && astResult && startLine > 0 && endLine > 0) {
+    if ((nodeKind === 'function' || nodeKind === 'method') && astResult && startLine >= 0 && endLine >= startLine) {
       const bodyText = getLineRange(content, startLine, endLine);
       const bodyComplexity = computeComplexityForBody(bodyText, language);
       if (bodyComplexity > 0) {
@@ -348,7 +348,7 @@ export async function parseFile(
     }
 
     // Extract function calls from function/method bodies using AST engine
-    if ((nodeKind === 'function' || nodeKind === 'method') && astResult && startLine > 0 && endLine > 0 && (endLine - startLine) < 500) {
+    if ((nodeKind === 'function' || nodeKind === 'method') && astResult && startLine >= 0 && endLine >= startLine && (endLine - startLine) < 500) {
       const bodyCalls = astResult.calls.filter(
         call => call.callerLine >= startLine && call.callerLine <= endLine
       );

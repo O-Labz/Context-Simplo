@@ -7,24 +7,31 @@ import type { AstEngine, AstResult } from './engine.js';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 
-// Lazy-init Parser singleton
+// Lazy-init classes
 let ParserClass: any = null;
+let LanguageClass: any = null;
 let initPromise: Promise<void> | null = null;
 
 async function initParser(): Promise<void> {
-  if (ParserClass) return;
+  if (ParserClass && LanguageClass) return;
   if (initPromise) return initPromise;
 
   initPromise = (async () => {
-    const { Parser } = await import('web-tree-sitter');
+    const TreeSitter = await import('web-tree-sitter');
+    const Parser = TreeSitter.Parser;
+    const Language = TreeSitter.Language;
     
     if (!Parser || typeof Parser !== 'function') {
       throw new Error('Failed to load web-tree-sitter Parser');
     }
     
+    if (!Language || typeof Language !== 'function') {
+      throw new Error('Failed to load web-tree-sitter Language');
+    }
+    
     // Initialize the parser with the WASM binary
     const __dirname = dirname(fileURLToPath(import.meta.url));
-    const wasmPath = join(__dirname, '../../../node_modules/web-tree-sitter/tree-sitter.wasm');
+    const wasmPath = join(__dirname, '../../../node_modules/web-tree-sitter/web-tree-sitter.wasm');
     
     try {
       await Parser.init({
@@ -37,8 +44,9 @@ async function initParser(): Promise<void> {
       throw error;
     }
     
-    // Set ParserClass after successful init
+    // Set classes after successful init
     ParserClass = Parser;
+    LanguageClass = Language;
   })();
 
   return initPromise;
@@ -103,25 +111,27 @@ async function loadLanguage(language: string): Promise<LanguageCache | null> {
 
   try {
     await initParser();
-    if (!ParserClass) return null;
+    if (!LanguageClass) return null;
 
     const __dirname = dirname(fileURLToPath(import.meta.url));
     const grammarPath = join(__dirname, 'grammars', `${grammarName}.wasm`);
 
-    const Language = await ParserClass.Language.load(grammarPath);
+    const languageInstance = await LanguageClass.load(grammarPath);
     
     // Load query if available
     let query: any | undefined;
     const queryString = CALL_QUERIES[language];
     if (queryString) {
       try {
-        query = Language.query(queryString);
+        query = languageInstance.query(queryString);
       } catch (error) {
+        // Query loading can fail for some grammars, that's OK
+        // We'll still be able to parse and compute complexity
         console.warn(`Failed to load query for ${language}:`, error);
       }
     }
 
-    const cache: LanguageCache = { language: Language, query };
+    const cache: LanguageCache = { language: languageInstance, query };
     languageCache.set(language, cache);
     return cache;
   } catch (error) {
@@ -134,11 +144,11 @@ async function loadLanguage(language: string): Promise<LanguageCache | null> {
  * Count AST node types to estimate complexity.
  * Higher node count = more complex code structure.
  */
-function computeComplexityFromTree(tree: import('web-tree-sitter').Tree): number {
+function computeComplexityFromTree(tree: any): number {
   const root = tree.rootNode;
   let nodeCount = 0;
 
-  function traverse(node: import('web-tree-sitter').SyntaxNode): void {
+  function traverse(node: any): void {
     nodeCount++;
     for (let i = 0; i < node.childCount; i++) {
       const child = node.child(i);
@@ -156,8 +166,8 @@ function computeComplexityFromTree(tree: import('web-tree-sitter').Tree): number
  * Extract function/method call names from query captures.
  */
 function extractCallsFromQuery(
-  tree: import('web-tree-sitter').Tree,
-  query: import('web-tree-sitter').Query,
+  tree: any,
+  query: any,
   source: string
 ): Array<{ callerLine: number; calleeName: string }> {
   const calls: Array<{ callerLine: number; calleeName: string }> = [];
@@ -192,12 +202,12 @@ export class WasmEngine implements AstEngine {
     // Return null if not yet initialized (will fall back to heuristic)
     // Proper async initialization should happen before first parse
     const cache = languageCache.get(language);
-    if (!cache || !Parser) {
+    if (!cache || !ParserClass) {
       return null;
     }
 
     try {
-      const parserInstance = new Parser();
+      const parserInstance = new ParserClass();
       parserInstance.setLanguage(cache.language);
 
       const tree = parserInstance.parse(source);
