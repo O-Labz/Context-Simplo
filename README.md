@@ -98,8 +98,32 @@ On Linux, also add `--add-host=host.docker.internal:host-gateway`.
 
 Once it's up:
 
-- Dashboard: http://localhost:3001
-- Point your editor's MCP config at http://localhost:3001/mcp (include `Authorization: Bearer <token>` header if AUTH_TOKEN is set)
+- Dashboard: http://localhost:3001 (login with your AUTH_TOKEN)
+- MCP endpoint: http://localhost:3001/mcp
+
+**MCP Configuration:**
+
+Add to your editor's MCP config (e.g., `~/.cursor/mcp.json`):
+
+```json
+{
+  "mcpServers": {
+    "context-simplo": {
+      "url": "http://localhost:3001/mcp",
+      "description": "Context-Simplo code intelligence",
+      "headers": {
+        "Authorization": "Bearer YOUR_AUTH_TOKEN_HERE"
+      }
+    }
+  }
+}
+```
+
+Replace `YOUR_AUTH_TOKEN_HERE` with the token you set in `AUTH_TOKEN`. If you used the random generator in the docker command above, retrieve it with:
+
+```bash
+docker exec context-simplo printenv AUTH_TOKEN
+```
 
 ## Embedding options
 
@@ -124,7 +148,15 @@ Control resource usage with:
   -e PARSE_WORKER_POOL_SIZE=2     # Parse workers (set 0 to disable)
   -e INDEX_MAX_CONCURRENT_JOBS=1  # Concurrent indexing jobs  
   -e GRAPH_HOT_CACHE_MB=256       # Graph cache size
+  -e WATCH_DRAIN_DELAY_MS=500     # Watch queue drain delay (milliseconds)
+  -e WATCH_FULL_REINDEX_THRESHOLD=50  # File count threshold for full reindex
+  -e WATCH_DEBOUNCE_MS=200        # File watcher debounce delay (milliseconds)
 ```
+
+**Watch queue tuning:**
+- `WATCH_DRAIN_DELAY_MS`: How long to accumulate file changes before processing (default: 500ms)
+- `WATCH_FULL_REINDEX_THRESHOLD`: If more than this many files change at once, trigger a full reindex instead of incremental (default: 50)
+- `WATCH_DEBOUNCE_MS`: Debounce delay for individual file changes (default: 200ms)
 
 ### AST Engine Selection
 
@@ -155,3 +187,5 @@ For container limits, use `docker run --memory=4g --cpus=4`.
 ## License
 
 MIT, see [LICENSE](LICENSE).
+
+<!-- Performance test comment added at 12:47 PM to test auto-indexing speed -->
