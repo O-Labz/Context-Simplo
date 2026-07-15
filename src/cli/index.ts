@@ -235,7 +235,7 @@ program
       console.log(`  ${chalk.cyan('Edges:')}      ${job.edgesCreated}`);
       console.log();
 
-      await storage.close();
+      storage.close();
     } catch (error) {
       spinner.fail('Indexing failed');
       console.error(
@@ -338,7 +338,7 @@ program
         console.log();
       });
 
-      await storage.close();
+      storage.close();
     } catch (error) {
       spinner.fail('Search failed');
       console.error(
@@ -432,7 +432,7 @@ program
       );
       console.log();
 
-      await storage.close();
+      storage.close();
     } catch (error) {
       spinner.fail('Failed to load status');
       console.error(
@@ -491,7 +491,7 @@ program
         console.log();
         console.log(chalk.green('✓ Configuration saved'));
         console.log(chalk.dim('Vector search disabled. Only exact search will be available.'));
-        await storage.close();
+        storage.close();
         return;
       }
 
@@ -589,7 +589,7 @@ program
         console.error(chalk.red('Error:'), error instanceof Error ? error.message : 'Unknown error');
         console.log();
         console.log(chalk.yellow('Configuration not saved. Please check your settings and try again.'));
-        await storage.close();
+        storage.close();
         process.exit(1);
       }
 
@@ -605,7 +605,7 @@ program
       console.log(`  3. Search: ${chalk.cyan('context-simplo search <query>')}`);
       console.log();
 
-      await storage.close();
+      storage.close();
     } catch (error) {
       console.error(
         chalk.red('Error:'),

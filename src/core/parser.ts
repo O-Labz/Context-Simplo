@@ -56,7 +56,7 @@ async function ensureLanguageDownloaded(language: string): Promise<boolean> {
 
   const downloadPromise = (async () => {
     try {
-      await download([language]);
+      download([language]);
       downloadedLanguages.add(language);
     } catch (error) {
       console.warn(`Failed to download tree-sitter grammar for ${language}:`, error);
@@ -194,7 +194,7 @@ export async function parseFile(
 
   let parseResult: any;
   try {
-    parseResult = await treeSitterProcess(content, {
+    parseResult = treeSitterProcess(content, {
       language,
       structure: true,
       imports: true,

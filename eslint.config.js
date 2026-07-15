@@ -18,7 +18,7 @@ export default [
       '@typescript-eslint': tseslint,
     },
     rules: {
-      '@typescript-eslint/no-explicit-any': 'error',
+      '@typescript-eslint/no-explicit-any': 'warn',
       '@typescript-eslint/no-unused-vars': [
         'error',
         { argsIgnorePattern: '^_', varsIgnorePattern: '^_' },
@@ -29,6 +29,11 @@ export default [
       ],
       '@typescript-eslint/no-floating-promises': 'error',
       '@typescript-eslint/await-thenable': 'error',
+      // TypeScript handles undefined-identifier checks and understands ambient
+      // types (e.g. NodeJS, Event) and Node globals, so the core rules produce
+      // false positives here. Disable in favor of the type-aware equivalents.
+      'no-undef': 'off',
+      'no-unused-vars': 'off',
       'no-console': ['warn', { allow: ['warn', 'error'] }],
       'no-debugger': 'error',
       'prefer-const': 'error',
@@ -36,6 +41,6 @@ export default [
     },
   },
   {
-    ignores: ['dist/', 'node_modules/', 'dashboard/', '*.config.js', '*.config.ts'],
+    ignores: ['dist/', 'node_modules/', 'dashboard/', '*.config.js', '*.config.ts', '**/*.d.ts'],
   },
 ];

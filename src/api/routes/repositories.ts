@@ -104,7 +104,7 @@ export async function registerRepositoryRoutes(
           message: 'Repository path must be within workspace root',
         });
       }
-    } catch (pathError) {
+    } catch {
       // Path validation failed - treat as traversal attempt
       return reply.status(400).send({
         error: 'Path traversal detected',

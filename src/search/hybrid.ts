@@ -36,7 +36,7 @@ export class HybridSearch {
     offset: number = 0
   ): Promise<PaginatedResponse<SearchResult>> {
     const [symbolicResults, vectorResults] = await Promise.allSettled([
-      this.symbolicSearch.search(query, limit * 2, 0),
+      Promise.resolve(this.symbolicSearch.search(query, limit * 2, 0)),
       this.vectorSearch.search(query, repositoryId, limit * 2, 0),
     ]);
 

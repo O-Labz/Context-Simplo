@@ -318,8 +318,8 @@ export class MCPServer {
     await transport.handleRequest(req, res, body);
 
     res.on('close', () => {
-      transport.close();
-      httpServer.close();
+      void transport.close();
+      void httpServer.close();
     });
   }
 
