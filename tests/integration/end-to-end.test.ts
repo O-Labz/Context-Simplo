@@ -100,7 +100,7 @@ function validate(data: any): boolean {
   });
 
   it('should detect dead code', () => {
-    const deadNodes = graph.findDeadCode('default-repo');
+    const deadNodes = graph.findDeadCode();
 
     expect(deadNodes.some((n) => n.name === 'validate')).toBe(true);
   });
@@ -134,11 +134,11 @@ export function newFunction(): void {
     expect(newFuncNodes.length).toBe(1);
   });
 
-  it('should persist and restore graph', () => {
+  it('should persist and restore graph', async () => {
     const serialized = graph.serialize();
 
     const newGraph = new CodeGraph();
-    newGraph.deserialize(serialized);
+    await newGraph.deserialize(serialized);
 
     const stats = newGraph.getStats();
     expect(stats.nodeCount).toBeGreaterThan(0);

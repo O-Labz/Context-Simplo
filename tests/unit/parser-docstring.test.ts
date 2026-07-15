@@ -8,8 +8,8 @@ import { writeFile, mkdir, rm } from 'fs/promises';
 import { join } from 'path';
 import { parseFile } from '../../src/core/parser.js';
 import { Indexer } from '../../src/core/indexer.js';
-import { CodeGraph } from '../../src/core/graph.js';
-import { SqliteStorage } from '../../src/store/sqlite.js';
+import { StorageBackedGraph } from '../../src/core/graph-store.js';
+import { SqliteStorageProvider } from '../../src/store/sqlite.js';
 import { scrubSecrets } from '../../src/security/scrubber.js';
 import { tmpdir } from 'os';
 
@@ -98,14 +98,16 @@ function setupGitHub(): void {
     await writeFile(testFile, code, 'utf-8');
 
     const dbPath = join(testDir, 'test.db');
-    const storage = new SqliteStorage(dbPath);
-    const graph = new CodeGraph(storage);
+    const storage = new SqliteStorageProvider(dbPath);
+    await storage.initialize();
+    
+    const graph = new StorageBackedGraph(storage, { hotCacheMb: 10 });
     const indexer = new Indexer(storage, graph, testDir);
 
     await indexer.indexRepository(testDir, { incremental: false });
 
     // Query the database to verify docstrings are scrubbed
-    const nodes = storage.searchNodes('setupGitHub', 'test-repo');
+    const nodes = storage.getNodesByName('setupGitHub');
     
     if (nodes.length > 0 && nodes[0].docstring) {
       // If the docstring was present and had a secret, it should be redacted
@@ -114,7 +116,7 @@ function setupGitHub(): void {
       }
     }
 
-    await storage.close();
+    storage.close();
   });
 
   it('should handle docstrings with multiple secrets', async () => {
