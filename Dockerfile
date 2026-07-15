@@ -33,7 +33,7 @@ RUN mkdir -p dist/core/ast/grammars
 COPY src/core/ast/grammars/*.wasm dist/core/ast/grammars/
 
 # Remove devDependencies to slim down the production image
-RUN npm prune --omit=dev
+RUN npm prune --omit=dev --legacy-peer-deps
 
 # Dashboard stage — isolated to avoid esbuild version conflicts with root
 FROM node:22-slim AS dashboard-builder
