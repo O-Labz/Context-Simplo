@@ -28,6 +28,10 @@ RUN npm run build
 RUN mkdir -p dist/store/migrations
 COPY src/store/migrations/*.sql dist/store/migrations/
 
+# Copy WASM grammar files for AST engine
+RUN mkdir -p dist/core/ast/grammars
+COPY src/core/ast/grammars/*.wasm dist/core/ast/grammars/
+
 # Remove devDependencies to slim down the production image
 RUN npm prune --omit=dev
 

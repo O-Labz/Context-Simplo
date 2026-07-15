@@ -4,19 +4,26 @@
 
 import type { AstEngine } from './engine.js';
 import { HeuristicEngine } from './heuristic-engine.js';
+import { WasmEngine } from './wasm-engine.js';
 
 export interface EngineConfig {
+  enableWasm?: boolean;
   enableHeuristic?: boolean;
-  // Future: enableTreeSitter, enableBabel, etc.
 }
 
 /**
  * Select and return an ordered list of AST engines based on configuration.
- * Phase 5: only heuristic engine is available.
+ * By default, WASM engine is preferred with heuristic fallback.
  */
 export function selectEngine(config: EngineConfig = {}): AstEngine[] {
   const engines: AstEngine[] = [];
 
+  // WASM engine (default enabled)
+  if (config.enableWasm !== false) {
+    engines.push(new WasmEngine());
+  }
+
+  // Heuristic engine as fallback (default enabled)
   if (config.enableHeuristic !== false) {
     engines.push(new HeuristicEngine());
   }
