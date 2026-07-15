@@ -40,6 +40,7 @@ import type {
   RepositoryInfo,
   NodeFilter,
   SearchResult,
+  CodeReference,
 } from '../core/types.js';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -77,6 +78,7 @@ export class SqliteStorageProvider implements StorageProvider {
       { version: 2, file: '002_eml.sql', description: 'Engineering Memory Layer schema' },
       { version: 3, file: '003_graph_indexes.sql', description: 'graph lookup indexes' },
       { version: 4, file: '004_embedding_status.sql', description: 'Add embedding_status for background backfill' },
+      { version: 5, file: '005_code_references.sql', description: 'Add code_references table for incremental resolution' },
     ];
 
     for (const migration of migrationFiles) {
@@ -587,6 +589,114 @@ export class SqliteStorageProvider implements StorageProvider {
          OR target_id IN (SELECT id FROM nodes WHERE repository_id = ?)`
       )
       .run(repositoryId, repositoryId);
+  }
+
+  saveCodeReferences(references: CodeReference[]): void {
+    if (references.length === 0) return;
+
+    const stmt = this.db.prepare(
+      `INSERT INTO code_references (id, source_file, source_node_id, target_name, reference_kind, line_number, repository_id, resolved, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+       ON CONFLICT(id) DO UPDATE SET
+       target_name = excluded.target_name,
+       reference_kind = excluded.reference_kind,
+       line_number = excluded.line_number,
+       resolved = excluded.resolved,
+       updated_at = excluded.updated_at`
+    );
+
+    for (const ref of references) {
+      stmt.run(
+        ref.id,
+        ref.sourceFile,
+        ref.sourceNodeId,
+        ref.targetName,
+        ref.referenceKind,
+        ref.lineNumber,
+        ref.repositoryId,
+        ref.resolved ? 1 : 0,
+        ref.createdAt.toISOString(),
+        ref.updatedAt.toISOString()
+      );
+    }
+  }
+
+  deleteCodeReferencesForFile(filePath: string): void {
+    this.db.prepare('DELETE FROM code_references WHERE source_file = ?').run(filePath);
+  }
+
+  getUnresolvedReferencesForTargetName(targetName: string, repositoryId: string): CodeReference[] {
+    const rows = this.db
+      .prepare(
+        `SELECT id, source_file, source_node_id, target_name, reference_kind, line_number, repository_id, resolved, created_at, updated_at
+         FROM code_references
+         WHERE target_name = ? AND repository_id = ? AND resolved = 0`
+      )
+      .all(targetName, repositoryId) as {
+        id: string;
+        source_file: string;
+        source_node_id: string;
+        target_name: string;
+        reference_kind: string;
+        line_number: number;
+        repository_id: string;
+        resolved: number;
+        created_at: string;
+        updated_at: string;
+      }[];
+
+    return rows.map((row) => ({
+      id: row.id,
+      sourceFile: row.source_file,
+      sourceNodeId: row.source_node_id,
+      targetName: row.target_name,
+      referenceKind: row.reference_kind as 'call' | 'import',
+      lineNumber: row.line_number,
+      repositoryId: row.repository_id,
+      resolved: row.resolved === 1,
+      createdAt: new Date(row.created_at),
+      updatedAt: new Date(row.updated_at),
+    }));
+  }
+
+  markReferenceResolved(id: string): void {
+    this.db
+      .prepare('UPDATE code_references SET resolved = 1, updated_at = ? WHERE id = ?')
+      .run(new Date().toISOString(), id);
+  }
+
+  getUnresolvedReferencesInRepository(repositoryId: string): CodeReference[] {
+    const rows = this.db
+      .prepare(
+        `SELECT id, source_file, source_node_id, target_name, reference_kind, line_number, repository_id, resolved, created_at, updated_at
+         FROM code_references
+         WHERE repository_id = ? AND resolved = 0`
+      )
+      .all(repositoryId) as {
+        id: string;
+        source_file: string;
+        source_node_id: string;
+        target_name: string;
+        reference_kind: string;
+        line_number: number;
+        repository_id: string;
+        resolved: number;
+        created_at: string;
+        updated_at: string;
+      }[];
+
+    return rows.map((row) => ({
+      id: row.id,
+      sourceFile: row.source_file,
+      sourceNodeId: row.source_node_id,
+      targetName: row.target_name,
+      referenceKind: row.reference_kind as 'call' | 'import',
+      lineNumber: row.line_number,
+      repositoryId: row.repository_id,
+      resolved: row.resolved === 1,
+      createdAt: new Date(row.created_at),
+      updatedAt: new Date(row.updated_at),
+    }));
   }
 
   search(query: string, limit: number, offset: number): SearchResult[] {
