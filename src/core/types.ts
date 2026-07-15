@@ -408,6 +408,21 @@ export const AppConfigSchema = z.object({
     source: ConfigSourceSchema,
     isLocked: z.boolean(),
   }),
+  watchDrainDelayMs: z.object({
+    value: z.number().int().positive(),
+    source: ConfigSourceSchema,
+    isLocked: z.boolean(),
+  }),
+  watchFullReindexThreshold: z.object({
+    value: z.number().int().positive(),
+    source: ConfigSourceSchema,
+    isLocked: z.boolean(),
+  }),
+  watchDebounceMs: z.object({
+    value: z.number().int().positive(),
+    source: ConfigSourceSchema,
+    isLocked: z.boolean(),
+  }),
 });
 
 export type AppConfig = z.infer<typeof AppConfigSchema>;

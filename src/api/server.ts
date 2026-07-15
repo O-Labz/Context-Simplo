@@ -45,6 +45,7 @@ export interface APIServerOptions {
   hybridSearch?: any;
   indexer?: any;
   watcher?: any;
+  watchQueue?: any;
   embeddingQueue?: any;
   vectorStore?: any;
   embeddingProvider?: any;
@@ -287,6 +288,7 @@ export async function createAPIServer(
     storage: options.storage,
     graph: options.graph,
     watcher: options.watcher,
+    watchQueue: options.watchQueue,
     embeddingQueue: options.embeddingQueue,
     vectorStore: options.vectorStore,
     embeddingProvider: options.embeddingProvider,

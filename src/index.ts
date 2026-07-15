@@ -296,8 +296,16 @@ async function main() {
     hybridSearch = new HybridSearch(symbolicSearch, vectorSearch);
   }
 
+  const { WatchReindexQueue } = await import('./core/watch-queue.js');
+  const watchQueue = new WatchReindexQueue(indexer, {
+    drainDelayMs: config.watchDrainDelayMs.value,
+    fullReindexThreshold: config.watchFullReindexThreshold.value,
+  });
+  console.log(`Watch queue ready (drain: ${config.watchDrainDelayMs.value}ms, threshold: ${config.watchFullReindexThreshold.value})`);
+
   const watcher = new FileWatcher(indexer, {
-    debounceMs: 200,
+    debounceMs: config.watchDebounceMs.value,
+    watchQueue,
   });
 
   const mcpServer = new MCPServer({
@@ -398,6 +406,7 @@ async function main() {
       hybridSearch,
       indexer,
       watcher,
+      watchQueue,
       embeddingQueue,
       vectorStore,
       embeddingProvider,
@@ -414,6 +423,26 @@ async function main() {
   if (embeddingBackfiller) {
     embeddingBackfiller.start();
   }
+
+  // Boot reference backfill: resolve unresolved code references for all indexed repos
+  // This runs once on startup to handle references that were persisted but not yet resolved
+  // (e.g., if the system was shut down during indexing)
+  (async () => {
+    try {
+      const repos = storage.listRepositories();
+      for (const repo of repos) {
+        const unresolved = storage.getUnresolvedReferencesInRepository(repo.id);
+        if (unresolved.length > 0) {
+          console.warn(`Boot backfill: resolving ${unresolved.length} references in ${repo.name}`);
+          // Get unique source files from unresolved references
+          const sourceFiles = [...new Set(unresolved.map(r => r.sourceFile))];
+          await indexer.resolveReferencesForFiles(sourceFiles, repo.id);
+        }
+      }
+    } catch (error) {
+      console.error('Error during boot reference backfill:', error);
+    }
+  })().catch(err => console.error('Boot backfill error:', err));
   
   await apiServer.listen({ port: 3001, host: listenHost });
   console.log('API server started on port 3001');

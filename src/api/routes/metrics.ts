@@ -23,6 +23,7 @@ export interface MetricsRouteOptions {
   storage: StorageProvider;
   graph: CodeGraphApi;
   watcher?: any;
+  watchQueue?: any;
   embeddingQueue?: any;
   vectorStore?: any;
   embeddingProvider?: any;
@@ -83,6 +84,7 @@ export async function registerMetricsRoutes(
         watchedDirectories: options.watcher ? options.watcher.getWatchedPaths().length : 0,
         recentChanges: [],
         queueDepth: 0,
+        watchQueueStats: options.watchQueue ? options.watchQueue.getStats() : {},
       },
 
       // Embedding pipeline
