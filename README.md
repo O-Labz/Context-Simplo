@@ -1,6 +1,6 @@
 # Context-Simplo
 
-**Cut your AI coding assistant's token usage by ~75%.**
+**Cut MCP response tokens on code-intelligence workflows by ~37%.**
 
 Your AI assistant is brilliant at writing code and terrible at remembering anything. Every session it starts from zero: re-reading files, re-discovering how your code fits together, asking you the same questions, repeating mistakes the team already learned from six months ago. All of that burns tokens on *finding* code instead of *building* it.
 
@@ -12,15 +12,9 @@ It runs as a single Docker container. Local-first, your code never has to leave 
 
 ## The number that matters
 
-On a suite of 10 real engineering workflows, answering through Context-Simplo used **~75% fewer tokens** than the same questions answered with a grep-and-read loop — same answers, a fraction of the context.
+On 10 real engineering workflows against this repo (indexed copy, **cl100k_base** via `gpt-tokenizer`), **v0.3.0 compact** MCP responses used **~37% fewer wire tokens** than the same tools with a **v0.1.0-equivalent profile** (higher limits + snippets), with **zero capability regressions** in the harness. See **[the full benchmark](docs/benchmark.md)** and [`bench/REPORT.md`](bench/REPORT.md) for per-scenario tables and how to re-run.
 
-| Approach | Tokens to answer the same questions |
-|----------|-------------------------------------|
-| grep-and-read (glob + read + grep) | ~42,000 |
-| Context-Simplo MCP | ~6,000 |
-| **Reduction** | **~85%** |
-
-The internal wire-format benchmark (v0.1.0 → v0.2.0) independently shows a **~74% drop** in scenario token cost on the same indexed repo, with zero capability regressions. Token counts use **cl100k_base** (`gpt-tokenizer`); see **[the full benchmark](docs/benchmark.md)** for methodology and how to re-run it.
+Recorded **2026-09-25** on the Context-Simplo tree (~200 indexed files in the bench run): **5,907 → 3,734** scenario wire tokens (**−36.8%**). Tool-list overhead in that run was **5,845** tokens per `tools/list` call (MCP SDK v2 JSON Schema payloads); scenario savings are the headline for tool *responses*.
 
 Fewer tokens finding things means more tokens — and more of your budget — left for actually building.
 

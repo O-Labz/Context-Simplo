@@ -36,7 +36,7 @@ Removed in v0.3.0 (use replacements above): `find_callers`, `find_callees`, `unw
 - Set `includeSnippets: true` only when code excerpts are required
 - Use `incremental: true` when re-indexing after edits
 - Responses include `root` (repo mount path) and repo-relative `fp` paths
-- Optional `CONTEXT_SIMPLO_RESPONSE_MODE=toon` encodes the wire payload with TOON (falls back to compact JSON on encode errors); `full` preserves v0.1.0-shaped keys on the wire
+- Optional `CONTEXT_SIMPLO_RESPONSE_MODE=toon` encodes the wire payload with TOON (experimental: did not beat compact in the 2026-09-25 harness); `full` preserves v0.1.0-shaped keys on the wire
 - Dashboard **Metrics** shows MCP tokens served (`responseTokensTotal`, `tokensPerMinute`, per-tool breakdown via `/api/metrics`)
 
 ### Response Format

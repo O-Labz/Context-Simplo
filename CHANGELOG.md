@@ -41,6 +41,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Vector/hybrid search no longer leak **`snippet`** when `includeSnippets` is false (LanceDB mapping).
 - Duplicate symbols from mirrored **`test-data/`** trees (when not ignored).
+- **`list_repositories` `nodeCount` / `edgeCount`** were whole-graph totals; counts are now per repository (migration **006** backfills existing rows).
+
+### Measured (2026-09-25 harness)
+
+- **Compact vs v1-full profile:** **−36.8%** scenario MCP wire tokens on 10 workflows ([`bench/REPORT.md`](bench/REPORT.md)), ship gate **PASS**.
+- **`structuredContent` token metering** on `/api/metrics` (`structuredTokensTotal`, per-tool breakdown).
+- **TOON mode:** did **not** beat compact by 30% ([`bench/REPORT-toon.md`](bench/REPORT-toon.md)); remains opt-in / experimental.
 
 ## [0.2.0] - 2026-05-04
 
