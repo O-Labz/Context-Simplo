@@ -3,6 +3,7 @@
 
 # Keep summaries and reports for audit trail
 !REPORT.md
+!REPORT-*.md
 !SMOKE.md
 !baseline-*.md
 !candidate-*.md

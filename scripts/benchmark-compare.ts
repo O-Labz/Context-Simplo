@@ -20,6 +20,8 @@ interface BenchmarkResult {
   requestBytes: number;
   responseBytes: number;
   approxTokens: number;
+  wireTextTokens?: number;
+  structuredTokens?: number;
   latencyMs: number;
   topKIdentities: string[];
   responseShape: 'full' | 'compact' | 'unknown';
@@ -30,6 +32,9 @@ interface BenchmarkRun {
   label: string;
   timestamp: string;
   mcpUrl: string;
+  tokenCounter?: 'gpt-tokenizer/cl100k_base';
+  responseMode?: 'compact' | 'toon' | 'full' | 'unknown';
+  toolset?: string;
   toolListBytes: number;
   toolListTokens: number;
   scenarios: BenchmarkResult[];
@@ -49,6 +54,10 @@ interface ScenarioComparison {
   candidateTokens: number;
   deltaTokens: number;
   deltaPercent: number;
+  baselineWireTextTokens?: number;
+  candidateWireTextTokens?: number;
+  baselineStructuredTokens?: number;
+  candidateStructuredTokens?: number;
   capabilityRegression: boolean;
   capabilityDetails: string;
 }
@@ -167,6 +176,10 @@ function compareRuns(baselinePath: string, candidatePath: string): ComparisonRep
       candidateTokens: candidateResult.approxTokens,
       deltaTokens,
       deltaPercent,
+      baselineWireTextTokens: baselineResult.wireTextTokens,
+      candidateWireTextTokens: candidateResult.wireTextTokens,
+      baselineStructuredTokens: baselineResult.structuredTokens,
+      candidateStructuredTokens: candidateResult.structuredTokens,
       capabilityRegression: capabilityCheck.regressed,
       capabilityDetails: capabilityCheck.details,
     });
@@ -222,12 +235,22 @@ function compareRuns(baselinePath: string, candidatePath: string): ComparisonRep
   };
 }
 
-function generateReport(comparison: ComparisonReport): string {
+function generateReport(
+  comparison: ComparisonReport,
+  baselineRun?: BenchmarkRun,
+  candidateRun?: BenchmarkRun
+): string {
   let md = `# Benchmark Comparison Report\n\n`;
   
   md += `**Baseline:** ${comparison.baselineLabel} (${comparison.baselineTimestamp})  \n`;
   md += `**Candidate:** ${comparison.candidateLabel} (${comparison.candidateTimestamp})  \n`;
   md += `**Repository State Match:** ${comparison.repositoryStateMatch ? '✓ Yes' : '⚠️ No (results may not be comparable)'}  \n`;
+  if (baselineRun?.responseMode !== undefined || candidateRun?.responseMode !== undefined) {
+    md += `**Response mode:** ${baselineRun?.responseMode ?? '?'} → ${candidateRun?.responseMode ?? '?'}  \n`;
+  }
+  if (baselineRun?.toolset !== undefined || candidateRun?.toolset !== undefined) {
+    md += `**Toolset:** ${baselineRun?.toolset ?? '?'} / ${candidateRun?.toolset ?? '?'}  \n`;
+  }
   
   md += `\n## Ship Gate Status\n\n`;
   if (comparison.passesShipGate) {
@@ -243,14 +266,39 @@ function generateReport(comparison: ComparisonReport): string {
   const toolListSymbol = comparison.toolListDelta < 0 ? '↓' : '↑';
   md += `- Delta: ${toolListSymbol} ${Math.abs(comparison.toolListDelta)} tokens (${comparison.toolListDeltaPercent.toFixed(1)}%)\n`;
   
+  const showWireStructured = comparison.scenarios.some(
+    (s) =>
+      s.baselineWireTextTokens !== undefined ||
+      s.candidateWireTextTokens !== undefined ||
+      s.baselineStructuredTokens !== undefined ||
+      s.candidateStructuredTokens !== undefined
+  );
+
   md += `\n## Per-Scenario Comparison\n\n`;
-  md += `| Scenario | Baseline | Candidate | Delta | % | Capability |\n`;
-  md += `|----------|----------|-----------|-------|---|------------|\n`;
-  
+  if (showWireStructured) {
+    md += `| Scenario | Baseline | Candidate | Delta | % | Wire text (B/C) | Structured (B/C) | Capability |\n`;
+    md += `|----------|----------|-----------|-------|---|-----------------|------------------|------------|\n`;
+  } else {
+    md += `| Scenario | Baseline | Candidate | Delta | % | Capability |\n`;
+    md += `|----------|----------|-----------|-------|---|------------|\n`;
+  }
+
   for (const scenario of comparison.scenarios) {
     const symbol = scenario.deltaTokens < 0 ? '↓' : (scenario.deltaTokens > 0 ? '↑' : '=');
     const capIcon = scenario.capabilityRegression ? '❌' : '✓';
-    md += `| ${scenario.scenario} | ${scenario.baselineTokens} | ${scenario.candidateTokens} | ${symbol} ${Math.abs(scenario.deltaTokens)} | ${scenario.deltaPercent.toFixed(1)}% | ${capIcon} |\n`;
+    if (showWireStructured) {
+      const wirePair =
+        scenario.baselineWireTextTokens !== undefined || scenario.candidateWireTextTokens !== undefined
+          ? `${scenario.baselineWireTextTokens ?? '-'} / ${scenario.candidateWireTextTokens ?? '-'}`
+          : '- / -';
+      const structPair =
+        scenario.baselineStructuredTokens !== undefined || scenario.candidateStructuredTokens !== undefined
+          ? `${scenario.baselineStructuredTokens ?? '-'} / ${scenario.candidateStructuredTokens ?? '-'}`
+          : '- / -';
+      md += `| ${scenario.scenario} | ${scenario.baselineTokens} | ${scenario.candidateTokens} | ${symbol} ${Math.abs(scenario.deltaTokens)} | ${scenario.deltaPercent.toFixed(1)}% | ${wirePair} | ${structPair} | ${capIcon} |\n`;
+    } else {
+      md += `| ${scenario.scenario} | ${scenario.baselineTokens} | ${scenario.candidateTokens} | ${symbol} ${Math.abs(scenario.deltaTokens)} | ${scenario.deltaPercent.toFixed(1)}% | ${capIcon} |\n`;
+    }
   }
   
   md += `\n## Aggregate\n\n`;
@@ -288,8 +336,10 @@ const reportPath = reportIndex !== -1 && args[reportIndex + 1]
   : null;
 
 try {
+  const baselineRun: BenchmarkRun = JSON.parse(readFileSync(baselinePath, 'utf8'));
+  const candidateRun: BenchmarkRun = JSON.parse(readFileSync(candidatePath, 'utf8'));
   const comparison = compareRuns(baselinePath, candidatePath);
-  const report = generateReport(comparison);
+  const report = generateReport(comparison, baselineRun, candidateRun);
   
   if (reportPath) {
     writeFileSync(reportPath, report);
