@@ -178,15 +178,24 @@ export class StorageBackedGraph implements CodeGraphApi {
     return boundedNodes;
   }
 
-  getStats(): {
+  getStats(repositoryId?: string): {
     nodeCount: number;
     edgeCount: number;
     fileCount: number;
     languageBreakdown: Record<string, number>;
   } {
+    if (repositoryId) {
+      return {
+        nodeCount: this.storage.countNodes({ repositoryId }),
+        edgeCount: this.storage.countEdges(repositoryId),
+        fileCount: this.storage.listFiles(repositoryId).length,
+        languageBreakdown: this.storage.countNodesByLanguage(repositoryId),
+      };
+    }
+
     const storageStats = this.storage.getStats();
     const nodeCount = this.storage.countNodes();
-    
+
     const languageBreakdown = this.storage.countNodesByLanguage();
 
     return {

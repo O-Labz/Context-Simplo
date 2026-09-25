@@ -67,7 +67,7 @@ export interface CodeGraphApi {
   getCentrality(nodeId: string): number;
   findDeadCode(repositoryId?: string): CodeNode[];
   explainArchitecture(repositoryId: string, detailLevel?: number): ArchitectureSummary;
-  getStats(): {
+  getStats(repositoryId?: string): {
     nodeCount: number;
     edgeCount: number;
     fileCount: number;
@@ -558,26 +558,58 @@ export class CodeGraph implements CodeGraphApi {
     }
   }
 
-  getStats(): {
+  getStats(repositoryId?: string): {
     nodeCount: number;
     edgeCount: number;
     fileCount: number;
     languageBreakdown: Record<string, number>;
   } {
-    const nodeCount = this.graph.order;
-    const edgeCount = this.graph.size;
-    const fileCount = this.fileIndex.size;
+    if (!repositoryId) {
+      const nodeCount = this.graph.order;
+      const edgeCount = this.graph.size;
+      const fileCount = this.fileIndex.size;
 
+      const languageBreakdown: Record<string, number> = {};
+      for (const nodeId of this.graph.nodes()) {
+        const node = this.getNode(nodeId)!;
+        languageBreakdown[node.language] = (languageBreakdown[node.language] || 0) + 1;
+      }
+
+      return {
+        nodeCount,
+        edgeCount,
+        fileCount,
+        languageBreakdown,
+      };
+    }
+
+    let nodeCount = 0;
     const languageBreakdown: Record<string, number> = {};
+    const filesInRepo = new Set<string>();
+
     for (const nodeId of this.graph.nodes()) {
       const node = this.getNode(nodeId)!;
+      if (node.repositoryId !== repositoryId) {
+        continue;
+      }
+      nodeCount++;
       languageBreakdown[node.language] = (languageBreakdown[node.language] || 0) + 1;
+      filesInRepo.add(node.filePath);
+    }
+
+    let edgeCount = 0;
+    for (const edgeId of this.graph.edges()) {
+      const edge = this.graph.getEdgeAttributes(edgeId) as GraphEdge;
+      const sourceNode = this.getNode(edge.sourceId);
+      if (sourceNode?.repositoryId === repositoryId) {
+        edgeCount++;
+      }
     }
 
     return {
       nodeCount,
       edgeCount,
-      fileCount,
+      fileCount: filesInRepo.size,
       languageBreakdown,
     };
   }

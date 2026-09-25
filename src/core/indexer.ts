@@ -176,7 +176,7 @@ export class Indexer extends EventEmitter {
       }
       this.pendingReferences = [];
 
-      const stats = this.graph.getStats();
+      const stats = this.graph.getStats(repositoryId);
       job.nodesCreated = stats.nodeCount;
       job.edgesCreated = stats.edgeCount;
       job.status = 'completed';

@@ -315,6 +315,26 @@ describe('CodeGraph', () => {
         python: 1,
       });
     });
+
+    it('should scope stats to a single repository', async () => {
+      const repoANode = createTestNode('a1', 'funcA', 'function', 'a.ts');
+      const repoBNode = createTestNode('b1', 'funcB', 'function', 'b.ts');
+      repoBNode.repositoryId = 'other-repo';
+
+      await graph.addNode(repoANode);
+      await graph.addNode(repoBNode);
+      await graph.addEdge(createTestEdge('e-ab', 'a1', 'b1'));
+
+      const scoped = graph.getStats('test-repo');
+      expect(scoped.nodeCount).toBe(1);
+      expect(scoped.edgeCount).toBe(1);
+      expect(scoped.fileCount).toBe(1);
+      expect(scoped.languageBreakdown).toEqual({ typescript: 1 });
+
+      const global = graph.getStats();
+      expect(global.nodeCount).toBe(2);
+      expect(global.edgeCount).toBe(1);
+    });
   });
 
   describe('serialize and deserialize', () => {

@@ -90,6 +90,7 @@ export class SqliteStorageProvider implements StorageProvider {
       { version: 3, file: '003_graph_indexes.sql', description: 'graph lookup indexes' },
       { version: 4, file: '004_embedding_status.sql', description: 'Add embedding_status for background backfill' },
       { version: 5, file: '005_code_references.sql', description: 'Add code_references table for incremental resolution' },
+      { version: 6, file: '006_repository_counts.sql', description: 'Backfill repository node_count and edge_count' },
     ];
 
     for (const migration of migrationFiles) {
@@ -828,6 +829,25 @@ export class SqliteStorageProvider implements StorageProvider {
       result[row.language] = row.count;
     }
     return result;
+  }
+
+  countEdges(repositoryId?: string): number {
+    try {
+      if (repositoryId) {
+        const row = this.statement(
+            `SELECT COUNT(*) AS count FROM edges e
+             JOIN nodes n ON n.id = e.source_id
+             WHERE n.repository_id = ?`
+          )
+          .get(repositoryId) as { count: number };
+        return row.count;
+      }
+
+      const row = this.statement('SELECT COUNT(*) AS count FROM edges').get() as { count: number };
+      return row.count;
+    } catch (error) {
+      throw new StoreError('countEdges', 'Failed to count edges', error as Error);
+    }
   }
 
   findUnreferencedNodes(repositoryId: string | undefined, limit: number, offset: number): CodeNode[] {
