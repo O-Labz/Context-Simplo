@@ -2,14 +2,21 @@
  * Benchmark runner for Context-Simplo MCP server
  * 
  * Runs a suite of scenarios against the live server, measures token cost
- * and capability, writes results to bench/<label>.json and bench/<label>.md
+ * (gpt-tokenizer / cl100k_base on MCP wire text) and capability, writes
+ * results to bench/<label>.json and bench/<label>.md
  * 
  * Usage: pnpm tsx scripts/benchmark.ts --label baseline-v0.1.0
  */
 
 import { writeFileSync } from 'fs';
 import { resolve } from 'path';
+import { encode } from 'gpt-tokenizer';
 import { SCENARIOS, AUTO_REPO_ID } from './benchmark-scenarios.js';
+
+/** Token counts use gpt-tokenizer (cl100k_base) on the raw MCP wire text. */
+function countTokens(text: string): number {
+  return encode(text).length;
+}
 
 /**
  * Recursively replace AUTO_REPO_ID sentinel with the live repositoryId
@@ -81,6 +88,8 @@ interface BenchmarkRun {
   label: string;
   timestamp: string;
   mcpUrl: string;
+  /** How response/tool-list token counts were computed (for reproducibility). */
+  tokenCounter: 'gpt-tokenizer/cl100k_base';
   toolListBytes: number;
   toolListTokens: number;
   scenarios: BenchmarkResult[];
@@ -146,7 +155,7 @@ function extractTopKIdentities(result: unknown, limit: number = 10): string[] {
   // Try every known top-level array key (full + compact). Fall back to first array field.
   const candidateKeys = [
     'results', 'r',                          // generic search/query
-    'callers', 'callees',                    // call graph (full mode)
+    'callers', 'callees',                    // find_references / call graph
     'affectedNodes', 'nodes',                // impact radius / find_path (compact 'nodes')
     'affectedFiles', 'files',                // impact radius file list
     'entryPoints', 'entry',                  // architecture
@@ -198,11 +207,6 @@ function detectResponseShape(result: unknown): 'full' | 'compact' | 'unknown' {
   return 'unknown';
 }
 
-function estimateTokens(bytes: number): number {
-  // Standard heuristic: 1 token ≈ 4 bytes
-  return Math.ceil(bytes / 4);
-}
-
 async function runBenchmark(label: string, profile: BenchmarkProfile = 'default'): Promise<void> {
   console.log(`Starting benchmark: ${label} (profile: ${profile})`);
   console.log(`MCP URL: ${MCP_URL}\n`);
@@ -212,8 +216,8 @@ async function runBenchmark(label: string, profile: BenchmarkProfile = 'default'
   const toolListCall = await callMCP('tools/list', {});
   const toolListParsed = parseSSEResponse(toolListCall.responseText);
   const toolListBytes = Buffer.byteLength(toolListCall.responseText, 'utf8');
-  const toolListTokens = estimateTokens(toolListBytes);
-  console.log(`Tool list: ${toolListBytes} bytes, ~${toolListTokens} tokens\n`);
+  const toolListTokens = countTokens(toolListCall.responseText);
+  console.log(`Tool list: ${toolListBytes} bytes, ${toolListTokens} tokens\n`);
 
   // Get repository state for reproducibility
   let repositoryState: BenchmarkRun['repositoryState'];
@@ -280,7 +284,7 @@ async function runBenchmark(label: string, profile: BenchmarkProfile = 'default'
         'utf8'
       );
       const responseBytes = Buffer.byteLength(call.responseText, 'utf8');
-      const approxTokens = estimateTokens(responseBytes);
+      const approxTokens = countTokens(call.responseText);
       const topKIdentities = extractTopKIdentities(resultObj, 10);
       const responseShape = detectResponseShape(resultObj);
 
@@ -297,7 +301,7 @@ async function runBenchmark(label: string, profile: BenchmarkProfile = 'default'
       totalBytes += responseBytes;
       totalTokens += approxTokens;
 
-      console.log(`  ✓ ${responseBytes} bytes, ~${approxTokens} tokens, ${call.latencyMs}ms`);
+      console.log(`  ✓ ${responseBytes} bytes, ${approxTokens} tokens, ${call.latencyMs}ms`);
     } catch (error) {
       console.error(`  ✗ Failed: ${(error as Error).message}`);
       results.push({
@@ -318,6 +322,7 @@ async function runBenchmark(label: string, profile: BenchmarkProfile = 'default'
     label,
     timestamp: new Date().toISOString(),
     mcpUrl: MCP_URL,
+    tokenCounter: 'gpt-tokenizer/cl100k_base',
     toolListBytes,
     toolListTokens,
     scenarios: results,
@@ -360,7 +365,7 @@ function generateMarkdownSummary(run: BenchmarkRun): string {
 
   md += `\n## Tool List Overhead\n\n`;
   md += `- Bytes: ${run.toolListBytes}\n`;
-  md += `- Tokens: ~${run.toolListTokens}\n`;
+  md += `- Tokens: ${run.toolListTokens} (${run.tokenCounter})\n`;
 
   md += `\n## Scenario Results\n\n`;
   md += `| Scenario | Bytes | Tokens | Latency (ms) | Shape |\n`;
@@ -374,14 +379,14 @@ function generateMarkdownSummary(run: BenchmarkRun): string {
     if (result.error) {
       md += `| ${name} | - | - | - | ERROR |\n`;
     } else {
-      md += `| ${name} | ${result.responseBytes} | ~${result.approxTokens} | ${result.latencyMs} | ${shape} |\n`;
+      md += `| ${name} | ${result.responseBytes} | ${result.approxTokens} | ${result.latencyMs} | ${shape} |\n`;
     }
   }
 
   md += `\n## Aggregate\n\n`;
   md += `- Total scenario bytes: ${run.totalBytes}\n`;
-  md += `- Total scenario tokens: ~${run.totalTokens}\n`;
-  md += `- With tool list: ~${run.toolListTokens + run.totalTokens} tokens\n`;
+  md += `- Total scenario tokens: ${run.totalTokens}\n`;
+  md += `- With tool list: ${run.toolListTokens + run.totalTokens} tokens\n`;
 
   md += `\n## Top-K Identities (for capability comparison)\n\n`;
   for (const result of run.scenarios) {

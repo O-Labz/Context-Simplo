@@ -57,7 +57,7 @@ export const EmlEventInputSchema = z.object({
   sourceRef: z.string().min(1).max(1024),
   repositoryId: z.string().min(1).max(128),
   actor: z.string().max(256).optional(),
-  payload: z.record(z.unknown()),
+  payload: z.record(z.string(), z.unknown()),
   occurredAt: z.string().datetime().optional(),
 });
 

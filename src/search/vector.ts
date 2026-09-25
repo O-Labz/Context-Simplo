@@ -40,9 +40,11 @@ export class VectorSearch {
       const hasMore = results.length > limit;
       const trimmedResults = hasMore ? results.slice(0, limit) : results;
 
+      const total = hasMore ? offset + limit + 1 : offset + trimmedResults.length;
+
       return {
         results: trimmedResults,
-        total: offset + results.length + (hasMore ? 1 : 0),
+        total,
         limit,
         offset,
         hasMore,

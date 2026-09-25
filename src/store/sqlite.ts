@@ -48,6 +48,7 @@ const __dirname = dirname(__filename);
 
 export class SqliteStorageProvider implements StorageProvider {
   private db: Database.Database;
+  private readonly prepared = new Map<string, Database.Statement>();
 
   constructor(dbPath: string) {
     try {
@@ -59,6 +60,16 @@ export class SqliteStorageProvider implements StorageProvider {
     } catch (error) {
       throw new StoreError('initialize', 'Failed to open database', error as Error);
     }
+  }
+
+  private statement(sql: string): Database.Statement {
+    const cached = this.prepared.get(sql);
+    if (cached) {
+      return cached;
+    }
+    const compiled = this.db.prepare(sql);
+    this.prepared.set(sql, compiled);
+    return compiled;
   }
 
   async initialize(): Promise<void> {
@@ -107,8 +118,7 @@ export class SqliteStorageProvider implements StorageProvider {
 
   private getCurrentSchemaVersion(): number {
     try {
-      const row = this.db
-        .prepare('SELECT MAX(version) as version FROM schema_version')
+      const row = this.statement('SELECT MAX(version) as version FROM schema_version')
         .get() as { version: number | null } | undefined;
       return row?.version || 0;
     } catch {
@@ -130,8 +140,7 @@ export class SqliteStorageProvider implements StorageProvider {
   }
 
   getRepository(id: string): RepositoryInfo | null {
-    const row = this.db
-      .prepare(
+    const row = this.statement(
         `SELECT id, path, name, file_count, node_count, edge_count, is_watched, 
          last_indexed_at, created_at, updated_at FROM repositories WHERE id = ?`
       )
@@ -143,8 +152,7 @@ export class SqliteStorageProvider implements StorageProvider {
   }
 
   getRepositoryByPath(path: string): RepositoryInfo | null {
-    const row = this.db
-      .prepare(
+    const row = this.statement(
         `SELECT id, path, name, file_count, node_count, edge_count, is_watched, 
          last_indexed_at, created_at, updated_at FROM repositories WHERE path = ?`
       )
@@ -156,8 +164,7 @@ export class SqliteStorageProvider implements StorageProvider {
   }
 
   listRepositories(): RepositoryInfo[] {
-    const rows = this.db
-      .prepare(
+    const rows = this.statement(
         `SELECT id, path, name, file_count, node_count, edge_count, is_watched, 
          last_indexed_at, created_at, updated_at FROM repositories ORDER BY created_at DESC`
       )
@@ -167,8 +174,7 @@ export class SqliteStorageProvider implements StorageProvider {
   }
 
   upsertRepository(repo: RepositoryInfo): void {
-    this.db
-      .prepare(
+    this.statement(
         `INSERT INTO repositories (id, path, name, file_count, node_count, edge_count, is_watched, 
          last_indexed_at, created_at, updated_at)
          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
@@ -197,12 +203,11 @@ export class SqliteStorageProvider implements StorageProvider {
   }
 
   deleteRepository(id: string): void {
-    this.db.prepare('DELETE FROM repositories WHERE id = ?').run(id);
+    this.statement('DELETE FROM repositories WHERE id = ?').run(id);
   }
 
   getFile(path: string): FileMetadata | null {
-    const row = this.db
-      .prepare(
+    const row = this.statement(
         `SELECT path, repository_id, hash, mtime, size, language, node_count, status, 
          embedding_status, last_error, retry_count, indexed_at, created_at, updated_at FROM files WHERE path = ?`
       )
@@ -223,15 +228,14 @@ export class SqliteStorageProvider implements StorageProvider {
          WHERE repository_id = ? ORDER BY path`;
 
     const rows = status
-      ? (this.db.prepare(sql).all(repositoryId, status) as any[])
-      : (this.db.prepare(sql).all(repositoryId) as any[]);
+      ? (this.statement(sql).all(repositoryId, status) as any[])
+      : (this.statement(sql).all(repositoryId) as any[]);
 
     return rows.map((row) => this.mapFile(row));
   }
 
   upsertFile(file: FileMetadata): void {
-    this.db
-      .prepare(
+    this.statement(
         `INSERT INTO files (path, repository_id, hash, mtime, size, language, node_count, status, 
          embedding_status, last_error, retry_count, indexed_at, created_at, updated_at)
          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
@@ -268,16 +272,15 @@ export class SqliteStorageProvider implements StorageProvider {
   }
 
   deleteFile(path: string): void {
-    this.db.prepare('DELETE FROM files WHERE path = ?').run(path);
+    this.statement('DELETE FROM files WHERE path = ?').run(path);
   }
 
   deleteFilesInRepository(repositoryId: string): void {
-    this.db.prepare('DELETE FROM files WHERE repository_id = ?').run(repositoryId);
+    this.statement('DELETE FROM files WHERE repository_id = ?').run(repositoryId);
   }
 
   listPendingEmbeddingFiles(limit: number): FileMetadata[] {
-    const rows = this.db
-      .prepare(
+    const rows = this.statement(
         `SELECT path, repository_id, hash, mtime, size, language, node_count, status, 
          embedding_status, last_error, retry_count, indexed_at, created_at, updated_at 
          FROM files 
@@ -291,16 +294,14 @@ export class SqliteStorageProvider implements StorageProvider {
   }
 
   updateFileEmbeddingStatus(path: string, status: 'pending' | 'done' | 'error'): void {
-    this.db
-      .prepare(
+    this.statement(
         `UPDATE files SET embedding_status = ?, updated_at = datetime('now') WHERE path = ?`
       )
       .run(status, path);
   }
 
   getNode(id: string): CodeNode | null {
-    const row = this.db
-      .prepare(
+    const row = this.statement(
         `SELECT id, name, qualified_name, kind, file_path, line_start, line_end, 
          column_start, column_end, visibility, is_exported, docstring, complexity, 
          repository_id, language, created_at, updated_at FROM nodes WHERE id = ?`
@@ -348,13 +349,12 @@ export class SqliteStorageProvider implements StorageProvider {
       params.push(`%${filter.namePattern}%`, `%${filter.namePattern}%`);
     }
 
-    const rows = this.db.prepare(sql).all(...params) as any[];
+    const rows = this.statement(sql).all(...params) as any[];
     return rows.map((row) => this.mapNode(row));
   }
 
   getAllNodes(): CodeNode[] {
-    const rows = this.db
-      .prepare(
+    const rows = this.statement(
         `SELECT id, name, qualified_name, kind, file_path, line_start, line_end, 
          column_start, column_end, visibility, is_exported, docstring, complexity, 
          repository_id, language, created_at, updated_at FROM nodes`
@@ -365,8 +365,7 @@ export class SqliteStorageProvider implements StorageProvider {
   }
 
   getNodesInFile(filePath: string): CodeNode[] {
-    const rows = this.db
-      .prepare(
+    const rows = this.statement(
         `SELECT id, name, qualified_name, kind, file_path, line_start, line_end, 
          column_start, column_end, visibility, is_exported, docstring, complexity, 
          repository_id, language, created_at, updated_at FROM nodes WHERE file_path = ?`
@@ -407,7 +406,7 @@ export class SqliteStorageProvider implements StorageProvider {
       params.push(filter.visibility);
     }
 
-    const rows = this.db.prepare(sql).all(...params) as any[];
+    const rows = this.statement(sql).all(...params) as any[];
     return rows.map((row) => this.mapNode(row));
   }
 
@@ -445,12 +444,12 @@ export class SqliteStorageProvider implements StorageProvider {
       params.push(`%${filter.namePattern}%`, `%${filter.namePattern}%`);
     }
 
-    const row = this.db.prepare(sql).get(...params) as { count: number };
+    const row = this.statement(sql).get(...params) as { count: number };
     return row.count;
   }
 
   upsertNodes(nodes: CodeNode[]): void {
-    const stmt = this.db.prepare(
+    const stmt = this.statement(
       `INSERT INTO nodes (id, name, qualified_name, kind, file_path, line_start, line_end, 
        column_start, column_end, visibility, is_exported, docstring, complexity, 
        repository_id, language, created_at, updated_at)
@@ -496,20 +495,19 @@ export class SqliteStorageProvider implements StorageProvider {
   }
 
   deleteNode(id: string): void {
-    this.db.prepare('DELETE FROM nodes WHERE id = ?').run(id);
+    this.statement('DELETE FROM nodes WHERE id = ?').run(id);
   }
 
   deleteNodesInFile(filePath: string): void {
-    this.db.prepare('DELETE FROM nodes WHERE file_path = ?').run(filePath);
+    this.statement('DELETE FROM nodes WHERE file_path = ?').run(filePath);
   }
 
   deleteNodesInRepository(repositoryId: string): void {
-    this.db.prepare('DELETE FROM nodes WHERE repository_id = ?').run(repositoryId);
+    this.statement('DELETE FROM nodes WHERE repository_id = ?').run(repositoryId);
   }
 
   getEdge(id: string): GraphEdge | null {
-    const row = this.db
-      .prepare(
+    const row = this.statement(
         'SELECT id, source_id, target_id, kind, confidence, metadata, repository_id, created_at, updated_at FROM edges WHERE id = ?'
       )
       .get(id) as any;
@@ -534,12 +532,17 @@ export class SqliteStorageProvider implements StorageProvider {
       params.push(targetId);
     }
 
-    const rows = this.db.prepare(sql).all(...params) as any[];
+    const rows = this.statement(sql).all(...params) as any[];
     return rows.map((row) => this.mapEdge(row));
   }
 
+  listEdgeIds(): string[] {
+    const rows = this.statement('SELECT id FROM edges').all() as Array<{ id: string }>;
+    return rows.map((row) => row.id);
+  }
+
   upsertEdges(edges: GraphEdge[]): void {
-    const stmt = this.db.prepare(
+    const stmt = this.statement(
       `INSERT INTO edges (id, source_id, target_id, kind, confidence, metadata, repository_id, created_at, updated_at)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
        ON CONFLICT(id) DO UPDATE SET
@@ -575,16 +578,15 @@ export class SqliteStorageProvider implements StorageProvider {
   }
 
   deleteEdge(id: string): void {
-    this.db.prepare('DELETE FROM edges WHERE id = ?').run(id);
+    this.statement('DELETE FROM edges WHERE id = ?').run(id);
   }
 
   deleteEdgesForNode(nodeId: string): void {
-    this.db.prepare('DELETE FROM edges WHERE source_id = ? OR target_id = ?').run(nodeId, nodeId);
+    this.statement('DELETE FROM edges WHERE source_id = ? OR target_id = ?').run(nodeId, nodeId);
   }
 
   deleteEdgesInRepository(repositoryId: string): void {
-    this.db
-      .prepare(
+    this.statement(
         `DELETE FROM edges WHERE source_id IN (SELECT id FROM nodes WHERE repository_id = ?) 
          OR target_id IN (SELECT id FROM nodes WHERE repository_id = ?)`
       )
@@ -594,7 +596,7 @@ export class SqliteStorageProvider implements StorageProvider {
   saveCodeReferences(references: CodeReference[]): void {
     if (references.length === 0) return;
 
-    const stmt = this.db.prepare(
+    const stmt = this.statement(
       `INSERT INTO code_references (id, source_file, source_node_id, target_name, reference_kind, line_number, repository_id, resolved, created_at, updated_at)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
        ON CONFLICT(id) DO UPDATE SET
@@ -622,12 +624,11 @@ export class SqliteStorageProvider implements StorageProvider {
   }
 
   deleteCodeReferencesForFile(filePath: string): void {
-    this.db.prepare('DELETE FROM code_references WHERE source_file = ?').run(filePath);
+    this.statement('DELETE FROM code_references WHERE source_file = ?').run(filePath);
   }
 
   getUnresolvedReferencesForTargetName(targetName: string, repositoryId: string): CodeReference[] {
-    const rows = this.db
-      .prepare(
+    const rows = this.statement(
         `SELECT id, source_file, source_node_id, target_name, reference_kind, line_number, repository_id, resolved, created_at, updated_at
          FROM code_references
          WHERE target_name = ? AND repository_id = ? AND resolved = 0`
@@ -660,14 +661,12 @@ export class SqliteStorageProvider implements StorageProvider {
   }
 
   markReferenceResolved(id: string): void {
-    this.db
-      .prepare('UPDATE code_references SET resolved = 1, updated_at = ? WHERE id = ?')
+    this.statement('UPDATE code_references SET resolved = 1, updated_at = ? WHERE id = ?')
       .run(new Date().toISOString(), id);
   }
 
   getUnresolvedReferencesInRepository(repositoryId: string): CodeReference[] {
-    const rows = this.db
-      .prepare(
+    const rows = this.statement(
         `SELECT id, source_file, source_node_id, target_name, reference_kind, line_number, repository_id, resolved, created_at, updated_at
          FROM code_references
          WHERE repository_id = ? AND resolved = 0`
@@ -699,7 +698,7 @@ export class SqliteStorageProvider implements StorageProvider {
     }));
   }
 
-  search(query: string, limit: number, offset: number): SearchResult[] {
+  search(query: string, limit: number, offset: number, repositoryId?: string): SearchResult[] {
     // Sanitize FTS5 query: escape quotes and handle special FTS operators safely
     // Allow term queries (not just phrases) while preventing injection
     let sanitizedQuery = query.trim();
@@ -716,18 +715,29 @@ export class SqliteStorageProvider implements StorageProvider {
       sanitizedQuery = sanitizedQuery.replace(/"/g, '""');
     }
     
-    const rows = this.db
-      .prepare(
-        `SELECT n.id, n.name, n.qualified_name, n.kind, n.file_path, n.line_start, n.line_end,
+    const sql = repositoryId
+      ? `SELECT n.id, n.name, n.qualified_name, n.kind, n.file_path, n.line_start, n.line_end,
+         n.language, n.repository_id, n.docstring, n.complexity, n.visibility, n.is_exported,
+         fts.rank
+         FROM nodes_fts fts
+         JOIN nodes n ON n.rowid = fts.rowid
+         WHERE nodes_fts MATCH ? AND n.repository_id = ?
+         ORDER BY fts.rank
+         LIMIT ? OFFSET ?`
+      : `SELECT n.id, n.name, n.qualified_name, n.kind, n.file_path, n.line_start, n.line_end,
          n.language, n.repository_id, n.docstring, n.complexity, n.visibility, n.is_exported,
          fts.rank
          FROM nodes_fts fts
          JOIN nodes n ON n.rowid = fts.rowid
          WHERE nodes_fts MATCH ?
          ORDER BY fts.rank
-         LIMIT ? OFFSET ?`
-      )
-      .all(sanitizedQuery, limit, offset) as any[];
+         LIMIT ? OFFSET ?`;
+
+    const rows = (
+      repositoryId
+        ? this.statement(sql).all(sanitizedQuery, repositoryId, limit, offset)
+        : this.statement(sql).all(sanitizedQuery, limit, offset)
+    ) as any[];
 
     return rows.map((row) => {
       // Extract parent symbol from qualified name (e.g., "AuthService.login" -> "AuthService")
@@ -756,15 +766,13 @@ export class SqliteStorageProvider implements StorageProvider {
 
   getConfig(key?: string): Record<string, unknown> {
     if (key) {
-      const row = this.db
-        .prepare('SELECT value FROM config WHERE key = ?')
+      const row = this.statement('SELECT value FROM config WHERE key = ?')
         .get(key) as { value: string } | undefined;
       return row?.value ? { [key]: row.value } : {};
     }
 
     // Return all config as object
-    const rows = this.db
-      .prepare('SELECT key, value FROM config')
+    const rows = this.statement('SELECT key, value FROM config')
       .all() as Array<{ key: string; value: string }>;
 
     const config: Record<string, unknown> = {};
@@ -788,8 +796,7 @@ export class SqliteStorageProvider implements StorageProvider {
   }
 
   setConfig(key: string, value: string): void {
-    this.db
-      .prepare(
+    this.statement(
         `INSERT INTO config (key, value, updated_at) VALUES (?, ?, datetime('now'))
          ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at`
       )
@@ -797,12 +804,11 @@ export class SqliteStorageProvider implements StorageProvider {
   }
 
   deleteConfig(key: string): void {
-    this.db.prepare('DELETE FROM config WHERE key = ?').run(key);
+    this.statement('DELETE FROM config WHERE key = ?').run(key);
   }
 
   updateRepositoryWatchStatus(id: string, watching: boolean): void {
-    this.db
-      .prepare(
+    this.statement(
         `UPDATE repositories SET is_watched = ?, updated_at = datetime('now') WHERE id = ?`
       )
       .run(watching ? 1 : 0, id);
@@ -814,8 +820,8 @@ export class SqliteStorageProvider implements StorageProvider {
       : 'SELECT language, COUNT(*) as count FROM nodes GROUP BY language';
     
     const rows = repositoryId
-      ? (this.db.prepare(sql).all(repositoryId) as Array<{ language: string; count: number }>)
-      : (this.db.prepare(sql).all() as Array<{ language: string; count: number }>);
+      ? (this.statement(sql).all(repositoryId) as Array<{ language: string; count: number }>)
+      : (this.statement(sql).all() as Array<{ language: string; count: number }>);
 
     const result: Record<string, number> = {};
     for (const row of rows) {
@@ -826,8 +832,7 @@ export class SqliteStorageProvider implements StorageProvider {
 
   findUnreferencedNodes(repositoryId: string | undefined, limit: number, offset: number): CodeNode[] {
     if (repositoryId) {
-      const rows = this.db
-        .prepare(
+      const rows = this.statement(
           `SELECT id, name, qualified_name, kind, file_path, line_start, line_end,
            column_start, column_end, visibility, is_exported, docstring, complexity,
            repository_id, language, created_at, updated_at
@@ -846,8 +851,7 @@ export class SqliteStorageProvider implements StorageProvider {
       return rows.map((row) => this.mapNode(row));
     } else {
       // Find unreferenced nodes across all repositories
-      const rows = this.db
-        .prepare(
+      const rows = this.statement(
           `SELECT id, name, qualified_name, kind, file_path, line_start, line_end,
            column_start, column_end, visibility, is_exported, docstring, complexity,
            repository_id, language, created_at, updated_at
@@ -867,8 +871,7 @@ export class SqliteStorageProvider implements StorageProvider {
   }
 
   countUnreferencedNodes(repositoryId: string): number {
-    const row = this.db
-      .prepare(
+    const row = this.statement(
         `SELECT COUNT(*) as count
          FROM nodes
          WHERE repository_id = ?
@@ -890,11 +893,11 @@ export class SqliteStorageProvider implements StorageProvider {
     edgeCount: number;
     databaseSize: number;
   } {
-    const repoCount = (this.db.prepare('SELECT COUNT(*) as count FROM repositories').get() as any)
+    const repoCount = (this.statement('SELECT COUNT(*) as count FROM repositories').get() as any)
       .count;
-    const fileCount = (this.db.prepare('SELECT COUNT(*) as count FROM files').get() as any).count;
-    const nodeCount = (this.db.prepare('SELECT COUNT(*) as count FROM nodes').get() as any).count;
-    const edgeCount = (this.db.prepare('SELECT COUNT(*) as count FROM edges').get() as any).count;
+    const fileCount = (this.statement('SELECT COUNT(*) as count FROM files').get() as any).count;
+    const nodeCount = (this.statement('SELECT COUNT(*) as count FROM nodes').get() as any).count;
+    const edgeCount = (this.statement('SELECT COUNT(*) as count FROM edges').get() as any).count;
 
     let dbSize = 0;
     try {
@@ -918,8 +921,7 @@ export class SqliteStorageProvider implements StorageProvider {
   }
 
   private mapRepository(row: any): RepositoryInfo {
-    const languagesJson = this.db
-      .prepare(
+    const languagesJson = this.statement(
         `SELECT language, COUNT(*) as count FROM nodes 
          WHERE repository_id = ? GROUP BY language`
       )

@@ -23,13 +23,16 @@
  * Security: All inputs validated, paths canonicalized
  */
 
-import { Server } from '@modelcontextprotocol/sdk/server/index.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
-import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
-import { ListToolsRequestSchema, CallToolRequestSchema } from '@modelcontextprotocol/sdk/types.js';
+import type { McpServer } from '@modelcontextprotocol/server';
 import type { IncomingMessage, ServerResponse } from 'node:http';
-import { TOOL_DEFINITIONS, TOOL_DEFINITIONS_COMPACT } from './tools.js';
+import type { ContextSimploToolset } from './tool-catalog.js';
+import { getContextSimploToolset } from '../core/config.js';
+import { createMcpHandler, type McpHttpHandler } from '@modelcontextprotocol/server';
+import { toNodeHandler } from '@modelcontextprotocol/node';
 import { formatMCPResponse } from './formatter.js';
+import { countWireTokens } from './token-count.js';
+import { createV2McpServer } from './v2-register.js';
 import type { ResponseMode } from '../core/types.js';
 import type { CodeGraphApi } from '../core/graph.js';
 import type { StorageProvider } from '../store/provider.js';
@@ -55,6 +58,7 @@ export interface MCPServerOptions {
   embeddingProvider?: EmbeddingProvider;
   watcher?: FileWatcher;
   responseMode?: ResponseMode;
+  toolset?: ContextSimploToolset;
   eml?: EmlServices;
   indexQueue?: any;
 }
@@ -65,11 +69,22 @@ export interface MCPMetrics {
   toolBreakdown: Record<string, number>;
   averageResponseTime: number;
   errorRate: number;
-  lastMinuteRequests: Array<{ timestamp: number; tool: string; duration: number; error?: boolean }>;
+  responseBytesTotal: number;
+  responseTokensTotal: number;
+  tokensPerMinute: number;
+  toolTokensBreakdown: Record<string, number>;
+  lastMinuteRequests: Array<{
+    timestamp: number;
+    tool: string;
+    duration: number;
+    error?: boolean;
+    responseBytes?: number;
+    responseTokens?: number;
+  }>;
 }
 
 export class MCPServer {
-  private server: Server;
+  private stdioMcp?: McpServer;
   private storage: StorageProvider;
   private graph: CodeGraphApi;
   private indexer: Indexer;
@@ -80,6 +95,7 @@ export class MCPServer {
   private watcher?: import('../core/watcher.js').FileWatcher;
   private vectorStore?: LanceDBVectorStore;
   private responseMode: ResponseMode;
+  private toolset: ContextSimploToolset;
   private eml?: EmlServices;
   private indexQueue?: any;
   private metrics: MCPMetrics = {
@@ -88,8 +104,13 @@ export class MCPServer {
     toolBreakdown: {},
     averageResponseTime: 0,
     errorRate: 0,
+    responseBytesTotal: 0,
+    responseTokensTotal: 0,
+    tokensPerMinute: 0,
+    toolTokensBreakdown: {},
     lastMinuteRequests: [],
   };
+  private v2HttpHandler?: McpHttpHandler;
 
   constructor(options: MCPServerOptions) {
     this.storage = options.storage;
@@ -97,6 +118,7 @@ export class MCPServer {
     this.indexer = options.indexer;
     this.workspaceRoot = options.workspaceRoot;
     this.responseMode = options.responseMode ?? 'full';
+    this.toolset = options.toolset ?? getContextSimploToolset();
     this.symbolicSearch = new SymbolicSearch(this.storage);
 
     this.watcher = options.watcher;
@@ -109,62 +131,41 @@ export class MCPServer {
       this.hybridSearch = new HybridSearch(this.symbolicSearch, this.vectorSearch);
     }
 
-    this.server = new Server(
-      {
-        name: 'context-simplo',
-        version: '0.2.0',
-      },
-      {
-        capabilities: {
-          tools: {},
-        },
-      }
-    );
-
-    this.registerTools(this.server);
-    this.setupErrorHandling();
+    this.setupProcessSignals();
   }
 
-  /**
-   * Register tool handlers on a Server instance.
-   * Used for both the stdio server and per-request HTTP servers.
-   */
-  private registerTools(server: Server): void {
-    const toolDefs = this.responseMode === 'compact' ? TOOL_DEFINITIONS_COMPACT : TOOL_DEFINITIONS;
+  getResponseMode(): ResponseMode {
+    return this.responseMode;
+  }
 
-    server.setRequestHandler(
-      ListToolsRequestSchema,
-      async () => ({
-        tools: toolDefs,
-      })
-    );
+  getToolset(): ContextSimploToolset {
+    return this.toolset;
+  }
 
-    server.setRequestHandler(
-      CallToolRequestSchema,
-      async (request: any) => {
-        const { name, arguments: args } = request.params;
-        const startTime = Date.now();
+  async executeTool(
+    name: string,
+    args: Record<string, unknown>
+  ): Promise<{ content: Array<{ type: 'text'; text: string }>; structuredContent: unknown }> {
+    const startTime = Date.now();
+    try {
+      const result = await this.handleToolCall(name, args);
+      const wrapped = this.wrapToolResult(result);
+      this.recordMetrics(name, Date.now() - startTime, false, wrapped.content[0]!.text);
+      return wrapped;
+    } catch (error) {
+      this.recordMetrics(name, Date.now() - startTime, true, '');
+      throw this.mapErrorToMCP(error as Error);
+    }
+  }
 
-        try {
-          const result = await this.handleToolCall(name as string, args as Record<string, unknown>);
-          const duration = Date.now() - startTime;
-          this.recordMetrics(name, duration, false);
-          
-          return {
-            content: [
-              {
-                type: 'text',
-                text: formatMCPResponse(result, this.responseMode),
-              },
-            ],
-          };
-        } catch (error) {
-          const duration = Date.now() - startTime;
-          this.recordMetrics(name, duration, true);
-          throw this.mapErrorToMCP(error as Error);
-        }
-      }
-    );
+  private wrapToolResult(result: unknown): {
+    content: Array<{ type: 'text'; text: string }>;
+    structuredContent: unknown;
+  } {
+    return {
+      content: [{ type: 'text', text: formatMCPResponse(result, this.responseMode) }],
+      structuredContent: result,
+    };
   }
 
   private async handleToolCall(name: string, args: Record<string, unknown>): Promise<unknown> {
@@ -186,20 +187,14 @@ export class MCPServer {
         return handlers.indexRepository(args, context);
       case 'watch_directory':
         return handlers.watchDirectory(args, context);
-      case 'unwatch_directory':
-        return handlers.unwatchDirectory(args, context);
       case 'list_repositories':
         return handlers.listRepositories(args, context);
       case 'delete_repository':
         return handlers.deleteRepository(args, context);
-      case 'get_stats':
-        return handlers.getStats(args, context);
       case 'find_symbol':
         return handlers.findSymbol(args, context);
-      case 'find_callers':
-        return handlers.findCallers(args, context);
-      case 'find_callees':
-        return handlers.findCallees(args, context);
+      case 'find_references':
+        return handlers.findReferences(args, context);
       case 'find_path':
         return handlers.findPath(args, context);
       case 'get_impact_radius':
@@ -214,14 +209,8 @@ export class MCPServer {
         return handlers.hybridSearch(args, context);
       case 'find_dead_code':
         return handlers.findDeadCode(args, context);
-      case 'calculate_complexity':
-        return handlers.calculateComplexity(args, context);
       case 'find_complex_functions':
         return handlers.findComplexFunctions(args, context);
-      case 'lint_context':
-        return handlers.lintContext(args, context);
-      case 'query_graph':
-        return handlers.queryGraph(args, context);
       case 'memory_remember':
         return emlHandlers.memoryRemember(args, this.requireEml());
       case 'memory_recall':
@@ -234,12 +223,8 @@ export class MCPServer {
         return emlHandlers.haveWeTriedThis(args, this.requireEml());
       case 'who_knows':
         return emlHandlers.whoKnows(args, this.requireEml());
-      case 'verify_memory':
-        return emlHandlers.verifyMemory(args, this.requireEml());
-      case 'reinforce_memory':
-        return emlHandlers.reinforceMemory(args, this.requireEml());
-      case 'flag_contradiction':
-        return emlHandlers.flagContradiction(args, this.requireEml());
+      case 'memory_update':
+        return emlHandlers.memoryUpdate(args, this.requireEml());
       case 'track_intent':
         return emlHandlers.trackIntent(args, this.requireEml());
       case 'list_active_goals':
@@ -262,13 +247,9 @@ export class MCPServer {
     return this.eml;
   }
 
-  private setupErrorHandling(): void {
-    this.server.onerror = (error) => {
-      console.error('[MCP Server Error]', error);
-    };
-
+  private setupProcessSignals(): void {
     process.on('SIGINT', async () => {
-      await this.server.close();
+      await this.close();
       process.exit(0);
     });
   }
@@ -292,48 +273,46 @@ export class MCPServer {
   }
 
   async start(): Promise<void> {
+    this.stdioMcp = createV2McpServer(this);
     const transport = new StdioServerTransport();
-    await this.server.connect(transport);
+    await this.stdioMcp.connect(transport);
+    this.stdioMcp.server.onerror = (error) => {
+      console.error('[MCP Server Error]', error);
+    };
     console.error('MCP server started on stdio');
-    console.error('MCP HTTP transport ready (stateless, per-request)');
+    console.error('MCP HTTP transport ready (SDK v2, stateless)');
   }
 
   /**
-   * Handle HTTP request for MCP protocol.
-   * Creates a fresh Server + Transport pair per request because the SDK
-   * forbids reusing a stateless transport across requests.
+   * Handle HTTP request for MCP protocol (SDK v2 stateless handler).
    */
-  async handleHttpRequest(req: IncomingMessage, res: ServerResponse, body?: any): Promise<void> {
-    const httpServer = new Server(
-      { name: 'context-simplo', version: '0.2.0' },
-      { capabilities: { tools: {} } },
-    );
-    this.registerTools(httpServer);
-
-    const transport = new StreamableHTTPServerTransport({
-      sessionIdGenerator: undefined,
-    });
-
-    await httpServer.connect(transport);
-    await transport.handleRequest(req, res, body);
-
-    res.on('close', () => {
-      void transport.close();
-      void httpServer.close();
-    });
+  async handleHttpRequest(req: IncomingMessage, res: ServerResponse, body?: unknown): Promise<void> {
+    if (!this.v2HttpHandler) {
+      this.v2HttpHandler = createMcpHandler(() => createV2McpServer(this), { legacy: 'stateless' });
+    }
+    const nodeHandler = toNodeHandler(this.v2HttpHandler);
+    await nodeHandler(req, res, body);
   }
 
-  private recordMetrics(toolName: string, duration: number, error: boolean): void {
+  private recordMetrics(toolName: string, duration: number, error: boolean, responseText: string): void {
     const now = Date.now();
-    
+    const responseBytes = Buffer.byteLength(responseText, 'utf8');
+    const responseTokens = countWireTokens(responseText);
+
     this.metrics.totalRequests++;
     this.metrics.toolBreakdown[toolName] = (this.metrics.toolBreakdown[toolName] || 0) + 1;
-    
+    this.metrics.responseBytesTotal += responseBytes;
+    this.metrics.responseTokensTotal += responseTokens;
+    this.metrics.toolTokensBreakdown[toolName] =
+      (this.metrics.toolTokensBreakdown[toolName] || 0) + responseTokens;
+
     this.metrics.lastMinuteRequests.push({
       timestamp: now,
       tool: toolName,
       duration,
       error,
+      responseBytes,
+      responseTokens,
     });
 
     // Clean up old requests (older than 1 minute)
@@ -342,8 +321,11 @@ export class MCPServer {
       (req) => req.timestamp > oneMinuteAgo
     );
 
-    // Calculate requests per minute
     this.metrics.requestsPerMinute = this.metrics.lastMinuteRequests.length;
+    this.metrics.tokensPerMinute = this.metrics.lastMinuteRequests.reduce(
+      (sum, entry) => sum + (entry.responseTokens ?? 0),
+      0
+    );
 
     // Calculate average response time
     const totalDuration = this.metrics.lastMinuteRequests.reduce((sum, req) => sum + req.duration, 0);
@@ -363,6 +345,7 @@ export class MCPServer {
   }
 
   async close(): Promise<void> {
-    await this.server.close();
+    await this.stdioMcp?.close();
+    this.stdioMcp = undefined;
   }
 }

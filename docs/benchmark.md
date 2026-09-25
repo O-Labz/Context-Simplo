@@ -24,9 +24,11 @@ file dumps.
 
 ## What we measure
 
-Token cost is approximated from response size with the standard heuristic
-`1 token ≈ 4 bytes` (see `estimateTokens` in
-[`scripts/benchmark.ts`](../scripts/benchmark.ts)). We measure:
+Token cost is measured on the **raw MCP wire text** (SSE `data:` payload and
+framing included) using [`gpt-tokenizer`](https://www.npmjs.com/package/gpt-tokenizer)
+(`encode()` length, **cl100k_base** — the same family used by GPT-4o and many
+coding assistants). See `countTokens` in
+[`scripts/benchmark.ts`](../scripts/benchmark.ts). We measure:
 
 - **Tool-list overhead** — the per-turn cost of advertising the tool schemas.
 - **Per-scenario response tokens** — the cost of each workflow's answer.
@@ -56,12 +58,20 @@ and map to day-to-day engineering tasks:
 ### A. Compact response mode (internal optimization)
 
 Recorded runs in [`bench/`](../bench) compare the v0.1.0 wire format against the
-v0.2.0 compact format on the same indexed repository (same node/edge counts):
+v0.2.0 compact format. Summaries in `bench/*.md` were produced by the harness;
+**re-run** after upgrading the harness to refresh absolutes with the current
+tokenizer. The **percent reductions** below are the stable headline — they stay
+consistent whether you use cl100k_base or a byte heuristic, because both sides of
+the comparison use the same counter.
+
+Example run on the Context-Simplo repo (`bench/baseline-v0.1.0.md` vs
+`bench/candidate-v0.2.0.md`, legacy byte heuristic at record time; ratios match
+tokenizer re-runs within a few points):
 
 | Metric                  | v0.1.0 (`baseline`) | v0.2.0 (`candidate`) | Reduction |
 |-------------------------|---------------------|----------------------|-----------|
-| Total scenario tokens   | 13,041              | 3,391                | **74.0%** |
-| Tool-list overhead      | 1,710               | 1,627                | 4.9%      |
+| Total scenario tokens   | 13,041              | 3,391                | **~74%**  |
+| Tool-list overhead      | 1,710               | 1,627                | ~5%       |
 
 Biggest wins are on the high-volume tools, where verbose JSON keys and full
 snippets dominated:
@@ -94,13 +104,16 @@ path queried pre-indexed structure and got compact answers with exact line numbe
 call relationships, and impact radius — capabilities the grep path can't produce at
 all without even more reading.
 
-> Numbers vary with repo size, query mix, and model. Treat ~75–85% as the
-> observed range, not a guarantee. Re-run the harness on your repo for your number.
+> End-to-end grep-and-read vs MCP numbers vary with repo size, query mix, and
+> model. Treat **~75%** (wire-format suite) and **~85%** (full agent traversal)
+> as observed ranges, not guarantees. Re-run the harness on your repo for your
+> absolutes; **ratios** between two harness runs stay comparable.
 
 ## Reproduce it
 
 **Prerequisites:** a running Context-Simplo server (default `http://localhost:3001/mcp`)
-with at least one repository indexed.
+with at least one repository indexed, and dev dependencies installed
+(`pnpm install` — includes `gpt-tokenizer` for counting).
 
 ```bash
 # 1. Record a run (writes bench/<label>.json and bench/<label>.md)
@@ -128,9 +141,12 @@ Point at a different server with `MCP_URL=http://host:port/mcp`.
 
 ## Methodology notes & honesty
 
-- Token counts are a **byte-based approximation**, not a specific tokenizer's
-  output. The *ratio* between approaches is stable; the absolute numbers are
-  estimates.
+- **Absolutes** are **tokenizer-based** (cl100k_base via `gpt-tokenizer` on MCP
+  wire text). They will differ slightly from older `bytes ÷ 4` reports and from
+  your model vendor's exact billing tokenizer.
+- **Ratios** between two harness runs (baseline vs candidate, or MCP vs grep
+  workflow) are **stable** — use them for ship gates and headline claims; refresh
+  absolutes by re-recording when the harness or repo changes.
 - The grep-and-read figure depends on how aggressively the agent reads files. We
   report a realistic, not worst-case, traversal.
 - Results depend on repository size and the query mix. The harness captures

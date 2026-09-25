@@ -20,7 +20,7 @@ On a suite of 10 real engineering workflows, answering through Context-Simplo us
 | Context-Simplo MCP | ~6,000 |
 | **Reduction** | **~85%** |
 
-The internal wire-format benchmark (v0.1.0 → v0.2.0) independently shows a **74% drop** (13,041 → 3,391 tokens) on the same indexed repo, with zero capability regressions. It's reproducible on your own machine in two commands — see **[the full benchmark](docs/benchmark.md)**.
+The internal wire-format benchmark (v0.1.0 → v0.2.0) independently shows a **~74% drop** in scenario token cost on the same indexed repo, with zero capability regressions. Token counts use **cl100k_base** (`gpt-tokenizer`); see **[the full benchmark](docs/benchmark.md)** for methodology and how to re-run it.
 
 Fewer tokens finding things means more tokens — and more of your budget — left for actually building.
 
@@ -187,5 +187,3 @@ For container limits, use `docker run --memory=4g --cpus=4`.
 ## License
 
 MIT, see [LICENSE](LICENSE).
-
-<!-- Performance test comment added at 12:47 PM to test auto-indexing speed -->

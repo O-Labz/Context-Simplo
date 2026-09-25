@@ -113,12 +113,20 @@ export async function registerMetricsRoutes(
         averageResponseTime: options.mcpServer.getMetrics().averageResponseTime,
         errorRate: options.mcpServer.getMetrics().errorRate,
         totalRequests: options.mcpServer.getMetrics().totalRequests,
+        responseBytesTotal: options.mcpServer.getMetrics().responseBytesTotal,
+        responseTokensTotal: options.mcpServer.getMetrics().responseTokensTotal,
+        tokensPerMinute: options.mcpServer.getMetrics().tokensPerMinute,
+        toolTokensBreakdown: options.mcpServer.getMetrics().toolTokensBreakdown,
       } : {
         requestsPerMinute: 0,
         toolBreakdown: {},
         averageResponseTime: 0,
         errorRate: 0,
         totalRequests: 0,
+        responseBytesTotal: 0,
+        responseTokensTotal: 0,
+        tokensPerMinute: 0,
+        toolTokensBreakdown: {},
       },
 
       // LLM provider status

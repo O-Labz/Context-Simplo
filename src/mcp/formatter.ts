@@ -1,22 +1,16 @@
 /**
  * MCP Response Formatter
- *
- * Compact mode reduces token usage ~60% by:
- * - Shortening verbose JSON keys (filePath → fp, qualifiedName → qn, etc.)
- * - Removing null/undefined values
- * - Dropping rarely-useful fields (id hashes, visibility, pagination echoes)
- * - Hoisting shared repositoryId/language to envelope level
- * - Minifying JSON (no indentation)
- *
- * Full mode: passthrough with pretty-print (existing behavior).
  */
 
+import { encode as encodeToon } from '@toon-format/toon';
+import { ToonEncodeError } from '../core/errors.js';
 import type { ResponseMode } from '../core/types.js';
 
 const KEY_MAP: Record<string, string> = {
   results: 'r',
   callers: 'r',
   callees: 'r',
+  repositories: 'repos',
   name: 'n',
   qualifiedName: 'qn',
   kind: 'k',
@@ -25,7 +19,6 @@ const KEY_MAP: Record<string, string> = {
   lineEnd: 'le',
   repositoryId: 'rid',
   language: 'lang',
-  nodeId: 'nid',
   score: 's',
   isExported: 'x',
   complexity: 'cx',
@@ -38,18 +31,42 @@ const KEY_MAP: Record<string, string> = {
   modules: 'mods',
   keyAbstractions: 'abs',
   searchType: 'st',
+  repoRoot: 'root',
+  fileCount: 'fc',
+  nodeCount: 'nc',
+  edgeCount: 'ec',
+  isWatched: 'w',
+  lastIndexedAt: 'idx',
+  totalAffectedNodes: 'tn',
+  totalAffectedFiles: 'tf',
 };
 
-// Fields stripped entirely in compact mode
-const STRIP_FIELDS = new Set(['id', 'visibility', 'limit', 'offset', 'columnStart', 'columnEnd']);
+const STRIP_FIELDS = new Set([
+  'id',
+  'nodeId',
+  'visibility',
+  'limit',
+  'offset',
+  'columnStart',
+  'columnEnd',
+  'docstring',
+  'parentSymbol',
+  'packageStructure',
+]);
 
-/**
- * Recursively rename keys, strip null/undefined/stripped fields.
- */
-function compactValue(value: unknown): unknown {
+const ROUNDED_NUMBER_KEYS = new Set(['score', 'confidence', 's']);
+
+function roundMetric(value: number): number {
+  return Math.round(value * 1000) / 1000;
+}
+
+function compactValue(value: unknown, key?: string): unknown {
   if (value === null || value === undefined) return undefined;
+  if (typeof value === 'number' && key && ROUNDED_NUMBER_KEYS.has(key)) {
+    return roundMetric(value);
+  }
   if (Array.isArray(value)) {
-    return value.map(compactValue).filter((v) => v !== undefined);
+    return value.map((v) => compactValue(v)).filter((v) => v !== undefined);
   }
   if (typeof value === 'object') {
     return compactObject(value as Record<string, unknown>);
@@ -63,19 +80,25 @@ function compactObject(obj: Record<string, unknown>): Record<string, unknown> {
     if (STRIP_FIELDS.has(key)) continue;
     if (val === null || val === undefined) continue;
 
-    const compacted = compactValue(val);
+    let processed: unknown = val;
+    if (typeof val === 'number' && ROUNDED_NUMBER_KEYS.has(key)) {
+      processed = roundMetric(val);
+    }
+
+    const compacted = compactValue(processed, key);
     if (compacted === undefined) continue;
 
     const mappedKey = KEY_MAP[key] ?? key;
     out[mappedKey] = compacted;
   }
+
+  if (typeof out.n === 'string' && typeof out.qn === 'string' && out.n === out.qn) {
+    delete out.qn;
+  }
+
   return out;
 }
 
-/**
- * Hoist repositoryId and language to envelope when all items in a results
- * array share the same value, then remove from individual items.
- */
 function hoistSharedFields(obj: Record<string, unknown>): Record<string, unknown> {
   const resultsKey = Object.keys(obj).find((k) => Array.isArray(obj[k]) && k === 'r');
   if (!resultsKey) return obj;
@@ -101,12 +124,14 @@ function hoistSharedFields(obj: Record<string, unknown>): Record<string, unknown
 
   if (Object.keys(hoisted).length === 0) return obj;
 
-  // Remove hoisted fields from each item
   const hoistedKeys = new Set(Object.keys(hoisted));
   const strippedItems = items.map((item) => {
     const copy = { ...item };
     for (const k of hoistedKeys) {
       delete copy[k];
+    }
+    if (typeof copy.n === 'string' && typeof copy.qn === 'string' && copy.n === copy.qn) {
+      delete copy.qn;
     }
     return copy;
   });
@@ -114,9 +139,6 @@ function hoistSharedFields(obj: Record<string, unknown>): Record<string, unknown
   return { ...obj, ...hoisted, [resultsKey]: strippedItems };
 }
 
-/**
- * Transform a response object into compact form.
- */
 export function compactResponse(result: unknown): unknown {
   if (typeof result !== 'object' || result === null || Array.isArray(result)) {
     return result;
@@ -125,14 +147,44 @@ export function compactResponse(result: unknown): unknown {
   return hoistSharedFields(compacted);
 }
 
-/**
- * Serialize an MCP tool result to string.
- * compact: short keys + minified JSON
- * full: original keys + pretty-printed JSON
- */
-export function formatMCPResponse(result: unknown, mode: ResponseMode): string {
-  if (mode === 'compact') {
-    return JSON.stringify(compactResponse(result));
+function assertJsonData(value: unknown, seen: WeakSet<object>): void {
+  if (value === null || typeof value === 'string' || typeof value === 'boolean') {
+    return;
   }
-  return JSON.stringify(result, null, 2);
+  if (typeof value === 'number') {
+    if (!Number.isFinite(value)) {
+      throw new ToonEncodeError(new Error('non-finite number'));
+    }
+    return;
+  }
+  if (typeof value !== 'object') {
+    throw new ToonEncodeError(new Error(`unsupported value type ${typeof value}`));
+  }
+  if (seen.has(value)) {
+    throw new ToonEncodeError(new Error('circular value'));
+  }
+  seen.add(value);
+  const entries = Array.isArray(value) ? value : Object.values(value);
+  for (const entry of entries) {
+    if (entry === undefined) {
+      continue;
+    }
+    assertJsonData(entry, seen);
+  }
+}
+
+export function formatMCPResponse(result: unknown, mode: ResponseMode): string {
+  if (mode === 'full') {
+    return JSON.stringify(result, null, 2);
+  }
+  const compacted = compactResponse(result);
+  if (mode === 'toon') {
+    assertJsonData(compacted, new WeakSet());
+    try {
+      return encodeToon(compacted);
+    } catch (error) {
+      throw new ToonEncodeError(error instanceof Error ? error : new Error(String(error)));
+    }
+  }
+  return JSON.stringify(compacted);
 }

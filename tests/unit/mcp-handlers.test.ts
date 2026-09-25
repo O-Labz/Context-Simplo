@@ -4,7 +4,7 @@
  * Tests MCP tool handlers for validation, error handling, and path security.
  */
 
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { indexRepository, watchDirectory, deleteRepository } from '../../src/mcp/handlers/indexing.js';
 import { semanticSearch, hybridSearch, exactSearch } from '../../src/mcp/handlers/search.js';
 import {
@@ -14,9 +14,9 @@ import {
   FindSymbolInputSchema,
   FindCallersInputSchema,
   FindCalleesInputSchema,
-  TOOL_DEFINITIONS,
-  TOOL_DEFINITIONS_COMPACT,
+  FindReferencesInputSchema,
 } from '../../src/mcp/tools.js';
+import { EML_MCP_TOOL_NAMES, resolveToolDefinitions } from '../../src/mcp/tool-catalog.js';
 import { CodeGraph } from '../../src/core/graph.js';
 import { SqliteStorageProvider } from '../../src/store/sqlite.js';
 import { Indexer } from '../../src/core/indexer.js';
@@ -35,7 +35,7 @@ describe('MCP Handlers', () => {
     tempDir = await mkdtemp(join(tmpdir(), 'mcp-test-'));
     workspaceRoot = tempDir;
     
-    const storage = new SqliteStorageProvider(join(tempDir, 'test.db'));
+    const storage = new SqliteStorageProvider(':memory:');
     await storage.initialize();
     
     const graph = new CodeGraph();
@@ -78,6 +78,22 @@ describe('MCP Handlers', () => {
         indexRepository({ path: 123 }, context)
       ).rejects.toThrow();
     });
+
+    it('accepts an index job without waiting for it to finish', async () => {
+      let started = false;
+      context.indexer.indexRepository = () => {
+        started = true;
+        return new Promise(() => {});
+      };
+      const accepted = await indexRepository({ path: '.' }, context);
+      expect(started).toBe(true);
+      expect(accepted).toEqual({
+        status: 'accepted',
+        path: workspaceRoot,
+        message:
+          'Indexing started. Other tools and the dashboard stay available; list_repositories updates when the job finishes.',
+      });
+    });
   });
 
   describe('watchDirectory', () => {
@@ -89,6 +105,14 @@ describe('MCP Handlers', () => {
 
     it('should return error when watcher not available', async () => {
       const result = await watchDirectory({ path: '.' }, context);
+      expect(result).toMatchObject({
+        success: false,
+        message: 'File watcher is not available',
+      });
+    });
+
+    it('enabled=false delegates to unwatch when watcher unavailable', async () => {
+      const result = await watchDirectory({ path: '.', enabled: false }, context);
       expect(result).toMatchObject({
         success: false,
         message: 'File watcher is not available',
@@ -174,6 +198,12 @@ describe('v0.2.0 schema defaults', () => {
       expect(parsed.limit).toBe(10);
     });
 
+    it('FindReferencesInputSchema defaults limit to 10 and direction to both', () => {
+      const parsed = FindReferencesInputSchema.parse({ symbolName: 'foo' });
+      expect(parsed.limit).toBe(10);
+      expect(parsed.direction).toBe('both');
+    });
+
     it('ExactSearchInputSchema defaults limit to 10', () => {
       const parsed = ExactSearchInputSchema.parse({ query: 'foo' });
       expect(parsed.limit).toBe(10);
@@ -215,41 +245,90 @@ describe('v0.2.0 schema defaults', () => {
 
 // v0.2.0 regression guard: explain_architecture must NOT advertise false token costs
 describe('v0.2.0 explain_architecture description', () => {
-  const findTool = (defs: ReadonlyArray<{ name: string; inputSchema: unknown }>, name: string) =>
-    defs.find((d) => d.name === name);
-
-  const extractDetailLevelDescription = (tool: unknown): string => {
-    const t = tool as {
-      inputSchema: { properties: { detailLevel?: { description?: string } } };
-    };
-    return t?.inputSchema?.properties?.detailLevel?.description ?? '';
+  const detailLevelDescription = (mode: 'full' | 'compact'): string => {
+    const tool = resolveToolDefinitions(mode, 'full').find((entry) => entry.name === 'explain_architecture');
+    const properties = tool?.inputSchema['properties'] as
+      | { detailLevel?: { description?: string } }
+      | undefined;
+    return properties?.detailLevel?.description ?? '';
   };
 
-  it('TOOL_DEFINITIONS explain_architecture does not advertise ~500/2000/5000 token estimates', () => {
-    const tool = findTool(TOOL_DEFINITIONS, 'explain_architecture');
-    expect(tool).toBeDefined();
-    const desc = extractDetailLevelDescription(tool);
+  it('full explain_architecture schema does not advertise token estimates', () => {
+    const desc = detailLevelDescription('full');
     expect(desc).not.toMatch(/~500\s*tokens/);
     expect(desc).not.toMatch(/~2000\s*tokens/);
     expect(desc).not.toMatch(/~5000\s*tokens/);
   });
 
-  it('TOOL_DEFINITIONS_COMPACT explain_architecture does not advertise ~500/2000/5000 token estimates', () => {
-    const tool = findTool(TOOL_DEFINITIONS_COMPACT, 'explain_architecture');
-    expect(tool).toBeDefined();
-    const desc = extractDetailLevelDescription(tool);
+  it('compact explain_architecture schema does not advertise token estimates', () => {
+    const desc = detailLevelDescription('compact');
     expect(desc).not.toMatch(/~500\s*tokens/);
     expect(desc).not.toMatch(/~2000\s*tokens/);
     expect(desc).not.toMatch(/~5000\s*tokens/);
   });
 });
 
-// v0.2.0 regression: TOOL_DEFINITIONS_COMPACT[0] must not carry the long preamble
-describe('v0.2.0 compact tool definitions preamble removed', () => {
-  it('TOOL_DEFINITIONS_COMPACT[0] description is concise (no inline KEY_MAP duplication)', () => {
-    const first = TOOL_DEFINITIONS_COMPACT[0]!;
+describe('compact tool descriptions stay short', () => {
+  it('index_repository compact description has no key-map preamble', () => {
+    const first = resolveToolDefinitions('compact', 'full')[0]!;
     expect(first.description).not.toMatch(/COMPACT MODE/);
     expect(first.description).not.toMatch(/Respond terse/);
     expect(first.description.length).toBeLessThan(200);
+  });
+});
+
+const REMOVED_V030_TOOLS = [
+  'unwatch_directory',
+  'get_stats',
+  'find_callers',
+  'find_callees',
+  'calculate_complexity',
+  'lint_context',
+  'query_graph',
+  'verify_memory',
+  'reinforce_memory',
+  'flag_contradiction',
+] as const;
+
+describe('v0.3.0 MCP tool surface', () => {
+  const names = (defs: ReadonlyArray<{ name: string }>) => defs.map((d) => d.name);
+
+  it('advertises 27 tools in full and compact modes', () => {
+    expect(resolveToolDefinitions('full', 'full')).toHaveLength(27);
+    expect(resolveToolDefinitions('compact', 'full')).toHaveLength(27);
+  });
+
+  it('removed tools are absent', () => {
+    const advertised = names(resolveToolDefinitions('full', 'full'));
+    for (const removed of REMOVED_V030_TOOLS) {
+      expect(advertised).not.toContain(removed);
+    }
+  });
+
+  it('find_references and memory_update are registered', () => {
+    const advertised = names(resolveToolDefinitions('full', 'full'));
+    expect(advertised).toContain('find_references');
+    expect(advertised).toContain('memory_update');
+  });
+
+  it('find_symbol input schema names its arguments', () => {
+    const tool = resolveToolDefinitions('compact', 'core').find((entry) => entry.name === 'find_symbol');
+    const properties = tool?.inputSchema['properties'] as Record<string, unknown> | undefined;
+    expect(properties).toHaveProperty('name');
+    expect(properties).toHaveProperty('kind');
+    const outputProperties = tool?.outputSchema['properties'] as Record<string, unknown> | undefined;
+    expect(outputProperties).toHaveProperty('results');
+    expect(outputProperties).toHaveProperty('total');
+  });
+
+  it('resolveToolDefinitions(core) exposes 14 structural tools only', () => {
+    const core = resolveToolDefinitions('full', 'core');
+    expect(core.length).toBe(14);
+    expect(core.every((t) => !EML_MCP_TOOL_NAMES.has(t.name))).toBe(true);
+  });
+
+  it('resolveToolDefinitions(full) exposes all 27 tools', () => {
+    expect(resolveToolDefinitions('full', 'full').length).toBe(27);
+    expect(resolveToolDefinitions('compact', 'full').length).toBe(27);
   });
 });

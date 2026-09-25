@@ -457,9 +457,23 @@ export class CodeGraph implements CodeGraphApi {
   explainArchitecture(repositoryId: string, detailLevel: number = 1): ArchitectureSummary {
     const allNodes = this.getAllNodes({ repositoryId });
 
-    const entryPoints = allNodes.filter(
-      (node) => node.isExported && (node.kind === 'function' || node.kind === 'class')
-    );
+    const uiDirPattern = /\/(dashboard|components)\//i;
+    const entryFilePattern =
+      /(?:^|\/)(index|main|server|cli|app)\.(tsx?|jsx?|py|go|rs)$|(?:^|\/)bin\//i;
+
+    const entryPoints = allNodes.filter((node) => {
+      if (!node.isExported || (node.kind !== 'function' && node.kind !== 'class')) {
+        return false;
+      }
+      if (uiDirPattern.test(node.filePath)) {
+        return false;
+      }
+      const inDegree = this.graph.inDegree(node.id);
+      if (inDegree > 0) {
+        return false;
+      }
+      return entryFilePattern.test(node.filePath);
+    });
 
     const modules = new Map<string, CodeNode[]>();
     for (const node of allNodes) {
@@ -471,26 +485,20 @@ export class CodeGraph implements CodeGraphApi {
     }
 
     const centrality = this.computeCentrality();
-    const sortedByCentrality = allNodes
+    const keyAbstractions = allNodes
+      .filter((node) => node.kind === 'class' || node.kind === 'interface')
       .map((node) => ({ node, centrality: centrality.get(node.id) || 0 }))
       .sort((a, b) => b.centrality - a.centrality)
-      .slice(0, 20)
+      .slice(0, detailLevel >= 2 ? 20 : 10)
       .map((item) => item.node);
 
-    const keyAbstractions = sortedByCentrality.filter(
-      (node) => node.kind === 'class' || node.kind === 'interface'
-    );
-
-    const packageStructure: Record<string, number> = {};
-    for (const [dir, nodes] of modules.entries()) {
-      packageStructure[dir] = nodes.length;
-    }
+    const moduleLimit = detailLevel >= 3 ? modules.size : 10;
 
     return {
       entryPoints: detailLevel >= 2 ? entryPoints : entryPoints.slice(0, 10),
-      modules: detailLevel >= 3 ? modules : new Map(Array.from(modules.entries()).slice(0, 10)),
-      keyAbstractions: detailLevel >= 2 ? keyAbstractions : keyAbstractions.slice(0, 5),
-      packageStructure,
+      modules: new Map(Array.from(modules.entries()).slice(0, moduleLimit)),
+      keyAbstractions,
+      packageStructure: {},
     };
   }
 

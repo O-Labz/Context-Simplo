@@ -68,9 +68,10 @@ export const SCENARIOS: BenchmarkScenario[] = [
     request: {
       method: 'tools/call',
       params: {
-        name: 'find_callers',
+        name: 'find_references',
         arguments: {
           symbolName: 'formatMCPResponse',
+          direction: 'in',
         },
       },
     },
@@ -90,7 +91,7 @@ export const SCENARIOS: BenchmarkScenario[] = [
         },
       },
     },
-    accuracyAssertion: 'affectedNodes includes MCPServer and related handler functions',
+    accuracyAssertion: 'Grouped affectedFiles include src/mcp/server.ts with MCPServer-related symbols',
   },
   {
     id: 'w5-conceptual-search',

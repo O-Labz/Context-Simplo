@@ -31,6 +31,7 @@ import { readdir, stat, readFile } from 'fs/promises';
 import { resolve, relative, basename, dirname, join } from 'path';
 import { createHash } from 'crypto';
 import { parseFile, type ParsedFile } from './parser.js';
+import { yieldEventLoop } from './event-loop.js';
 import type { CodeGraphApi } from './graph.js';
 import type { StorageProvider } from '../store/provider.js';
 import type {
@@ -156,6 +157,7 @@ export class Indexer extends EventEmitter {
               await this.indexFile(filePath, repositoryId, options.incremental || false);
               job.filesProcessed++;
               this.emit('job:progress', job);
+              await yieldEventLoop();
             } catch (error) {
               job.filesFailed++;
               this.emit('file:error', filePath, error as Error);
@@ -364,7 +366,8 @@ export class Indexer extends EventEmitter {
     const newEdges: GraphEdge[] = [];
     
     // Build set of existing edge IDs to avoid duplicates
-    const existingEdgeIds = new Set(this.graph.getAllEdges().map(e => e.id));
+    const existingEdgeIds = new Set(this.storage.listEdgeIds());
+    let scanned = 0;
 
     for (const ref of this.pendingReferences) {
       if (ref.repositoryId !== repositoryId) continue;
@@ -489,6 +492,10 @@ export class Indexer extends EventEmitter {
             created++;
           }
         }
+      }
+      scanned += 1;
+      if (scanned % 16 === 0) {
+        await yieldEventLoop();
       }
     }
 
@@ -641,7 +648,16 @@ export class Indexer extends EventEmitter {
     const newEdges: GraphEdge[] = [];
 
     // Build set of existing edge IDs ONCE to avoid duplicates
-    const existingEdgeIds = new Set(this.graph.getAllEdges().map(e => e.id));
+    const existingEdgeIds = new Set(this.storage.listEdgeIds());
+    let scanned = 0;
+
+    const unresolved = this.storage.getUnresolvedReferencesInRepository(repositoryId);
+    const unresolvedByFile = new Map<string, CodeReference[]>();
+    for (const ref of unresolved) {
+      const bucket = unresolvedByFile.get(ref.sourceFile) ?? [];
+      bucket.push(ref);
+      unresolvedByFile.set(ref.sourceFile, bucket);
+    }
 
     // Get all nodes in the affected files
     const affectedNodeNames = new Set<string>();
@@ -655,8 +671,7 @@ export class Indexer extends EventEmitter {
     // 1. Resolve outbound references FROM these files
     for (const filePath of filePaths) {
       // Get unresolved references for this file
-      const refs = this.storage.getUnresolvedReferencesInRepository(repositoryId)
-        .filter(ref => ref.sourceFile === filePath);
+      const refs = unresolvedByFile.get(filePath) ?? [];
 
       // Build scope for this file
       const nodesInFile = this.graph.getNodesInFile(filePath);
@@ -708,6 +723,10 @@ export class Indexer extends EventEmitter {
             created++;
           }
         }
+      }
+      scanned += 1;
+      if (scanned % 16 === 0) {
+        await yieldEventLoop();
       }
     }
 
@@ -764,6 +783,10 @@ export class Indexer extends EventEmitter {
           this.storage.markReferenceResolved(ref.id);
           created++;
         }
+      }
+      scanned += 1;
+      if (scanned % 16 === 0) {
+        await yieldEventLoop();
       }
     }
 

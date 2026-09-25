@@ -64,3 +64,12 @@ docs/
 *.sqlite
 *.sql
 data/
+
+# Fixtures and mirrored test trees
+test-data/
+tests/fixtures/
+**/__snapshots__/
+
+# Compiled grammars (indexed separately when needed)
+*.wasm
+ast-grammars.lock.json

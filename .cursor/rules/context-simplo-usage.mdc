@@ -5,49 +5,34 @@ alwaysApply: false
 
 # Context-Simplo Routing
 
-**MCP server:** `user-context-simplo`  
-**Repository ID (pre-cached):** `f00acc4e11a3eac5`
+**MCP server:** `context-simplo` (HTTP + stdio; MCP SDK v2)  
+**Repository ID (pre-cached):** `f00acc4e11a3eac5`  
+**Toolset:** `core` by default (`CONTEXT_SIMPLO_TOOLSET=full` for memory tools)
 
 ## When to use
 
-Use Context-Simplo **instead of** Grep/Glob/SemanticSearch/Read chains when:
+Use Context-Simplo **instead of** Grep/Glob/SemanticSearch/Read chains for symbols, call graph, search, impact, and architecture.
 
-- Searching for symbols by name, kind, or pattern
-- Finding callers/callees of a function
-- Tracing execution paths
-- Semantic/conceptual code queries
-- Impact analysis before refactoring
-- Architecture overviews
-- Code quality scans (dead code, complexity)
+**Skip** for single-file edits where the file is already open.
 
-**Skip Context-Simplo** for single-file edits where the file is already open.
-
-## Tool routing
+## Tool routing (v0.3.0)
 
 | Query type | Tool |
 |------------|------|
-| Symbol by name | `find_symbol` (pass `kind` to filter) |
-| Who calls X / what does X call | `find_callers` / `find_callees` |
-| Path from A to B | `find_path` |
-| Conceptual ("how do we handle auth?") | `semantic_search` |
-| Exact name/string | `exact_search` |
+| Symbol by name | `find_symbol` |
+| Callers / callees / both | `find_references` + `direction` |
+| Path A → B | `find_path` |
+| Conceptual | `semantic_search` |
+| Exact name | `exact_search` |
 | Unsure | `hybrid_search` |
-| Pre-refactor check | `get_impact_radius` |
-| Code quality | `find_dead_code`, `find_complex_functions`, `calculate_complexity` |
+| Refactor blast radius | `get_impact_radius` (+ `filePath` if ambiguous) |
+| Dead code / complexity | `find_dead_code`, `find_complex_functions` |
 | Architecture | `explain_architecture` |
-| Validate code | `lint_context` |
+| Watch on/off | `watch_directory` with `enabled` |
 
 ## Token optimization
 
-- Pass `repositoryId: "f00acc4e11a3eac5"` to all tools (avoids full-index scan)
-- Default `limit: 10` is sufficient; increase only if results are incomplete
-- Set `includeSnippets: true` only when code context is required for the answer
-- Use `incremental: true` when re-indexing after changes
-
-## Response format
-
-Server runs in **compact mode** (60% token savings). Response keys abbreviated:
-
-`r`=results/callers/callees, `n`=name, `qn`=qualifiedName, `k`=kind, `fp`=filePath, `ls`=lineStart, `le`=lineEnd, `rid`=repositoryId, `lang`=language, `s`=score, `t`=total, `m`=hasMore, `nid`=nodeId, `x`=isExported, `cx`=complexity, `st`=searchType, `sym`=symbol, `nodes`=affectedNodes, `files`=affectedFiles, `entry`=entryPoints, `mods`=modules, `abs`=keyAbstractions
-
-Null values, `id` hash fields, `visibility`, `limit`, `offset` stripped. JSON minified.
+- Pass `repositoryId: "f00acc4e11a3eac5"` when multiple repos are indexed
+- `limit: 10` default; `includeSnippets: true` only when code text is needed
+- Tool results: **`structuredContent`** (compact object) + wire **`text`**; `CONTEXT_SIMPLO_RESPONSE_MODE` = `compact` (default), `toon`, or `full`
+- Dashboard Metrics: MCP **`responseTokensTotal`**, **`tokensPerMinute`**, per-tool token breakdown
