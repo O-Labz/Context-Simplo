@@ -88,32 +88,37 @@ docker run -d \
 
 On Linux, also add `--add-host=host.docker.internal:host-gateway`.
 
-**Security note:** The server binds to `127.0.0.1` (loopback) by default outside containers for local-only access. Inside containers, it requires `AUTH_TOKEN` to be set before binding to `0.0.0.0`. The example above generates a secure random token. To expose the API over the network, bind to `0.0.0.0:3001:3001` and provide your own `AUTH_TOKEN`.
+**`AUTH_TOKEN` is optional** for local use (loopback bind). Auth is only enforced when you set `AUTH_TOKEN`; leave it empty and the dashboard will not ask for a login. It **is required** when the process binds to `0.0.0.0` (the Docker/container default), so the example above generates a random token. To expose the API on the network yourself, bind to `0.0.0.0:3001:3001` and set your own `AUTH_TOKEN`.
 
 Once it's up:
 
-- Dashboard: http://localhost:3001 (login with your AUTH_TOKEN)
+- Dashboard: http://localhost:3001 (no login unless `AUTH_TOKEN` is set)
 - MCP endpoint: http://localhost:3001/mcp
 
 **MCP Configuration:**
 
-Add to your editor's MCP config (e.g., `~/.cursor/mcp.json`):
+Add to your editor's MCP config (e.g., `~/.cursor/mcp.json`). Without auth:
 
 ```json
 {
   "mcpServers": {
     "context-simplo": {
       "url": "http://localhost:3001/mcp",
-      "description": "Context-Simplo code intelligence",
-      "headers": {
-        "Authorization": "Bearer YOUR_AUTH_TOKEN_HERE"
-      }
+      "description": "Context-Simplo code intelligence"
     }
   }
 }
 ```
 
-Replace `YOUR_AUTH_TOKEN_HERE` with the token you set in `AUTH_TOKEN`. If you used the random generator in the docker command above, retrieve it with:
+If you set `AUTH_TOKEN`, add a Bearer header:
+
+```json
+"headers": {
+  "Authorization": "Bearer YOUR_AUTH_TOKEN_HERE"
+}
+```
+
+For the Docker example above, retrieve the token with:
 
 ```bash
 docker exec context-simplo printenv AUTH_TOKEN
