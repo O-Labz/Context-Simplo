@@ -381,7 +381,7 @@ program
       for (const repo of repos) {
         if (repo.languages) {
           for (const [lang, count] of Object.entries(repo.languages)) {
-            languageBreakdown[lang] = (languageBreakdown[lang] || 0) + count;
+            languageBreakdown[lang] = (languageBreakdown[lang] || 0) + Number(count);
           }
         }
       }

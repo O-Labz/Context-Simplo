@@ -204,6 +204,86 @@ describe('StorageBackedGraph Read Methods', () => {
     expect(stats.languageBreakdown.javascript).toBe(3);
   });
 
+  it('should scope getStats to a single repository', async () => {
+    const now = new Date();
+    storage.upsertRepository(createTestRepo());
+    storage.upsertRepository({
+      id: 'other-repo',
+      path: '/other/repo',
+      name: 'Other Repository',
+      fileCount: 0,
+      nodeCount: 0,
+      edgeCount: 0,
+      isWatched: false,
+      createdAt: now,
+      updatedAt: now,
+    });
+
+    storage.upsertNodes([
+      ...createTestNodes(),
+      {
+        id: 'other-node',
+        name: 'otherFn',
+        qualifiedName: 'other.otherFn',
+        kind: 'function',
+        filePath: '/other/file.js',
+        lineStart: 1,
+        lineEnd: 5,
+        repositoryId: 'other-repo',
+        language: 'python',
+        createdAt: now,
+        updatedAt: now,
+      },
+    ]);
+    storage.upsertEdges([
+      {
+        id: 'edge-cross',
+        sourceId: 'node1',
+        targetId: 'other-node',
+        kind: 'calls',
+        confidence: 1,
+        repositoryId: 'test-repo',
+        createdAt: now,
+        updatedAt: now,
+      },
+    ]);
+    storage.upsertFile({
+      path: '/test/file1.js',
+      repositoryId: 'test-repo',
+      hash: 'abc',
+      mtime: 1,
+      size: 100,
+      nodeCount: 2,
+      status: 'indexed',
+      retryCount: 0,
+      createdAt: now,
+      updatedAt: now,
+    });
+    storage.upsertFile({
+      path: '/other/file.js',
+      repositoryId: 'other-repo',
+      hash: 'def',
+      mtime: 1,
+      size: 50,
+      nodeCount: 1,
+      status: 'indexed',
+      retryCount: 0,
+      createdAt: now,
+      updatedAt: now,
+    });
+
+    const scoped = graph.getStats('test-repo');
+    expect(scoped.nodeCount).toBe(3);
+    expect(scoped.edgeCount).toBe(1);
+    expect(scoped.fileCount).toBe(1);
+    expect(scoped.languageBreakdown.javascript).toBe(3);
+    expect(scoped.languageBreakdown.python).toBeUndefined();
+
+    const global = graph.getStats();
+    expect(global.nodeCount).toBe(4);
+    expect(global.edgeCount).toBe(1);
+  });
+
   it('should bound cache and evict oldest entries', async () => {
     // Setup data
     storage.upsertRepository(createTestRepo());

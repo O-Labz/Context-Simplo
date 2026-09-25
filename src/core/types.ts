@@ -73,7 +73,7 @@ export const GraphEdgeSchema = z.object({
   kind: EdgeKindSchema,
   confidence: z.number().min(0).max(1),
   repositoryId: z.string(),
-  metadata: z.record(z.unknown()).optional(),
+  metadata: z.record(z.string(), z.unknown()).optional(),
   createdAt: z.date(),
   updatedAt: z.date(),
 });
@@ -144,7 +144,7 @@ export const RepositoryInfoSchema = z.object({
   fileCount: z.number().int().nonnegative(),
   nodeCount: z.number().int().nonnegative(),
   edgeCount: z.number().int().nonnegative(),
-  languages: z.record(z.number().int().nonnegative()),
+  languages: z.record(z.string(), z.number().int().nonnegative()),
   isWatched: z.boolean(),
   lastIndexedAt: z.date().optional(),
   createdAt: z.date(),
@@ -227,7 +227,7 @@ export const LLMProviderTypeSchema = z.enum(['openai', 'ollama', 'azure', 'none'
 
 export type LLMProviderType = z.infer<typeof LLMProviderTypeSchema>;
 
-export const ResponseModeSchema = z.enum(['full', 'compact']);
+export const ResponseModeSchema = z.enum(['full', 'compact', 'toon']);
 
 export type ResponseMode = z.infer<typeof ResponseModeSchema>;
 

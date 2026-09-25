@@ -1,0 +1,6 @@
+test-data/
+tests/fixtures/
+dist/
+node_modules/
+dashboard/node_modules/
+*.wasm

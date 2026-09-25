@@ -26,6 +26,7 @@ import { createEmbeddingProvider } from './llm/provider.js';
 import { EmbeddingQueue } from './core/embedding-queue.js';
 import { EmbeddingBackfiller } from './core/embedding-backfill.js';
 import { ConfigManager } from './core/config-manager.js';
+import { yieldEventLoop } from './core/event-loop.js';
 
 // Global error handlers to prevent crashes
 process.on('unhandledRejection', (reason, promise) => {
@@ -38,6 +39,34 @@ process.on('uncaughtException', (error) => {
   // after an uncaught exception leaves the process in undefined state.
   setTimeout(() => process.exit(1), 1000);
 });
+
+const BACKFILL_FILE_CHUNK = 20;
+
+async function backfillUnresolvedReferences(
+  storage: SqliteStorageProvider,
+  indexer: Indexer
+): Promise<void> {
+  try {
+    for (const repo of storage.listRepositories()) {
+      const unresolved = storage.getUnresolvedReferencesInRepository(repo.id);
+      if (unresolved.length === 0) {
+        continue;
+      }
+      console.warn('boot backfill started', { repository: repo.name, unresolved: unresolved.length });
+      const sourceFiles = [...new Set(unresolved.map((ref) => ref.sourceFile))];
+      for (let offset = 0; offset < sourceFiles.length; offset += BACKFILL_FILE_CHUNK) {
+        await indexer.resolveReferencesForFiles(
+          sourceFiles.slice(offset, offset + BACKFILL_FILE_CHUNK),
+          repo.id
+        );
+        await yieldEventLoop();
+      }
+    }
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'boot backfill failed';
+    console.error('boot backfill failed', { message });
+  }
+}
 
 async function main() {
   console.log('Context-Simplo starting...');
@@ -424,28 +453,10 @@ async function main() {
     embeddingBackfiller.start();
   }
 
-  // Boot reference backfill: resolve unresolved code references for all indexed repos
-  // This runs once on startup to handle references that were persisted but not yet resolved
-  // (e.g., if the system was shut down during indexing)
-  (async () => {
-    try {
-      const repos = storage.listRepositories();
-      for (const repo of repos) {
-        const unresolved = storage.getUnresolvedReferencesInRepository(repo.id);
-        if (unresolved.length > 0) {
-          console.warn(`Boot backfill: resolving ${unresolved.length} references in ${repo.name}`);
-          // Get unique source files from unresolved references
-          const sourceFiles = [...new Set(unresolved.map(r => r.sourceFile))];
-          await indexer.resolveReferencesForFiles(sourceFiles, repo.id);
-        }
-      }
-    } catch (error) {
-      console.error('Error during boot reference backfill:', error);
-    }
-  })().catch(err => console.error('Boot backfill error:', err));
-  
   await apiServer.listen({ port: 3001, host: listenHost });
   console.log('API server started on port 3001');
+
+  void backfillUnresolvedReferences(storage, indexer);
   console.log(`WebSocket clients: ${broadcaster.getClientCount()}`);
 
   if (emlEventBus) {

@@ -28,6 +28,7 @@ import {
   registerEmlRoutes,
 } from './routes/index.js';
 import type { EmlServices } from '../eml/mcp/handlers.js';
+import { localhostHostValidation, localhostOriginValidation } from '@modelcontextprotocol/node';
 
 export interface APIServerOptions {
   storage: StorageProvider;
@@ -150,6 +151,8 @@ export async function createAPIServer(
       `http://localhost:${options.serverPort || 3001}`,
       `http://127.0.0.1:${options.serverPort || 3001}`,
     ]);
+    const validateMcpHost = localhostHostValidation();
+    const validateMcpOrigin = localhostOriginValidation();
 
     fastify.addHook('onRequest', async (request, reply) => {
       if (request.url.startsWith('/mcp')) {
@@ -175,6 +178,13 @@ export async function createAPIServer(
     }, async (request, reply) => {
       try {
         console.error(`[MCP] POST ${request.url}`);
+
+        if (
+          !validateMcpHost(request.raw, reply.raw) ||
+          !validateMcpOrigin(request.raw, reply.raw)
+        ) {
+          return;
+        }
         
         // Parse body
         const body = typeof request.body === 'string' ? JSON.parse(request.body) : request.body;
@@ -202,6 +212,13 @@ export async function createAPIServer(
     fastify.get('/mcp', async (request, reply) => {
       try {
         console.error(`[MCP] GET ${request.url} (SSE)`);
+
+        if (
+          !validateMcpHost(request.raw, reply.raw) ||
+          !validateMcpOrigin(request.raw, reply.raw)
+        ) {
+          return;
+        }
         
         // Important: Must hijack BEFORE any async operations
         reply.hijack();

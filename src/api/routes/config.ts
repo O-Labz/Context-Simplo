@@ -116,7 +116,7 @@ export async function registerConfigRoutes(
     } catch (error) {
       return reply.status(400).send({
         error: 'Invalid request',
-        message: error instanceof z.ZodError ? error.errors.map(e => e.message).join(', ') : 'Validation failed',
+        message: error instanceof z.ZodError ? error.issues.map((e) => e.message).join(', ') : 'Validation failed',
       });
     }
 
@@ -240,7 +240,7 @@ export async function registerConfigRoutes(
     } catch (error) {
       return reply.status(400).send({
         success: false,
-        error: error instanceof z.ZodError ? error.errors.map(e => e.message).join(', ') : 'Validation failed',
+        error: error instanceof z.ZodError ? error.issues.map((e) => e.message).join(', ') : 'Validation failed',
       });
     }
 

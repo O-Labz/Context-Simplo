@@ -6,8 +6,11 @@
  */
 
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { resolve } from 'path';
+import { resolve, dirname } from 'path';
+import { readFileSync } from 'fs';
 import { mkdtemp, rm } from 'fs/promises';
+import { fileURLToPath } from 'url';
+import Database from 'better-sqlite3';
 import { tmpdir } from 'os';
 import { SqliteStorageProvider } from '../../src/store/sqlite.js';
 import type { CodeNode, NodeFilter } from '../../src/core/types.js';
@@ -251,5 +254,76 @@ describe('Storage Graph Primitives', () => {
     // Test with no results
     const noResultsCount = storage.countNodes({ repositoryId: 'nonexistent' });
     expect(noResultsCount).toBe(0);
+  });
+
+  it('should backfill repository counts in migration 006', async () => {
+    storage.close();
+
+    const dbPath = resolve(tmpDir, 'migration-006.db');
+    const migrationsDir = resolve(
+      dirname(fileURLToPath(import.meta.url)),
+      '../../src/store/migrations'
+    );
+    const preMigrationFiles = [
+      '001_initial.sql',
+      '002_eml.sql',
+      '003_graph_indexes.sql',
+      '004_embedding_status.sql',
+      '005_code_references.sql',
+    ];
+
+    const db = new Database(dbPath);
+    for (const file of preMigrationFiles) {
+      db.exec(readFileSync(resolve(migrationsDir, file), 'utf-8'));
+    }
+
+    const ts = new Date().toISOString();
+    db.prepare(
+      `INSERT INTO repositories (id, path, name, file_count, node_count, edge_count, is_watched, created_at, updated_at)
+       VALUES (?, ?, ?, 0, 99, 99, 0, ?, ?)`
+    ).run('repo1', '/test/repo1', 'Repo 1', ts, ts);
+    db.prepare(
+      `INSERT INTO repositories (id, path, name, file_count, node_count, edge_count, is_watched, created_at, updated_at)
+       VALUES (?, ?, ?, 0, 88, 88, 0, ?, ?)`
+    ).run('repo2', '/test/repo2', 'Repo 2', ts, ts);
+
+    const insertNode = db.prepare(
+      `INSERT INTO nodes (id, name, qualified_name, kind, file_path, line_start, line_end, repository_id, language, created_at, updated_at)
+       VALUES (?, ?, ?, 'function', ?, 1, 2, ?, ?, ?, ?)`
+    );
+    insertNode.run('n1', 'f1', 'f1', '/a.ts', 'repo1', 'typescript', ts, ts);
+    insertNode.run('n2', 'f2', 'f2', '/b.ts', 'repo1', 'typescript', ts, ts);
+    insertNode.run('n3', 'g1', 'g1', '/c.ts', 'repo2', 'python', ts, ts);
+
+    db.prepare(
+      `INSERT INTO edges (id, source_id, target_id, kind, confidence, repository_id, created_at, updated_at)
+       VALUES (?, ?, ?, 'calls', 1.0, ?, ?, ?)`
+    ).run('e1', 'n1', 'n2', 'repo1', ts, ts);
+    db.prepare(
+      `INSERT INTO edges (id, source_id, target_id, kind, confidence, repository_id, created_at, updated_at)
+       VALUES (?, ?, ?, 'calls', 1.0, ?, ?, ?)`
+    ).run('e2', 'n3', 'n1', 'repo2', ts, ts);
+    db.close();
+
+    const upgraded = new SqliteStorageProvider(dbPath);
+    await upgraded.initialize();
+
+    expect(upgraded.getRepository('repo1')?.nodeCount).toBe(2);
+    expect(upgraded.getRepository('repo1')?.edgeCount).toBe(1);
+    expect(upgraded.getRepository('repo2')?.nodeCount).toBe(1);
+    expect(upgraded.getRepository('repo2')?.edgeCount).toBe(1);
+    expect(upgraded.countEdges()).toBe(2);
+    expect(upgraded.countEdges('repo1')).toBe(1);
+    expect(upgraded.countEdges('repo2')).toBe(1);
+
+    const versionRow = (upgraded as any).db
+      .prepare('SELECT MAX(version) AS version FROM schema_version')
+      .get() as { version: number };
+    expect(versionRow.version).toBe(6);
+
+    upgraded.close();
+
+    storage = new SqliteStorageProvider(resolve(tmpDir, 'test.db'));
+    await storage.initialize();
   });
 });

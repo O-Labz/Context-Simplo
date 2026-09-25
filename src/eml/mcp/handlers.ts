@@ -31,6 +31,7 @@ import {
   WhoKnowsInputSchema,
   MemoryIdActionInputSchema,
   FlagContradictionInputSchema,
+  MemoryUpdateInputSchema,
   TrackIntentInputSchema,
   ListActiveGoalsInputSchema,
   ShowEvolutionInputSchema,
@@ -506,4 +507,32 @@ export function flagContradiction(args: unknown, eml: EmlServices): Record<strin
   if (!eml.contradictions) return { recorded: false };
   const record = eml.contradictions.flag(input.memoryA, input.memoryB, input.kind);
   return record ? { recorded: true, ...record } : { recorded: false };
+}
+
+export function memoryUpdate(args: unknown, eml: EmlServices): Record<string, unknown> {
+  requireEnabled(eml);
+  const parsed = MemoryUpdateInputSchema.safeParse(args);
+  if (!parsed.success) throw validationFrom(parsed.error);
+  const input = parsed.data;
+
+  switch (input.action) {
+    case 'verify':
+      return verifyMemory({ id: input.id, repositoryId: input.repositoryId }, eml);
+    case 'reinforce':
+      return reinforceMemory({ id: input.id, repositoryId: input.repositoryId }, eml);
+    case 'flag_contradiction':
+      return flagContradiction(
+        {
+          repositoryId: input.repositoryId,
+          memoryA: input.memoryA,
+          memoryB: input.memoryB,
+          kind: input.kind,
+        },
+        eml
+      );
+    default: {
+      const _exhaustive: never = input.action;
+      throw new MemoryValidationError(`unsupported action: ${_exhaustive}`);
+    }
+  }
 }

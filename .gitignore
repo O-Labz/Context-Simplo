@@ -34,6 +34,7 @@ npm-debug.log*
 pnpm-debug.log*
 
 # Data (local dev)
+.data*/
 data/
 *.db
 *.db-shm

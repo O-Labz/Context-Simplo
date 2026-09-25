@@ -5,6 +5,50 @@ All notable changes to Context-Simplo will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.0] - 2026-09-24
+
+### BREAKING CHANGES
+
+#### MCP tool surface (fewer tools, clearer names)
+
+- **`find_references`** replaces `find_callers` and `find_callees` (`direction`: `in` | `out` | `both`).
+- **`watch_directory`** accepts `enabled: false` to stop watching; **`unwatch_directory`** removed from the tool list.
+- **`memory_update`** replaces `verify_memory`, `reinforce_memory`, and `flag_contradiction` (full toolset only).
+- Removed: `get_stats`, `query_graph`, `lint_context`, `calculate_complexity` (use `find_symbol` / graph tools instead).
+- **`CONTEXT_SIMPLO_TOOLSET`**: default `core` (code intelligence only); `full` adds engineering-memory tools.
+
+#### Response shape
+
+- **`get_impact_radius`**: returns paginated **`affectedFiles`** (symbols grouped by file) instead of a flat `affectedNodes` list; optional `filePath` disambiguation.
+- **`explain_architecture`**: drops redundant `packageStructure`; entry points use stricter heuristics; paths are repo-relative with **`root`** on the envelope.
+- Symbol lookups with duplicate names return **`ambiguous: true`** and **`candidates`** unless **`filePath`** is provided.
+
+### Added
+
+- Repo-scoped BM25: **`exact_search`** and hybrid BM25 leg accept **`repositoryId`**; auto-scopes when one repo is indexed.
+- **`.contextignore`** defaults exclude `test-data/`, fixtures, and `*.wasm`.
+- Benchmark token counts use **`gpt-tokenizer`** (cl100k_base) instead of bytes/4.
+- **MCP SDK v2** for HTTP (stateless `createMcpHandler`) and stdio (`McpServer.registerTool`); tool results include **`structuredContent`** plus wire text.
+- Dashboard **MCP tokens served** metrics (`responseTokensTotal`, `tokensPerMinute`, per-tool breakdown) via `/api/metrics`.
+- **`CONTEXT_SIMPLO_RESPONSE_MODE=toon`**: compact payload serialized with `@toon-format/toon` (falls back to compact JSON when encoding fails).
+- **`tools/list` cache hints** (30s private TTL) for v2 clients on the 2026-07-28 protocol revision.
+- Tool input and output JSON Schemas are generated from one Zod catalog (`src/mcp/tool-catalog.ts`). `structuredContent` is that canonical object; wire text still follows the response mode.
+- `index_repository` returns `accepted` immediately so the dashboard and other tools stay usable while indexing runs. Indexing and boot reference backfill yield the event loop between slices.
+- TOON encode failures surface as `TOON_ENCODE_FAILED` instead of a silent compact-JSON fallback.
+- SQLite statements are cached. Dependencies: `better-sqlite3` 13, `@lancedb/lancedb` 0.39, `chokidar` 5, `vitest` 5.
+
+### Fixed
+
+- Vector/hybrid search no longer leak **`snippet`** when `includeSnippets` is false (LanceDB mapping).
+- Duplicate symbols from mirrored **`test-data/`** trees (when not ignored).
+- **`list_repositories` `nodeCount` / `edgeCount`** were whole-graph totals; counts are now per repository (migration **006** backfills existing rows).
+
+### Measured (2026-09-25 harness)
+
+- **Compact vs v1-full profile:** **−36.8%** scenario MCP wire tokens on 10 workflows ([`bench/REPORT.md`](bench/REPORT.md)), ship gate **PASS**.
+- **`structuredContent` token metering** on `/api/metrics` (`structuredTokensTotal`, per-tool breakdown).
+- **TOON mode:** did **not** beat compact by 30% ([`bench/REPORT-toon.md`](bench/REPORT-toon.md)); remains opt-in / experimental.
+
 ## [0.2.0] - 2026-05-04
 
 ### BREAKING CHANGES

@@ -1,6 +1,6 @@
 # Context-Simplo
 
-**Cut your AI coding assistant's token usage by ~75%.**
+**Cut MCP response tokens on code-intelligence workflows by ~37%.**
 
 Your AI assistant is brilliant at writing code and terrible at remembering anything. Every session it starts from zero: re-reading files, re-discovering how your code fits together, asking you the same questions, repeating mistakes the team already learned from six months ago. All of that burns tokens on *finding* code instead of *building* it.
 
@@ -12,15 +12,9 @@ It runs as a single Docker container. Local-first, your code never has to leave 
 
 ## The number that matters
 
-On a suite of 10 real engineering workflows, answering through Context-Simplo used **~75% fewer tokens** than the same questions answered with a grep-and-read loop — same answers, a fraction of the context.
+On 10 real engineering workflows against this repo (indexed copy, **cl100k_base** via `gpt-tokenizer`), **v0.3.0 compact** MCP responses used **~37% fewer wire tokens** than the same tools with a **v0.1.0-equivalent profile** (higher limits + snippets), with **zero capability regressions** in the harness. See **[the full benchmark](docs/benchmark.md)** and [`bench/REPORT.md`](bench/REPORT.md) for per-scenario tables and how to re-run.
 
-| Approach | Tokens to answer the same questions |
-|----------|-------------------------------------|
-| grep-and-read (glob + read + grep) | ~42,000 |
-| Context-Simplo MCP | ~6,000 |
-| **Reduction** | **~85%** |
-
-The internal wire-format benchmark (v0.1.0 → v0.2.0) independently shows a **74% drop** (13,041 → 3,391 tokens) on the same indexed repo, with zero capability regressions. It's reproducible on your own machine in two commands — see **[the full benchmark](docs/benchmark.md)**.
+Recorded **2026-09-25** on the Context-Simplo tree (~200 indexed files in the bench run): **5,907 → 3,734** scenario wire tokens (**−36.8%**). Tool-list overhead in that run was **5,845** tokens per `tools/list` call (MCP SDK v2 JSON Schema payloads); scenario savings are the headline for tool *responses*.
 
 Fewer tokens finding things means more tokens — and more of your budget — left for actually building.
 
@@ -94,32 +88,37 @@ docker run -d \
 
 On Linux, also add `--add-host=host.docker.internal:host-gateway`.
 
-**Security note:** The server binds to `127.0.0.1` (loopback) by default outside containers for local-only access. Inside containers, it requires `AUTH_TOKEN` to be set before binding to `0.0.0.0`. The example above generates a secure random token. To expose the API over the network, bind to `0.0.0.0:3001:3001` and provide your own `AUTH_TOKEN`.
+**`AUTH_TOKEN` is optional** for local use (loopback bind). Auth is only enforced when you set `AUTH_TOKEN`; leave it empty and the dashboard will not ask for a login. It **is required** when the process binds to `0.0.0.0` (the Docker/container default), so the example above generates a random token. To expose the API on the network yourself, bind to `0.0.0.0:3001:3001` and set your own `AUTH_TOKEN`.
 
 Once it's up:
 
-- Dashboard: http://localhost:3001 (login with your AUTH_TOKEN)
+- Dashboard: http://localhost:3001 (no login unless `AUTH_TOKEN` is set)
 - MCP endpoint: http://localhost:3001/mcp
 
 **MCP Configuration:**
 
-Add to your editor's MCP config (e.g., `~/.cursor/mcp.json`):
+Add to your editor's MCP config (e.g., `~/.cursor/mcp.json`). Without auth:
 
 ```json
 {
   "mcpServers": {
     "context-simplo": {
       "url": "http://localhost:3001/mcp",
-      "description": "Context-Simplo code intelligence",
-      "headers": {
-        "Authorization": "Bearer YOUR_AUTH_TOKEN_HERE"
-      }
+      "description": "Context-Simplo code intelligence"
     }
   }
 }
 ```
 
-Replace `YOUR_AUTH_TOKEN_HERE` with the token you set in `AUTH_TOKEN`. If you used the random generator in the docker command above, retrieve it with:
+If you set `AUTH_TOKEN`, add a Bearer header:
+
+```json
+"headers": {
+  "Authorization": "Bearer YOUR_AUTH_TOKEN_HERE"
+}
+```
+
+For the Docker example above, retrieve the token with:
 
 ```bash
 docker exec context-simplo printenv AUTH_TOKEN
@@ -187,5 +186,3 @@ For container limits, use `docker run --memory=4g --cpus=4`.
 ## License
 
 MIT, see [LICENSE](LICENSE).
-
-<!-- Performance test comment added at 12:47 PM to test auto-indexing speed -->

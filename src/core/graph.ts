@@ -67,7 +67,7 @@ export interface CodeGraphApi {
   getCentrality(nodeId: string): number;
   findDeadCode(repositoryId?: string): CodeNode[];
   explainArchitecture(repositoryId: string, detailLevel?: number): ArchitectureSummary;
-  getStats(): {
+  getStats(repositoryId?: string): {
     nodeCount: number;
     edgeCount: number;
     fileCount: number;
@@ -457,9 +457,23 @@ export class CodeGraph implements CodeGraphApi {
   explainArchitecture(repositoryId: string, detailLevel: number = 1): ArchitectureSummary {
     const allNodes = this.getAllNodes({ repositoryId });
 
-    const entryPoints = allNodes.filter(
-      (node) => node.isExported && (node.kind === 'function' || node.kind === 'class')
-    );
+    const uiDirPattern = /\/(dashboard|components)\//i;
+    const entryFilePattern =
+      /(?:^|\/)(index|main|server|cli|app)\.(tsx?|jsx?|py|go|rs)$|(?:^|\/)bin\//i;
+
+    const entryPoints = allNodes.filter((node) => {
+      if (!node.isExported || (node.kind !== 'function' && node.kind !== 'class')) {
+        return false;
+      }
+      if (uiDirPattern.test(node.filePath)) {
+        return false;
+      }
+      const inDegree = this.graph.inDegree(node.id);
+      if (inDegree > 0) {
+        return false;
+      }
+      return entryFilePattern.test(node.filePath);
+    });
 
     const modules = new Map<string, CodeNode[]>();
     for (const node of allNodes) {
@@ -471,26 +485,20 @@ export class CodeGraph implements CodeGraphApi {
     }
 
     const centrality = this.computeCentrality();
-    const sortedByCentrality = allNodes
+    const keyAbstractions = allNodes
+      .filter((node) => node.kind === 'class' || node.kind === 'interface')
       .map((node) => ({ node, centrality: centrality.get(node.id) || 0 }))
       .sort((a, b) => b.centrality - a.centrality)
-      .slice(0, 20)
+      .slice(0, detailLevel >= 2 ? 20 : 10)
       .map((item) => item.node);
 
-    const keyAbstractions = sortedByCentrality.filter(
-      (node) => node.kind === 'class' || node.kind === 'interface'
-    );
-
-    const packageStructure: Record<string, number> = {};
-    for (const [dir, nodes] of modules.entries()) {
-      packageStructure[dir] = nodes.length;
-    }
+    const moduleLimit = detailLevel >= 3 ? modules.size : 10;
 
     return {
       entryPoints: detailLevel >= 2 ? entryPoints : entryPoints.slice(0, 10),
-      modules: detailLevel >= 3 ? modules : new Map(Array.from(modules.entries()).slice(0, 10)),
-      keyAbstractions: detailLevel >= 2 ? keyAbstractions : keyAbstractions.slice(0, 5),
-      packageStructure,
+      modules: new Map(Array.from(modules.entries()).slice(0, moduleLimit)),
+      keyAbstractions,
+      packageStructure: {},
     };
   }
 
@@ -550,26 +558,58 @@ export class CodeGraph implements CodeGraphApi {
     }
   }
 
-  getStats(): {
+  getStats(repositoryId?: string): {
     nodeCount: number;
     edgeCount: number;
     fileCount: number;
     languageBreakdown: Record<string, number>;
   } {
-    const nodeCount = this.graph.order;
-    const edgeCount = this.graph.size;
-    const fileCount = this.fileIndex.size;
+    if (!repositoryId) {
+      const nodeCount = this.graph.order;
+      const edgeCount = this.graph.size;
+      const fileCount = this.fileIndex.size;
 
+      const languageBreakdown: Record<string, number> = {};
+      for (const nodeId of this.graph.nodes()) {
+        const node = this.getNode(nodeId)!;
+        languageBreakdown[node.language] = (languageBreakdown[node.language] || 0) + 1;
+      }
+
+      return {
+        nodeCount,
+        edgeCount,
+        fileCount,
+        languageBreakdown,
+      };
+    }
+
+    let nodeCount = 0;
     const languageBreakdown: Record<string, number> = {};
+    const filesInRepo = new Set<string>();
+
     for (const nodeId of this.graph.nodes()) {
       const node = this.getNode(nodeId)!;
+      if (node.repositoryId !== repositoryId) {
+        continue;
+      }
+      nodeCount++;
       languageBreakdown[node.language] = (languageBreakdown[node.language] || 0) + 1;
+      filesInRepo.add(node.filePath);
+    }
+
+    let edgeCount = 0;
+    for (const edgeId of this.graph.edges()) {
+      const edge = this.graph.getEdgeAttributes(edgeId) as GraphEdge;
+      const sourceNode = this.getNode(edge.sourceId);
+      if (sourceNode?.repositoryId === repositoryId) {
+        edgeCount++;
+      }
     }
 
     return {
       nodeCount,
       edgeCount,
-      fileCount,
+      fileCount: filesInRepo.size,
       languageBreakdown,
     };
   }

@@ -44,6 +44,7 @@ export interface StorageProvider {
   getNodesByName(name: string, filter?: NodeFilter): CodeNode[];
   countNodes(filter?: NodeFilter): number;
   countNodesByLanguage(repositoryId?: string): Record<string, number>;
+  countEdges(repositoryId?: string): number;
   findUnreferencedNodes(repositoryId: string | undefined, limit: number, offset: number): CodeNode[];
   countUnreferencedNodes(repositoryId: string): number;
   upsertNodes(nodes: CodeNode[]): void;
@@ -53,6 +54,7 @@ export interface StorageProvider {
 
   getEdge(id: string): GraphEdge | null;
   getEdges(sourceId?: string, targetId?: string): GraphEdge[];
+  listEdgeIds(): string[];
   upsertEdges(edges: GraphEdge[]): void;
   deleteEdge(id: string): void;
   deleteEdgesForNode(nodeId: string): void;
@@ -66,7 +68,7 @@ export interface StorageProvider {
 
   bulkWrite(nodes: CodeNode[], edges: GraphEdge[]): void;
 
-  search(query: string, limit: number, offset: number): SearchResult[];
+  search(query: string, limit: number, offset: number, repositoryId?: string): SearchResult[];
 
   getConfig(key?: string): Record<string, unknown>;
   updateConfig(updates: Record<string, unknown>): void;

@@ -28,6 +28,14 @@ export abstract class ContextSimploError extends Error {
   }
 }
 
+export class ToonEncodeError extends ContextSimploError {
+  readonly code = 'TOON_ENCODE_FAILED';
+
+  constructor(cause: Error) {
+    super('TOON encode failed; response was not rewritten as JSON', cause);
+  }
+}
+
 export class ParseError extends ContextSimploError {
   readonly code = 'PARSE_ERROR';
 

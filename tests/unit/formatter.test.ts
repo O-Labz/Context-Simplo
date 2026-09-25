@@ -174,6 +174,17 @@ describe('formatMCPResponse', () => {
     expect(compact.length).toBeLessThan(full.length);
   });
 
+  it('toon mode: returns non-JSON text shorter than compact JSON', () => {
+    const compact = formatMCPResponse(mockFindSymbolResult, 'compact');
+    const toon = formatMCPResponse(mockFindSymbolResult, 'toon');
+    expect(toon).not.toMatch(/^\s*\{/);
+    expect(toon.length).toBeLessThan(compact.length);
+  });
+
+  it('toon mode: throws when the payload cannot be encoded', () => {
+    expect(() => formatMCPResponse({ count: 1n }, 'toon')).toThrow(/TOON encode failed/);
+  });
+
   it('full mode: null values preserved', () => {
     const withNull = { result: null, name: 'test' };
     const output = formatMCPResponse(withNull, 'full');

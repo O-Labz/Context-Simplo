@@ -8,7 +8,7 @@
  * Inputs: EmbeddingChunk with embeddings
  * Outputs: SearchResult with similarity scores
  * Constraints: LanceDB file-based storage
- * Assumptions: @lancedb/lancedb v0.27 API
+ * Assumptions: @lancedb/lancedb v0.39 API
  * Failure cases: Disk full, corrupted index, dimension mismatch
  *
  * Design:
@@ -182,7 +182,6 @@ export class LanceDBVectorStore {
           lineStart: row.startLine,
           lineEnd: row.endLine,
           score: Math.max(0, Math.min(1, 1 / (1 + (row._distance || 0)))),
-          snippet: row.content ? row.content.substring(0, 200) : undefined,
           language: row.language,
           repositoryId,
           parentSymbol,

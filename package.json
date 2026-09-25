@@ -1,6 +1,6 @@
 {
   "name": "context-simplo",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "Production-ready context database and MCP server for AI assistants. Provides code intelligence with hybrid search, call graphs, impact analysis, and semantic search for Cursor, VS Code, and Claude Desktop.",
   "type": "module",
   "main": "dist/index.js",
@@ -65,13 +65,16 @@
     "@fastify/static": "^8.0.2",
     "@fastify/websocket": "^11.0.1",
     "@kreuzberg/tree-sitter-language-pack": "^1.3.3",
-    "@lancedb/lancedb": "^0.27.1",
+    "@lancedb/lancedb": "^0.39.0",
+    "@modelcontextprotocol/node": "^2.1.0",
     "@modelcontextprotocol/sdk": "^1.0.4",
+    "@modelcontextprotocol/server": "^2.1.0",
     "@octokit/rest": "^22.0.1",
+    "@toon-format/toon": "^4.1.1",
     "apache-arrow": "^18.1.0",
-    "better-sqlite3": "^11.8.1",
+    "better-sqlite3": "^13.0.3",
     "chalk": "^5.4.1",
-    "chokidar": "^4.0.3",
+    "chokidar": "^5.0.0",
     "commander": "^12.1.0",
     "dotenv": "^16.4.7",
     "fastify": "^5.2.0",
@@ -84,7 +87,7 @@
     "ora": "^8.1.1",
     "simple-git": "^3.36.0",
     "web-tree-sitter": "^0.26.11",
-    "zod": "^3.24.1"
+    "zod": "^4.6.5"
   },
   "devDependencies": {
     "@playwright/test": "^1.49.1",
@@ -93,8 +96,9 @@
     "@types/supertest": "^6.0.2",
     "@typescript-eslint/eslint-plugin": "^8.18.2",
     "@typescript-eslint/parser": "^8.18.2",
-    "@vitest/coverage-v8": "^2.1.8",
+    "@vitest/coverage-v8": "^5.0.2",
     "eslint": "^9.18.0",
+    "gpt-tokenizer": "^4.0.0",
     "husky": "^9.1.7",
     "prettier": "^3.4.2",
     "supertest": "^7.0.0",
@@ -115,7 +119,8 @@
     "tree-sitter-typescript": "^0.23.2",
     "tsx": "^4.19.2",
     "typescript": "^5.7.2",
-    "vitest": "^2.1.8"
+    "vite": "^7.1.5",
+    "vitest": "^5.0.2"
   },
   "optionalDependencies": {
     "tree-sitter": "0.25.0",

@@ -114,6 +114,20 @@ const ENV_VAR_MAP = {
   watchDebounceMs: 'WATCH_DEBOUNCE_MS',
 } as const;
 
+const TOOLSET_MODES = ['core', 'full'] as const;
+export type ContextSimploToolset = (typeof TOOLSET_MODES)[number];
+
+export function getContextSimploToolset(): ContextSimploToolset {
+  const raw = process.env.CONTEXT_SIMPLO_TOOLSET ?? 'core';
+  if (!TOOLSET_MODES.includes(raw as ContextSimploToolset)) {
+    throw new ConfigError(
+      'toolset',
+      `Invalid CONTEXT_SIMPLO_TOOLSET: ${raw}. Must be 'core' or 'full'`
+    );
+  }
+  return raw as ContextSimploToolset;
+}
+
 const EML_EXTRACTION_MODES: readonly EmlExtractionMode[] = ['llm', 'fallback', 'off'];
 
 type ConfigKey = keyof typeof DEFAULT_CONFIG;
@@ -238,8 +252,8 @@ export function loadConfig(dashboardConfig?: DashboardConfig): AppConfig {
   const envResponseModeRaw = process.env[ENV_VAR_MAP.responseMode];
   let envResponseMode: ResponseMode | undefined;
   if (envResponseModeRaw !== undefined) {
-    if (envResponseModeRaw !== 'full' && envResponseModeRaw !== 'compact') {
-      throw new ConfigError('responseMode', `Invalid value: ${envResponseModeRaw}. Must be 'full' or 'compact'`);
+    if (envResponseModeRaw !== 'full' && envResponseModeRaw !== 'compact' && envResponseModeRaw !== 'toon') {
+      throw new ConfigError('responseMode', `Invalid value: ${envResponseModeRaw}. Must be 'full', 'compact', or 'toon'`);
     }
     envResponseMode = envResponseModeRaw as ResponseMode;
   }
@@ -561,6 +575,8 @@ export function loadConfig(dashboardConfig?: DashboardConfig): AppConfig {
       'LLM_API_KEY is required when LLM_PROVIDER is azure'
     );
   }
+
+  getContextSimploToolset();
 
   return {
     llmProvider,

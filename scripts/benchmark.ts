@@ -2,14 +2,21 @@
  * Benchmark runner for Context-Simplo MCP server
  * 
  * Runs a suite of scenarios against the live server, measures token cost
- * and capability, writes results to bench/<label>.json and bench/<label>.md
+ * (gpt-tokenizer / cl100k_base on MCP wire text) and capability, writes
+ * results to bench/<label>.json and bench/<label>.md
  * 
  * Usage: pnpm tsx scripts/benchmark.ts --label baseline-v0.1.0
  */
 
 import { writeFileSync } from 'fs';
 import { resolve } from 'path';
+import { encode } from 'gpt-tokenizer';
 import { SCENARIOS, AUTO_REPO_ID } from './benchmark-scenarios.js';
+
+/** Token counts use gpt-tokenizer (cl100k_base) on the raw MCP wire text. */
+function countTokens(text: string): number {
+  return encode(text).length;
+}
 
 /**
  * Recursively replace AUTO_REPO_ID sentinel with the live repositoryId
@@ -50,7 +57,7 @@ function applyProfile(
 
   const out = { ...args };
   const tools_with_limit = new Set([
-    'find_symbol', 'find_callers', 'find_callees',
+    'find_symbol', 'find_references',
     'exact_search', 'semantic_search', 'hybrid_search',
     'find_dead_code', 'find_complex_functions',
   ]);
@@ -70,7 +77,10 @@ interface BenchmarkResult {
   scenario: string;
   requestBytes: number;
   responseBytes: number;
+  /** Whole MCP wire response (SSE framing included). */
   approxTokens: number;
+  wireTextTokens?: number;
+  structuredTokens?: number;
   latencyMs: number;
   topKIdentities: string[];
   responseShape: 'full' | 'compact' | 'unknown';
@@ -81,6 +91,10 @@ interface BenchmarkRun {
   label: string;
   timestamp: string;
   mcpUrl: string;
+  /** How response/tool-list token counts were computed (for reproducibility). */
+  tokenCounter: 'gpt-tokenizer/cl100k_base';
+  responseMode?: 'compact' | 'toon' | 'full' | 'unknown';
+  toolset?: string;
   toolListBytes: number;
   toolListTokens: number;
   scenarios: BenchmarkResult[];
@@ -94,6 +108,14 @@ interface BenchmarkRun {
   };
 }
 
+interface RepositoryEntry {
+  repositoryId: string;
+  path?: string;
+  fileCount: number;
+  nodeCount: number;
+  edgeCount: number;
+}
+
 const MCP_URL = process.env.MCP_URL || 'http://localhost:3001/mcp';
 
 async function callMCP(method: string, params: unknown): Promise<{ responseText: string; latencyMs: number }> {
@@ -104,17 +126,25 @@ async function callMCP(method: string, params: unknown): Promise<{ responseText:
     params,
   });
 
+  const headers: Record<string, string> = {
+    'Content-Type': 'application/json',
+    Accept: 'application/json, text/event-stream',
+  };
+  if (process.env.MCP_TOKEN) {
+    headers.Authorization = `Bearer ${process.env.MCP_TOKEN}`;
+  }
+
   const startTime = Date.now();
   const response = await fetch(MCP_URL, {
     method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'Accept': 'application/json, text/event-stream',
-    },
+    headers,
     body: requestBody,
   });
 
   if (!response.ok) {
+    if (response.status === 401) {
+      throw new Error('MCP call unauthorized: set MCP_TOKEN');
+    }
     throw new Error(`MCP call failed: ${response.status} ${response.statusText}`);
   }
 
@@ -146,7 +176,7 @@ function extractTopKIdentities(result: unknown, limit: number = 10): string[] {
   // Try every known top-level array key (full + compact). Fall back to first array field.
   const candidateKeys = [
     'results', 'r',                          // generic search/query
-    'callers', 'callees',                    // call graph (full mode)
+    'callers', 'callees',                    // find_references / call graph
     'affectedNodes', 'nodes',                // impact radius / find_path (compact 'nodes')
     'affectedFiles', 'files',                // impact radius file list
     'entryPoints', 'entry',                  // architecture
@@ -198,9 +228,66 @@ function detectResponseShape(result: unknown): 'full' | 'compact' | 'unknown' {
   return 'unknown';
 }
 
-function estimateTokens(bytes: number): number {
-  // Standard heuristic: 1 token ≈ 4 bytes
-  return Math.ceil(bytes / 4);
+function detectResponseModeFromWireText(wireText: string): 'compact' | 'toon' | 'full' | 'unknown' {
+  const trimmed = wireText.trim();
+  if (!trimmed.startsWith('{')) {
+    return 'toon';
+  }
+  try {
+    const obj = JSON.parse(trimmed) as Record<string, unknown>;
+    const resultsArray = (obj.results || obj.r) as unknown[] | undefined;
+    if (Array.isArray(resultsArray) && resultsArray.length > 0) {
+      const firstItem = resultsArray[0] as Record<string, unknown>;
+      if (firstItem.qualifiedName !== undefined) return 'full';
+      if (firstItem.qn !== undefined || firstItem.n !== undefined) return 'compact';
+    }
+    const serialized = JSON.stringify(obj);
+    if (serialized.includes('"qualifiedName"')) return 'full';
+    if (serialized.includes('"qn"') || serialized.includes('"n"')) return 'compact';
+    return 'unknown';
+  } catch {
+    return 'unknown';
+  }
+}
+
+function selectRepository(repos: RepositoryEntry[]): RepositoryEntry | undefined {
+  if (repos.length === 0) return undefined;
+
+  const benchRepoPath = process.env.BENCH_REPO_PATH;
+  if (benchRepoPath) {
+    const match = repos.find((r) => r.path === benchRepoPath);
+    if (match) return match;
+    console.warn(`BENCH_REPO_PATH ${benchRepoPath} not found in indexed repositories`);
+  }
+
+  const workspace = repos.find((r) => r.path === '/workspace');
+  if (workspace) return workspace;
+
+  const chosen = repos[0]!;
+  console.warn(`Using repository path ${chosen.path ?? '(unknown)'} (${chosen.repositoryId})`);
+  return chosen;
+}
+
+function parseRepositoryList(structuredContent: unknown): RepositoryEntry[] {
+  if (typeof structuredContent !== 'object' || structuredContent === null) return [];
+  const reposRaw = (structuredContent as Record<string, unknown>).repositories;
+  if (!Array.isArray(reposRaw)) return [];
+
+  return reposRaw
+    .map((entry): RepositoryEntry | null => {
+      if (typeof entry !== 'object' || entry === null) return null;
+      const r = entry as Record<string, unknown>;
+      const repositoryId = r.repositoryId;
+      if (typeof repositoryId !== 'string') return null;
+      return {
+        repositoryId,
+        path: typeof r.path === 'string' ? r.path : undefined,
+        fileCount: typeof r.fileCount === 'number' ? r.fileCount : 0,
+        nodeCount: typeof r.nodeCount === 'number' ? r.nodeCount : 0,
+        edgeCount: typeof r.edgeCount === 'number' ? r.edgeCount : 0,
+      };
+    })
+    .filter((r): r is RepositoryEntry => r !== null);
 }
 
 async function runBenchmark(label: string, profile: BenchmarkProfile = 'default'): Promise<void> {
@@ -212,8 +299,8 @@ async function runBenchmark(label: string, profile: BenchmarkProfile = 'default'
   const toolListCall = await callMCP('tools/list', {});
   const toolListParsed = parseSSEResponse(toolListCall.responseText);
   const toolListBytes = Buffer.byteLength(toolListCall.responseText, 'utf8');
-  const toolListTokens = estimateTokens(toolListBytes);
-  console.log(`Tool list: ${toolListBytes} bytes, ~${toolListTokens} tokens\n`);
+  const toolListTokens = countTokens(toolListCall.responseText);
+  console.log(`Tool list: ${toolListBytes} bytes, ${toolListTokens} tokens\n`);
 
   // Get repository state for reproducibility
   let repositoryState: BenchmarkRun['repositoryState'];
@@ -222,24 +309,21 @@ async function runBenchmark(label: string, profile: BenchmarkProfile = 'default'
       name: 'list_repositories',
       arguments: {},
     });
-    const listReposParsed = parseSSEResponse(listReposCall.responseText) as any;
-    const repoResult = listReposParsed.result?.content?.[0]?.text;
-    if (repoResult) {
-      const repoData = JSON.parse(repoResult);
-      // Compact mode renames repositories array preservation but key inside repo
-      // is now `repositoryId` (mapped to `rid`) instead of `id`.
-      const repos = repoData.repositories || repoData.r || [];
-      const repo = repos.find((r: any) => r.path === '/workspace') || repos[0];
-      if (repo) {
-        const id = repo.repositoryId || repo.rid || repo.id;
-        repositoryState = {
-          repositoryId: id,
-          fileCount: repo.fileCount ?? repo.fc ?? 0,
-          nodeCount: repo.nodeCount ?? repo.nc ?? 0,
-          edgeCount: repo.edgeCount ?? repo.ec ?? 0,
-        };
-        console.log(`Repository state: ${id} — ${repositoryState.nodeCount} nodes, ${repositoryState.edgeCount} edges\n`);
-      }
+    const listReposParsed = parseSSEResponse(listReposCall.responseText) as {
+      result?: { structuredContent?: unknown };
+    };
+    const repos = parseRepositoryList(listReposParsed.result?.structuredContent);
+    const repo = selectRepository(repos);
+    if (repo) {
+      repositoryState = {
+        repositoryId: repo.repositoryId,
+        fileCount: repo.fileCount,
+        nodeCount: repo.nodeCount,
+        edgeCount: repo.edgeCount,
+      };
+      console.log(
+        `Repository state: ${repo.repositoryId} — ${repositoryState.nodeCount} nodes, ${repositoryState.edgeCount} edges\n`
+      );
     }
   } catch (error) {
     console.warn('Failed to capture repository state:', (error as Error).message);
@@ -249,6 +333,7 @@ async function runBenchmark(label: string, profile: BenchmarkProfile = 'default'
   const results: BenchmarkResult[] = [];
   let totalBytes = 0;
   let totalTokens = 0;
+  let detectedResponseMode: BenchmarkRun['responseMode'];
 
   const liveRepoId = repositoryState?.repositoryId;
   if (!liveRepoId) {
@@ -267,28 +352,43 @@ async function runBenchmark(label: string, profile: BenchmarkProfile = 'default'
         arguments: applyProfile(baseParams.arguments, baseParams.name, profile),
       };
       const call = await callMCP(scenario.request.method, params);
-      const parsed = parseSSEResponse(call.responseText) as any;
-      const resultContent = parsed.result?.content?.[0]?.text;
-      
-      if (!resultContent) {
+      const parsed = parseSSEResponse(call.responseText) as {
+        result?: {
+          content?: Array<{ type: string; text?: string }>;
+          structuredContent?: unknown;
+        };
+      };
+      const wireText = parsed.result?.content?.[0]?.text ?? '';
+      const structuredContent = parsed.result?.structuredContent;
+
+      if (structuredContent === undefined && !wireText) {
         throw new Error('No result content in response');
       }
 
-      const resultObj = JSON.parse(resultContent);
+      const resultObj = structuredContent ?? {};
       const requestBytes = Buffer.byteLength(
         JSON.stringify({ method: scenario.request.method, params }),
         'utf8'
       );
       const responseBytes = Buffer.byteLength(call.responseText, 'utf8');
-      const approxTokens = estimateTokens(responseBytes);
+      const approxTokens = countTokens(call.responseText);
+      const wireTextTokens = wireText ? countTokens(wireText) : 0;
+      const structuredTokens =
+        structuredContent !== undefined ? countTokens(JSON.stringify(structuredContent)) : 0;
       const topKIdentities = extractTopKIdentities(resultObj, 10);
       const responseShape = detectResponseShape(resultObj);
+
+      if (detectedResponseMode === undefined && wireText) {
+        detectedResponseMode = detectResponseModeFromWireText(wireText);
+      }
 
       results.push({
         scenario: scenario.id,
         requestBytes,
         responseBytes,
         approxTokens,
+        wireTextTokens,
+        structuredTokens,
         latencyMs: call.latencyMs,
         topKIdentities,
         responseShape,
@@ -297,7 +397,9 @@ async function runBenchmark(label: string, profile: BenchmarkProfile = 'default'
       totalBytes += responseBytes;
       totalTokens += approxTokens;
 
-      console.log(`  ✓ ${responseBytes} bytes, ~${approxTokens} tokens, ${call.latencyMs}ms`);
+      console.log(
+        `  ✓ ${responseBytes} bytes, ${approxTokens} wire / ${wireTextTokens} text / ${structuredTokens} structured tokens, ${call.latencyMs}ms`
+      );
     } catch (error) {
       console.error(`  ✗ Failed: ${(error as Error).message}`);
       results.push({
@@ -318,6 +420,9 @@ async function runBenchmark(label: string, profile: BenchmarkProfile = 'default'
     label,
     timestamp: new Date().toISOString(),
     mcpUrl: MCP_URL,
+    tokenCounter: 'gpt-tokenizer/cl100k_base',
+    responseMode: detectedResponseMode ?? 'unknown',
+    toolset: process.env.CONTEXT_SIMPLO_TOOLSET ?? 'core',
     toolListBytes,
     toolListTokens,
     scenarios: results,
@@ -349,7 +454,13 @@ function generateMarkdownSummary(run: BenchmarkRun): string {
   let md = `# Benchmark: ${run.label}\n\n`;
   md += `**Timestamp:** ${run.timestamp}  \n`;
   md += `**MCP URL:** ${run.mcpUrl}  \n`;
-  
+  if (run.responseMode !== undefined) {
+    md += `**Response mode:** ${run.responseMode}  \n`;
+  }
+  if (run.toolset !== undefined) {
+    md += `**Toolset:** ${run.toolset}  \n`;
+  }
+
   if (run.repositoryState) {
     md += `\n## Repository State\n\n`;
     md += `- Repository ID: \`${run.repositoryState.repositoryId}\`\n`;
@@ -360,11 +471,11 @@ function generateMarkdownSummary(run: BenchmarkRun): string {
 
   md += `\n## Tool List Overhead\n\n`;
   md += `- Bytes: ${run.toolListBytes}\n`;
-  md += `- Tokens: ~${run.toolListTokens}\n`;
+  md += `- Tokens: ${run.toolListTokens} (${run.tokenCounter})\n`;
 
   md += `\n## Scenario Results\n\n`;
-  md += `| Scenario | Bytes | Tokens | Latency (ms) | Shape |\n`;
-  md += `|----------|-------|--------|--------------|-------|\n`;
+  md += `| Scenario | Bytes | Wire (full) | Wire text | Structured | Latency (ms) | Shape |\n`;
+  md += `|----------|-------|-------------|-----------|------------|--------------|-------|\n`;
 
   for (const result of run.scenarios) {
     const scenario = SCENARIOS.find(s => s.id === result.scenario);
@@ -372,16 +483,16 @@ function generateMarkdownSummary(run: BenchmarkRun): string {
     const shape = result.responseShape;
     
     if (result.error) {
-      md += `| ${name} | - | - | - | ERROR |\n`;
+      md += `| ${name} | - | - | - | - | - | ERROR |\n`;
     } else {
-      md += `| ${name} | ${result.responseBytes} | ~${result.approxTokens} | ${result.latencyMs} | ${shape} |\n`;
+      md += `| ${name} | ${result.responseBytes} | ${result.approxTokens} | ${result.wireTextTokens ?? '-'} | ${result.structuredTokens ?? '-'} | ${result.latencyMs} | ${shape} |\n`;
     }
   }
 
   md += `\n## Aggregate\n\n`;
   md += `- Total scenario bytes: ${run.totalBytes}\n`;
-  md += `- Total scenario tokens: ~${run.totalTokens}\n`;
-  md += `- With tool list: ~${run.toolListTokens + run.totalTokens} tokens\n`;
+  md += `- Total scenario tokens: ${run.totalTokens}\n`;
+  md += `- With tool list: ${run.toolListTokens + run.totalTokens} tokens\n`;
 
   md += `\n## Top-K Identities (for capability comparison)\n\n`;
   for (const result of run.scenarios) {

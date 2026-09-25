@@ -32,7 +32,8 @@ export class SymbolicSearch {
   search(
     query: string,
     limit: number = 20,
-    offset: number = 0
+    offset: number = 0,
+    repositoryId?: string
   ): PaginatedResponse<SearchResult> {
     if (limit > 100) {
       limit = 100;
@@ -47,7 +48,7 @@ export class SymbolicSearch {
     }
 
     try {
-      const results = this.storage.search(query, limit + 1, offset);
+      const results = this.storage.search(query, limit + 1, offset, repositoryId);
       const hasMore = results.length > limit;
       const trimmedResults = hasMore ? results.slice(0, limit) : results;
 

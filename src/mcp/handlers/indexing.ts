@@ -47,42 +47,38 @@ export async function indexRepository(
     throw new Error('Path traversal detected: repository path must be within workspace root');
   }
 
-  const job = await (context.indexQueue?.run(() =>
-    context.indexer.indexRepository(absolutePath, {
-      incremental: input.incremental || false,
-      respectIgnore: true,
-    })
-  , absolutePath) ?? context.indexer.indexRepository(absolutePath, {
-    incremental: input.incremental || false,
-    respectIgnore: true,
-  }));
+  const pending = context.indexQueue
+    ? context.indexQueue.run(
+        () =>
+          context.indexer.indexRepository(absolutePath, {
+            incremental: input.incremental || false,
+            respectIgnore: true,
+          }),
+        absolutePath
+      )
+    : context.indexer.indexRepository(absolutePath, {
+        incremental: input.incremental || false,
+        respectIgnore: true,
+      });
 
-  // Auto-start file watcher so changes are picked up immediately
-  let watching = false;
-  if (context.watcher && !context.watcher.isWatching(absolutePath)) {
-    context.watcher.watch(absolutePath, job.repositoryId);
-    context.storage.updateRepositoryWatchStatus(job.repositoryId, true);
-    watching = true;
-  } else if (context.watcher?.isWatching(absolutePath)) {
-    watching = true;
-  }
+  void Promise.resolve(pending).then(
+    (job) => {
+      if (context.watcher && !context.watcher.isWatching(absolutePath)) {
+        context.watcher.watch(absolutePath, job.repositoryId);
+        context.storage.updateRepositoryWatchStatus(job.repositoryId, true);
+      }
+    },
+    (error: unknown) => {
+      const message = error instanceof Error ? error.message : 'index failed';
+      console.error('index failed', { path: absolutePath, message });
+    }
+  );
 
   return {
-    jobId: job.id,
-    repositoryId: job.repositoryId,
-    status: job.status,
-    filesTotal: job.filesTotal,
-    filesProcessed: job.filesProcessed,
-    filesFailed: job.filesFailed,
-    nodesCreated: job.nodesCreated,
-    edgesCreated: job.edgesCreated,
-    duration: job.completedAt
-      ? job.completedAt.getTime() - job.startedAt.getTime()
-      : undefined,
-    watching,
-    message: job.status === 'completed'
-      ? `Indexed ${job.filesProcessed} files, ${job.nodesCreated} nodes. ${watching ? 'Auto-watch active — changes re-index immediately.' : 'Watcher unavailable.'}`
-      : `Indexing ${job.status}.`,
+    status: 'accepted' as const,
+    path: absolutePath,
+    message:
+      'Indexing started. Other tools and the dashboard stay available; list_repositories updates when the job finishes.',
   };
 }
 
@@ -91,6 +87,10 @@ export async function watchDirectory(
   context: HandlerContext
 ): Promise<unknown> {
   const input = WatchDirectoryInputSchema.parse(args);
+
+  if (input.enabled === false) {
+    return unwatchDirectory({ path: input.path }, context);
+  }
 
   // Path traversal check always runs regardless of watcher availability
   const absolutePath = path.resolve(context.workspaceRoot, input.path);
@@ -178,13 +178,9 @@ export async function listRepositories(
         edgeCount: repo.edgeCount,
         languages: repo.languages,
         isWatched: isActivelyWatched,
-        lastIndexedAt: repo.lastIndexedAt?.toLocaleString(),
-        createdAt: repo.createdAt.toLocaleString(),
-        status: repo.nodeCount === 0
-          ? 'empty — run index_repository first'
-          : isActivelyWatched
-          ? 'indexed, watching for changes'
-          : 'indexed',
+        lastIndexedAt: repo.lastIndexedAt?.toISOString(),
+        status:
+          repo.nodeCount === 0 ? 'empty' : isActivelyWatched ? 'watching' : 'indexed',
       };
     }),
     total: repos.length,

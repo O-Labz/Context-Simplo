@@ -6,12 +6,7 @@ export default defineConfig({
     globals: true,
     environment: 'node',
     pool: 'forks',
-    poolOptions: {
-      forks: {
-        // Tree-sitter grammar downloads require extra heap during tests
-        execArgv: ['--max-old-space-size=4096'],
-      },
-    },
+    execArgv: ['--max-old-space-size=4096'],
     coverage: {
       provider: 'v8',
       reporter: ['text', 'json', 'html'],

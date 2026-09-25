@@ -58,6 +58,12 @@ interface MetricsData {
     averageResponseTime: number;
     errorRate: number;
     totalRequests: number;
+    responseTokensTotal?: number;
+    structuredTokensTotal?: number;
+    responseBytesTotal?: number;
+    tokensPerMinute?: number;
+    toolTokensBreakdown?: Record<string, number>;
+    toolStructuredTokensBreakdown?: Record<string, number>;
   };
   timestamp: string;
 }
@@ -189,6 +195,10 @@ export default function Metrics() {
     .slice(0, 5);
 
   const topTools = Object.entries(metrics.mcp?.toolBreakdown || {})
+    .sort(([, a], [, b]) => b - a)
+    .slice(0, 5);
+
+  const topToolsByTokens = Object.entries(metrics.mcp?.toolTokensBreakdown || {})
     .sort(([, a], [, b]) => b - a)
     .slice(0, 5);
 
@@ -522,6 +532,30 @@ export default function Metrics() {
                   <span className="inner-stat-label">Requests / min</span>
                 </div>
               </div>
+              {(metrics.mcp.responseTokensTotal !== undefined ||
+                metrics.mcp.structuredTokensTotal !== undefined ||
+                metrics.mcp.tokensPerMinute !== undefined) && (
+                <div className="inner-grid-2 mb-3">
+                  <div className="inner-stat">
+                    <span className="inner-stat-value">
+                      {formatNumber(metrics.mcp.responseTokensTotal ?? 0)}
+                    </span>
+                    <span className="inner-stat-label">Wire Text Tokens</span>
+                  </div>
+                  <div className="inner-stat">
+                    <span className="inner-stat-value">
+                      {formatNumber(metrics.mcp.structuredTokensTotal ?? 0)}
+                    </span>
+                    <span className="inner-stat-label">Structured Tokens</span>
+                  </div>
+                  <div className="inner-stat">
+                    <span className="inner-stat-value">
+                      {formatNumber(metrics.mcp.tokensPerMinute ?? 0)}
+                    </span>
+                    <span className="inner-stat-label">Tokens / min</span>
+                  </div>
+                </div>
+              )}
               <div className="detail-grid">
                 <div className="detail-row">
                   <span>Avg Response Time</span>
@@ -533,6 +567,12 @@ export default function Metrics() {
                     {(metrics.mcp.errorRate * 100).toFixed(1)}%
                   </span>
                 </div>
+                {metrics.mcp.responseBytesTotal !== undefined && (
+                  <div className="detail-row">
+                    <span>Response Payload Size</span>
+                    <span className="font-semibold">{formatBytes(metrics.mcp.responseBytesTotal)}</span>
+                  </div>
+                )}
               </div>
 
               {topTools.length > 0 && (
@@ -545,6 +585,22 @@ export default function Metrics() {
                       <div key={tool} className="flex items-center justify-between text-sm">
                         <span className="font-mono text-xs text-on-surface-variant">{tool}</span>
                         <span className="font-semibold">{formatNumber(count)}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {topToolsByTokens.length > 0 && (
+                <div className="mt-3 pt-3 border-t border-outline-variant/15">
+                  <span className="text-xs font-bold text-on-surface-variant uppercase tracking-wider block mb-2">
+                    Tool Token Volume
+                  </span>
+                  <div className="space-y-1.5">
+                    {topToolsByTokens.map(([tool, tokens]) => (
+                      <div key={tool} className="flex items-center justify-between text-sm">
+                        <span className="font-mono text-xs text-on-surface-variant">{tool}</span>
+                        <span className="font-semibold">{formatNumber(tokens)} tokens</span>
                       </div>
                     ))}
                   </div>
