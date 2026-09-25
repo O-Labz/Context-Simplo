@@ -31,7 +31,7 @@ import { getContextSimploToolset } from '../core/config.js';
 import { createMcpHandler, type McpHttpHandler } from '@modelcontextprotocol/server';
 import { toNodeHandler } from '@modelcontextprotocol/node';
 import { formatMCPResponse } from './formatter.js';
-import { countWireTokens } from './token-count.js';
+import { countStructuredTokens, countWireTokens } from './token-count.js';
 import { createV2McpServer } from './v2-register.js';
 import type { ResponseMode } from '../core/types.js';
 import type { CodeGraphApi } from '../core/graph.js';
@@ -71,8 +71,10 @@ export interface MCPMetrics {
   errorRate: number;
   responseBytesTotal: number;
   responseTokensTotal: number;
+  structuredTokensTotal: number;
   tokensPerMinute: number;
   toolTokensBreakdown: Record<string, number>;
+  toolStructuredTokensBreakdown: Record<string, number>;
   lastMinuteRequests: Array<{
     timestamp: number;
     tool: string;
@@ -80,6 +82,7 @@ export interface MCPMetrics {
     error?: boolean;
     responseBytes?: number;
     responseTokens?: number;
+    structuredTokens?: number;
   }>;
 }
 
@@ -106,8 +109,10 @@ export class MCPServer {
     errorRate: 0,
     responseBytesTotal: 0,
     responseTokensTotal: 0,
+    structuredTokensTotal: 0,
     tokensPerMinute: 0,
     toolTokensBreakdown: {},
+    toolStructuredTokensBreakdown: {},
     lastMinuteRequests: [],
   };
   private v2HttpHandler?: McpHttpHandler;
@@ -150,7 +155,13 @@ export class MCPServer {
     try {
       const result = await this.handleToolCall(name, args);
       const wrapped = this.wrapToolResult(result);
-      this.recordMetrics(name, Date.now() - startTime, false, wrapped.content[0]!.text);
+      this.recordMetrics(
+        name,
+        Date.now() - startTime,
+        false,
+        wrapped.content[0]!.text,
+        wrapped.structuredContent
+      );
       return wrapped;
     } catch (error) {
       this.recordMetrics(name, Date.now() - startTime, true, '');
@@ -294,17 +305,27 @@ export class MCPServer {
     await nodeHandler(req, res, body);
   }
 
-  private recordMetrics(toolName: string, duration: number, error: boolean, responseText: string): void {
+  private recordMetrics(
+    toolName: string,
+    duration: number,
+    error: boolean,
+    responseText: string,
+    structuredContent?: unknown
+  ): void {
     const now = Date.now();
     const responseBytes = Buffer.byteLength(responseText, 'utf8');
     const responseTokens = countWireTokens(responseText);
+    const structuredTokens = countStructuredTokens(structuredContent);
 
     this.metrics.totalRequests++;
     this.metrics.toolBreakdown[toolName] = (this.metrics.toolBreakdown[toolName] || 0) + 1;
     this.metrics.responseBytesTotal += responseBytes;
     this.metrics.responseTokensTotal += responseTokens;
+    this.metrics.structuredTokensTotal += structuredTokens;
     this.metrics.toolTokensBreakdown[toolName] =
       (this.metrics.toolTokensBreakdown[toolName] || 0) + responseTokens;
+    this.metrics.toolStructuredTokensBreakdown[toolName] =
+      (this.metrics.toolStructuredTokensBreakdown[toolName] || 0) + structuredTokens;
 
     this.metrics.lastMinuteRequests.push({
       timestamp: now,
@@ -313,6 +334,7 @@ export class MCPServer {
       error,
       responseBytes,
       responseTokens,
+      structuredTokens,
     });
 
     // Clean up old requests (older than 1 minute)

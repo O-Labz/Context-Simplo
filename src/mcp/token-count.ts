@@ -6,3 +6,10 @@ export function countWireTokens(text: string): number {
   }
   return encode(text).length;
 }
+
+export function countStructuredTokens(value: unknown): number {
+  if (value === undefined) {
+    return 0;
+  }
+  return countWireTokens(JSON.stringify(value));
+}

@@ -59,9 +59,11 @@ interface MetricsData {
     errorRate: number;
     totalRequests: number;
     responseTokensTotal?: number;
+    structuredTokensTotal?: number;
     responseBytesTotal?: number;
     tokensPerMinute?: number;
     toolTokensBreakdown?: Record<string, number>;
+    toolStructuredTokensBreakdown?: Record<string, number>;
   };
   timestamp: string;
 }
@@ -530,13 +532,21 @@ export default function Metrics() {
                   <span className="inner-stat-label">Requests / min</span>
                 </div>
               </div>
-              {(metrics.mcp.responseTokensTotal !== undefined || metrics.mcp.tokensPerMinute !== undefined) && (
+              {(metrics.mcp.responseTokensTotal !== undefined ||
+                metrics.mcp.structuredTokensTotal !== undefined ||
+                metrics.mcp.tokensPerMinute !== undefined) && (
                 <div className="inner-grid-2 mb-3">
                   <div className="inner-stat">
                     <span className="inner-stat-value">
                       {formatNumber(metrics.mcp.responseTokensTotal ?? 0)}
                     </span>
-                    <span className="inner-stat-label">Response Tokens</span>
+                    <span className="inner-stat-label">Wire Text Tokens</span>
+                  </div>
+                  <div className="inner-stat">
+                    <span className="inner-stat-value">
+                      {formatNumber(metrics.mcp.structuredTokensTotal ?? 0)}
+                    </span>
+                    <span className="inner-stat-label">Structured Tokens</span>
                   </div>
                   <div className="inner-stat">
                     <span className="inner-stat-value">
