@@ -63,11 +63,21 @@ A clean web UI at `localhost:3001` to manage repositories, run searches, explore
 
 ## Run it
 
-You'll need Docker. For semantic search you also need an embedding model. The simplest local option is Ollama.
+You'll need Docker. For semantic search you also need an embedding model. The simplest local option is Ollama:
 
 ```bash
 ollama pull nomic-embed-text
+```
 
+**Auth is off unless you set `AUTH_TOKEN`.** When that env var is unset, the dashboard has no login and MCP accepts requests with no Bearer header. Set it only if you want authentication.
+
+Docker's default is to bind `0.0.0.0` inside the container. That path requires `AUTH_TOKEN` unless you explicitly set `HOST` (see below). Auth is still only enforced when `AUTH_TOKEN` itself is set.
+
+### Local Docker, no auth (recommended for personal use)
+
+Publish only on the host loopback and set `HOST=0.0.0.0` so the container can start without a token. Do **not** set `AUTH_TOKEN`:
+
+```bash
 docker run -d \
   --name context-simplo \
   --restart unless-stopped \
@@ -76,7 +86,7 @@ docker run -d \
   -v context-simplo-data:/data \
   -e MOUNT_ROOT=/host \
   -e INITIAL_WORKSPACE=/host \
-  -e AUTH_TOKEN="$(openssl rand -hex 32)" \
+  -e HOST=0.0.0.0 \
   -e AST_ENGINE=wasm \
   -e LLM_PROVIDER=ollama \
   -e LLM_BASE_URL=http://host.docker.internal:11434 \
@@ -88,7 +98,23 @@ docker run -d \
 
 On Linux, also add `--add-host=host.docker.internal:host-gateway`.
 
-**`AUTH_TOKEN` is optional** for local use (loopback bind). Auth is only enforced when you set `AUTH_TOKEN`; leave it empty and the dashboard will not ask for a login. It **is required** when the process binds to `0.0.0.0` (the Docker/container default), so the example above generates a random token. To expose the API on the network yourself, bind to `0.0.0.0:3001:3001` and set your own `AUTH_TOKEN`.
+Keep `-p 127.0.0.1:3001:3001` so the port is not reachable from other machines. Never publish as `0.0.0.0:3001:3001` without an `AUTH_TOKEN`.
+
+### Local Docker, with auth
+
+Omit `HOST` (or leave the container default) and set a token:
+
+```bash
+  -e AUTH_TOKEN="$(openssl rand -hex 32)" \
+```
+
+Retrieve it later with:
+
+```bash
+docker exec context-simplo printenv AUTH_TOKEN
+```
+
+To expose the API on the network, bind `-p 0.0.0.0:3001:3001` **and** set your own `AUTH_TOKEN`.
 
 Once it's up:
 
@@ -97,7 +123,7 @@ Once it's up:
 
 **MCP Configuration:**
 
-Add to your editor's MCP config (e.g., `~/.cursor/mcp.json`). Without auth:
+Add to your editor's MCP config (e.g., `~/.cursor/mcp.json`). With no auth (no `AUTH_TOKEN`):
 
 ```json
 {
@@ -116,12 +142,6 @@ If you set `AUTH_TOKEN`, add a Bearer header:
 "headers": {
   "Authorization": "Bearer YOUR_AUTH_TOKEN_HERE"
 }
-```
-
-For the Docker example above, retrieve the token with:
-
-```bash
-docker exec context-simplo printenv AUTH_TOKEN
 ```
 
 ## Embedding options
